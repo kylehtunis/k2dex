@@ -6,39 +6,141 @@ Run with:
 
 from __future__ import annotations
 
+from collections import Counter
+
 import numpy as np
 import streamlit as st
+from sklearn.linear_model import LogisticRegression
 
 import helpers
+import limitless_ingest
 
 
-DATA_PATH = "gen9championsvgc2026regma-1760.json"
+DATA_PATH_PHASE1 = "gen9championsvgc2026regma-1760.json"
 TEAM_SIZE = 6
 EPS = 0.01
+
+PHASE2_MIN_TEAMS = limitless_ingest.DEFAULT_MIN_TEAMS  # single source of truth; was drifting at 1500 while ingest default was 5000
+PHASE2_MIN_TEAM_COUNT = 5
+PHASE2_LR_C = 0.1
 
 # Log-spaced options for the two sliders. Both T and field_weight operate in
 # log space (T governs Boltzmann factors exp(-ΔH/T); field_weight scales h,
 # which is itself a log-odds), so linear sliders waste resolution at small
 # values. field_weight includes 0.0 as a special-case for pure-pairwise mode.
 TEMPERATURE_OPTIONS = [0.01, 0.02, 0.03, 0.05, 0.07, 0.1, 0.15, 0.2, 0.3, 0.5, 0.7, 1.0]
-FIELD_WEIGHT_OPTIONS = [0.0, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.7, 1.0]
+FIELD_WEIGHT_OPTIONS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 ANNEAL_T_START_OPTIONS = [0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0]
 ANNEAL_T_END_OPTIONS = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1]
 PT_T_MIN_OPTIONS = [0.01, 0.02, 0.03, 0.05, 0.07, 0.1, 0.15, 0.2, 0.3, 0.5]
 PT_T_MAX_OPTIONS = [0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0]
 
 
-@st.cache_resource
-def load_model() -> tuple[helpers.ChaosData, list[str], np.ndarray, np.ndarray, np.ndarray]:
-    """Load chaos data and fit Ising parameters once per session."""
-    chaos = helpers.load_chaos(DATA_PATH)
+@st.cache_resource(show_spinner="Loading Phase 1 (Gaussian / Smogon chaos)...")
+def load_model_phase1() -> tuple[list[str], np.ndarray, np.ndarray, np.ndarray, Counter[frozenset[str]] | None]:
+    """Phase 1: Gaussian / precision-matrix inverse Ising from Smogon chaos JSON.
+
+    Returns (vocab, m, J, h, team_counts). h is derived from mean-field self-consistency
+    `h = logit(m) - J @ m`. team_counts is None for Phase 1: chaos JSON only provides
+    aggregate co-occurrence statistics, not per-team rosters, so there's no notion of
+    "did this exact team appear in the data?" to look up.
+    """
+    chaos = helpers.load_chaos(DATA_PATH_PHASE1)
     vocab = helpers.build_vocab(chaos, min_usage=0.002)
     C = helpers.build_cooccurrence(chaos, vocab)
     m, p_joint = helpers.binary_moments(chaos, vocab, C, team_size=TEAM_SIZE)
     Corr = helpers.binary_correlation(m, p_joint)
     J, _ = helpers.ising_gaussian(Corr, eps=EPS)
     h = np.log(m / (1 - m)) - J @ m
-    return chaos, vocab, m, J, h
+    return vocab, m, J, h, None
+
+
+@st.cache_resource(show_spinner="Loading Phase 2 (pseudo-likelihood / Limitless teams)...")
+def load_model_phase2() -> tuple[list[str], np.ndarray, np.ndarray, np.ndarray, Counter[frozenset[str]]]:
+    """Phase 2: pseudo-likelihood inverse Ising from Limitless tournament team data.
+
+    Fits V per-spin logistic regressions (one per Pokemon in vocab) on the binary
+    team-indicator matrix; the regression intercept gives h_i and the coefficient
+    vector gives row J_{i,:}. Post-hoc symmetrization J = (J_asym + J_asym.T) / 2.
+
+    First call hits the Limitless API to collect enough tournaments to reach
+    PHASE2_MIN_TEAMS teams; subsequent calls serve from the tournament cache.
+    Returns (vocab, m, J, h, team_counts), where team_counts maps each observed
+    6-Pokemon roster (frozenset of names) to its occurrence count in the ingested
+    corpus -- used in the UI as a sanity check on suggested completions.
+    """
+    tournaments = limitless_ingest.ingest(min_teams=PHASE2_MIN_TEAMS)
+    teams = limitless_ingest.all_teams(tournaments)
+    team_counts: Counter[frozenset[str]] = Counter(teams)
+
+    counts = Counter(name for team in teams for name in team)
+    vocab = sorted(name for name, c in counts.items() if c >= PHASE2_MIN_TEAM_COUNT)
+    name_to_i = {name: i for i, name in enumerate(vocab)}
+    V = len(vocab)
+
+    X = np.zeros((len(teams), V), dtype=np.int8)
+    for ti, team in enumerate(teams):
+        for name in team:
+            j = name_to_i.get(name)
+            if j is not None:
+                X[ti, j] = 1
+    m = X.mean(axis=0)
+
+    J_asym = np.zeros((V, V), dtype=np.float64)
+    h = np.zeros(V, dtype=np.float64)
+    for i in range(V):
+        y = X[:, i]
+        if y.sum() < 2 or (1 - y).sum() < 2:
+            continue
+        mask = np.ones(V, dtype=bool)
+        mask[i] = False
+        lr = LogisticRegression(penalty="l2", C=PHASE2_LR_C, solver="lbfgs", max_iter=1000)
+        lr.fit(X[:, mask], y)
+        h[i] = lr.intercept_[0]
+        J_asym[i, mask] = lr.coef_[0]
+    J = 0.5 * (J_asym + J_asym.T)
+    np.fill_diagonal(J, 0.0)
+    return vocab, m, J, h, team_counts
+
+
+def team_obs_count(
+    state: np.ndarray,
+    vocab: list[str],
+    team_counts: Counter[frozenset[str]] | None,
+) -> int | None:
+    """Lookup of how many times this exact 6-Pokemon team appeared in the ingested
+    tournament corpus. None when no team-level data is available (Phase 1)."""
+    if team_counts is None:
+        return None
+    team = frozenset(vocab[i] for i in np.where(state)[0])
+    return team_counts[team]
+
+
+def min_swaps_to_observed(
+    state: np.ndarray,
+    vocab: list[str],
+    team_counts: Counter[frozenset[str]] | None,
+) -> int | None:
+    """Minimum number of slot swaps to transform this team into any team in
+    the corpus. 0 means the team itself was observed; values >= 1 measure
+    how far the model's suggestion sits from realized teams. Useful to spot
+    when a high-probability completion is a Hamming-1 variant of a known team
+    (defensible "model picked a near-neighbor of the meta") vs a globally
+    distinct configuration (likely overfit or genuine discovery)."""
+    if not team_counts:
+        return None
+    team = frozenset(vocab[i] for i in np.where(state)[0])
+    return min(TEAM_SIZE - len(team & obs) for obs in team_counts)
+
+
+def intra_team_sum_j(state: np.ndarray, J: np.ndarray) -> float:
+    """Sum of pairwise couplings over the team's unordered pairs:
+    sum_{i<j: both in team} J_ij = 0.5 * s' J s. Measures structural coherence
+    under the fitted model -- the pairwise contribution to (-raw_E). A team
+    can have low raw_E either from popular members (large h.s) or coherent
+    pairs (large Sigma J); decomposing makes that visible."""
+    s = state.astype(np.float64)
+    return float(0.5 * s @ J @ s)
 
 
 def swap_mcmc(
@@ -403,13 +505,45 @@ def sample_distribution(
 def main() -> None:
     st.set_page_config(page_title="VGC team auto-completer", layout="wide")
     st.title("VGC team auto-completer")
-    st.caption(
-        "Inverse Ising model fit to Smogon chaos stats. Sample teams of 6 from the "
-        "conditional distribution given fixed members (must appear) and excluded "
-        "members (must not appear)."
-    )
 
-    chaos, vocab, m, J, h = load_model()
+    with st.sidebar:
+        st.subheader("Model")
+        phase = st.radio(
+            "Inverse Ising fit",
+            ["Phase 1 (Gaussian)", "Phase 2 (PL)"],
+            label_visibility="collapsed",
+            help=(
+                "**Phase 1** — Gaussian / precision-matrix approximation on Smogon "
+                "chaos stats. Fast to fit but systematically under-magnitudes strong "
+                "negative couplings (mutually-exclusive pairs).\n\n"
+                "**Phase 2** — pseudo-likelihood on Limitless tournament team rosters. "
+                "Wider dynamic range, especially on −J. Held-item formes (Charizard-X, "
+                "Charizard-Y, etc.) are collapsed to base species in this data — see "
+                "CLAUDE.md. First-time selection ingests ~1500 teams from the API and "
+                "fits the model (~1 min)."
+            ),
+        )
+
+    phase_key = "phase1" if phase.startswith("Phase 1") else "phase2"
+    if phase_key == "phase1":
+        vocab, m, J, h, team_counts = load_model_phase1()
+        st.caption(
+            "Phase 1: Gaussian / precision-matrix inverse Ising fit on Smogon chaos "
+            "stats. Sample teams of 6 from the conditional distribution given fixed "
+            "(must appear) and excluded (must not appear) members."
+        )
+    else:
+        vocab, m, J, h, team_counts = load_model_phase2()
+        st.caption(
+            "Phase 2: pseudo-likelihood inverse Ising fit on Limitless tournament "
+            "team data. Same sampling controls as Phase 1; (J, h) come from direct "
+            "per-spin logistic regressions on real team rosters. The **obs** column "
+            "in the output tables shows how many times each suggested team appeared "
+            "verbatim in the ingested tournament corpus — a sanity check that the "
+            "model's high-probability completions correspond to teams real players "
+            "actually brought."
+        )
+
     name_to_idx = {name: i for i, name in enumerate(vocab)}
     sorted_vocab = sorted(vocab, key=lambda v: -m[name_to_idx[v]])
 
@@ -421,12 +555,14 @@ def main() -> None:
             default=[],
             max_selections=TEAM_SIZE,
             placeholder="Choose Pokemon to pin at s=1",
+            key=f"fixed_{phase_key}",
         )
         excluded_names = st.multiselect(
             "Exclude (must NOT appear)",
             sorted_vocab,
             default=[],
             placeholder="Choose Pokemon to pin at s=0",
+            key=f"excluded_{phase_key}",
         )
 
         overlap = set(fixed_names) & set(excluded_names)
@@ -600,8 +736,12 @@ def main() -> None:
                          "Healthy range 20-50%. Very low = chain stuck (rejecting most moves); "
                          "very high = proposals too trivial.")
 
-        md_lines = ["| # | % | raw E | adj E | completion |",
-                    "| ---: | ---: | ---: | ---: | :--- |"]
+        diag_header = " obs | Δ | Σ J |" if team_counts is not None else ""
+        diag_sep = " ---: | ---: | ---: |" if team_counts is not None else ""
+        md_lines = [
+            f"| # | % | raw E | adj E |{diag_header} completion |",
+            f"| ---: | ---: | ---: | ---: |{diag_sep} :--- |",
+        ]
         for rank, (comp, count) in enumerate(dist[:top_k], 1):
             state = np.zeros(len(vocab), dtype=bool)
             for i in fixed_idx:
@@ -612,11 +752,30 @@ def main() -> None:
             raw_E = team_energy(state, J, h)
             adj_E = team_energy(state, J, field_weight * h)
             names = ", ".join(vocab[i] for i in comp)
+            if team_counts is not None:
+                obs = team_obs_count(state, vocab, team_counts)
+                delta = min_swaps_to_observed(state, vocab, team_counts)
+                sum_j = intra_team_sum_j(state, J)
+                diag_cells = f" {obs} | {delta} | {sum_j:+.3f} |"
+            else:
+                diag_cells = ""
             md_lines.append(
-                f"| {rank} | {prob_pct:.2f}% | {raw_E:+.3f} | {adj_E:+.3f} | {names} |"
+                f"| {rank} | {prob_pct:.2f}% | {raw_E:+.3f} | {adj_E:+.3f} |{diag_cells} {names} |"
             )
 
         st.markdown("\n".join(md_lines))
+        obs_caption = (
+            "  **obs** — exact-match count of this team in the corpus. 0 means no "
+            "player brought this exact roster. "
+            "**Δ** — minimum slot-swaps to the nearest observed team (0 ↔ exact "
+            "match). A high-probability completion with Δ=1 is a 1-swap variant of "
+            "a real team (defensible discovery / fine-tuning); Δ≥3 is a globally "
+            "distinct configuration (more likely overfit or genuine novelty). "
+            "**Σ J** — sum of intra-team pairwise couplings, i.e. the J-contribution "
+            "to −raw E. Large Σ J = structurally coherent (archetype-driven); small "
+            "Σ J = low-energy mainly via popular individual members (h-driven)."
+            if team_counts is not None else ""
+        )
         st.caption(
             "**%** — empirical fraction of post-burn-in samples producing this completion.  "
             "**raw E** — Ising energy `H(s) = -h·s - 0.5 s'Js` with the full data-calibrated "
@@ -627,6 +786,7 @@ def main() -> None:
             "ranking by `adj E` matches the sampled probability ordering. "
             "At `field_weight=1.0` they're identical; at `field_weight=0.0`, adj E is "
             "the pure pairwise term `-0.5 s'Js`."
+            + obs_caption
         )
 
     elif mode == "Anneal to MAP":
@@ -650,8 +810,12 @@ def main() -> None:
                          "averaged over all annealing runs. Hot phase accepts most proposals; "
                          "cold phase rejects almost all. So aggregate rate depends on schedule.")
 
-        md_lines = ["| # | runs | raw E | adj E | completion |",
-                    "| ---: | ---: | ---: | ---: | :--- |"]
+        diag_header = " obs | Δ | Σ J |" if team_counts is not None else ""
+        diag_sep = " ---: | ---: | ---: |" if team_counts is not None else ""
+        md_lines = [
+            f"| # | runs | raw E | adj E |{diag_header} completion |",
+            f"| ---: | ---: | ---: | ---: |{diag_sep} :--- |",
+        ]
         for rank, (comp, count) in enumerate(results, 1):
             state = np.zeros(len(vocab), dtype=bool)
             for i in fixed_idx:
@@ -661,11 +825,27 @@ def main() -> None:
             raw_E = team_energy(state, J, h)
             adj_E = team_energy(state, J, field_weight * h)
             names = ", ".join(vocab[i] for i in comp)
+            if team_counts is not None:
+                obs = team_obs_count(state, vocab, team_counts)
+                delta = min_swaps_to_observed(state, vocab, team_counts)
+                sum_j = intra_team_sum_j(state, J)
+                diag_cells = f" {obs} | {delta} | {sum_j:+.3f} |"
+            else:
+                diag_cells = ""
             md_lines.append(
-                f"| {rank} | {count}/{n_runs} | {raw_E:+.3f} | {adj_E:+.3f} | {names} |"
+                f"| {rank} | {count}/{n_runs} | {raw_E:+.3f} | {adj_E:+.3f} |{diag_cells} {names} |"
             )
 
         st.markdown("\n".join(md_lines))
+        obs_caption = (
+            "  **obs** — exact-match count in the corpus. "
+            "**Δ** — minimum slot-swaps to the nearest observed team (0 ↔ exact "
+            "match). High obs *or* low Δ = the MAP basin is near realized teams. "
+            "**Σ J** — sum of intra-team pairwise couplings (J-contribution to −raw E). "
+            "Large Σ J = coherent archetype; small Σ J = the basin is held together "
+            "by popular individual mons rather than pairwise structure."
+            if team_counts is not None else ""
+        )
         st.caption(
             "**runs** — how many independent annealings converged to this team. "
             "A single dominant team indicates a sharp / unimodal landscape; multiple "
@@ -673,6 +853,7 @@ def main() -> None:
             "**raw E** is the data-calibrated energy `-h·s - 0.5 s'Js`; "
             "**adj E** is `-(field_weight·h)·s - 0.5 s'Js`, which is what the annealer "
             "actually minimizes. Lower adj E = the energy basin the annealer settled into."
+            + obs_caption
         )
 
     else:  # Parallel-tempered sample
@@ -705,8 +886,12 @@ def main() -> None:
 
         st.caption(f"Temperature ladder: " + " → ".join(f"{t:.3f}" for t in ladder))
 
-        md_lines = ["| # | % | raw E | adj E | completion |",
-                    "| ---: | ---: | ---: | ---: | :--- |"]
+        diag_header = " obs | Δ | Σ J |" if team_counts is not None else ""
+        diag_sep = " ---: | ---: | ---: |" if team_counts is not None else ""
+        md_lines = [
+            f"| # | % | raw E | adj E |{diag_header} completion |",
+            f"| ---: | ---: | ---: | ---: |{diag_sep} :--- |",
+        ]
         for rank, (comp, count) in enumerate(dist[:top_k], 1):
             state = np.zeros(len(vocab), dtype=bool)
             for i in fixed_idx:
@@ -717,11 +902,28 @@ def main() -> None:
             raw_E = team_energy(state, J, h)
             adj_E = team_energy(state, J, field_weight * h)
             names = ", ".join(vocab[i] for i in comp)
+            if team_counts is not None:
+                obs = team_obs_count(state, vocab, team_counts)
+                delta = min_swaps_to_observed(state, vocab, team_counts)
+                sum_j = intra_team_sum_j(state, J)
+                diag_cells = f" {obs} | {delta} | {sum_j:+.3f} |"
+            else:
+                diag_cells = ""
             md_lines.append(
-                f"| {rank} | {prob_pct:.2f}% | {raw_E:+.3f} | {adj_E:+.3f} | {names} |"
+                f"| {rank} | {prob_pct:.2f}% | {raw_E:+.3f} | {adj_E:+.3f} |{diag_cells} {names} |"
             )
 
         st.markdown("\n".join(md_lines))
+        obs_caption = (
+            "  **obs** — exact-match count in the corpus. "
+            "**Δ** — minimum slot-swaps to nearest observed team. Δ=0 ↔ obs≥1; "
+            "Δ=1 = 1-swap variant of a real team (defensible \"fine-tuning of meta\"); "
+            "Δ≥3 = globally distinct configuration. "
+            "**Σ J** — sum of intra-team pairwise couplings. Sweeping `field_weight` "
+            "from 1.0 → 0.0 makes top-K reorder by increasing Σ J: lower fw selects "
+            "for coherence, higher fw selects for popular individual members."
+            if team_counts is not None else ""
+        )
         st.caption(
             "**%** — Boltzmann probability at the target T, estimated from cold-chain samples. "
             "Unlike single-chain sampling at low T, this **should be monotonically ordered with "
@@ -730,6 +932,7 @@ def main() -> None:
             "or the swap rate is too low (raise K or lower t_max). "
             "**raw E** / **adj E** are the energies with full / rescaled h, same definitions as "
             "the other modes."
+            + obs_caption
         )
 
 
