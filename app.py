@@ -1104,16 +1104,15 @@ def _render_meta(phase_key: str, model: PhaseModel) -> None:
         help="Sorted by h (log-odds of inclusion in a random team under the model).",
     )
     order = np.argsort(-h)
-    feature_rows = [
-        {
-            "rank": rank,
-            "feature": vocab[i],
-            "h": float(h[i]),
-            "m̂": float(model.m[i]),
-        }
-        for rank, i in enumerate(order[:n_show], 1)
+    feature_md = [
+        "| # | feature | h | m̂ |",
+        "| ---: | :--- | ---: | ---: |",
     ]
-    st.dataframe(feature_rows, hide_index=True, use_container_width=True)
+    for rank, i in enumerate(order[:n_show], 1):
+        feature_md.append(
+            f"| {rank} | {vocab[i]} | {float(h[i]):+.3f} | {float(model.m[i]):.4f} |"
+        )
+    st.markdown("\n".join(feature_md))
     st.caption(
         "**h** is the per-feature log-odds — `m̂ ≈ sigmoid(h + J·m)` under MF, "
         "so for popular features h ≈ logit(m̂). The order here is the model's "
