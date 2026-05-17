@@ -100,21 +100,21 @@ Easy to get wrong if you only look at one file:
 
   **Useful operating range with `PHASE2_LR_C = 0.1`: `fw ≈ 0.3–0.6`.** At sklearn's default `C = 1.0` the floor was tighter (~0.3–0.5); dropping to `C = 0.1` shrinks rare-co-occurrence couplings enough to extend the useful range without compromising strong-archetype detection at moderate fw. **More data alone does not fix repeated-roster basins** — the persistent attractors trace to specific roster repetitions in the corpus where the PL fit reinforces all 15 pairwise couplings every time. **Regularization is the lever, not corpus size**, and the `C = 0.1` default reflects this finding.
 
-- **Quantitative validation: Phase 3 (item-pair) > Phase 2 (species) > co-occurrence > marginal > PPMI.** From the locked post-Phase-3 baseline (`tests/validation_baseline_post_phase3.json`, 880 in-vocab test teams, team-level 90/10 split):
+- **Quantitative validation: Phase 3 (item-pair) > Phase 2 (species) > co-occurrence > marginal > PPMI.** From the locked post-Phase-4 baseline (`tests/validation_baseline_post_phase4.json`, team-level 90/10 split):
 
   | model | k=1 top-1 | k=1 MRR | k=2 top-1 |
   | :--- | ---: | ---: | ---: |
-  | Ising item-pair | 42.5% | 0.544 | 27.0% |
-  | Ising species | 33.9% | 0.480 | 22.2% |
-  | co-occurrence | 19.3% | 0.338 | 16.3% |
-  | marginal | 14.8% | 0.277 | 11.6% |
-  | PPMI | 6.5% | 0.149 | 4.9% |
+  | Ising item-pair | 44.7% | 0.565 | 26.2% |
+  | Ising species | 35.0% | 0.494 | 22.6% |
+  | co-occurrence | 17.3% | 0.328 | 16.0% |
+  | marginal | 11.6% | 0.258 | 12.0% |
+  | PPMI | 11.7% | 0.196 | 8.6% |
 
-  Phase 3's edge over Phase 2 (+8.6 pp at k=1) is an asymmetry the species model can't exploit: held-in mons' actual items are observed at eval time, while held-out items are marginalized. The item-pair model uses the specific `(held-in-species, held-in-item)` pair's J-row to score candidates rather than averaging over all item variants. This is "same data, better-disambiguated features," not "more data." Phase 3's vocab is ~5× Phase 2's (~574 pair features vs ~205 species), so each feature has fewer positive examples and the fit is a strictly harder problem — the win comes *despite* that handicap.
+  Phase 3's edge over Phase 2 (+9.7 pp at k=1) is an asymmetry the species model can't exploit: held-in mons' actual items are observed at eval time, while held-out items are marginalized. The item-pair model uses the specific `(held-in-species, held-in-item)` pair's J-row to score candidates rather than averaging over all item variants. This is "same data, better-disambiguated features," not "more data." Phase 3's vocab is ~3× Phase 2's (~574 pair features vs ~205 species), so each feature has fewer positive examples and the fit is a strictly harder problem — the win comes *despite* that handicap.
 
 - **PPMI is the wrong baseline for completion ranking.** It significantly underperforms even the trivial marginal baseline. PPMI measures *surprise* of co-occurrence — which is the right quantity for distributional similarity (and is correctly load-bearing in the Phase 1 spatial-embedding work) but the wrong quantity for "which mon completes this team": it's biased toward *rare–rare* pairs because the denominator `p(i)·p(j)` vanishes when both mons are unpopular, inflating the ratio. So PPMI ranks candidates with strong-but-rare association above candidates with high conditional probability. **The right baseline is raw co-occurrence sum** (`sum_{j in held-in} C_ij`, an unnormalized proxy for `p(i, held-in)`).
 
-- **Mean-field is a faithful fast proxy for the true sampler.** Direct head-to-head on 100 in-vocab test teams (matched held-out positions across methods, post-Phase-3 baseline): MF and single-chain swap MCMC (at fw=1, T=1, 20000 post-burn-in samples — the target distribution PT samples from at default settings) agree on top-1 picks in 83.3% / 62.5% / 71.4% of teams at k = 1 / 2 / 3, with Spearman rank correlation of held-out-pair ranks at 0.94–0.95 across all k. Hit-rate / MRR deltas are ≤1.5 pp at every (k, K). Practical takeaways: (a) the validator's MF-based headline numbers are trustworthy estimates of true Ising performance; (b) MF is the default `/completer` technique for the same reason (instant, no MCMC tuning, same ranking quality up to head-permutation noise); (c) at very low T or very low `field_weight` the MF approximation is *not* validated — those regimes weren't tested. For low-T pure-J archetype-coherence work, stick with Parallel-tempered.
+- **Mean-field is a faithful fast proxy for the true sampler.** Direct head-to-head on 100 in-vocab test teams (matched held-out positions across methods, post-Phase-4 baseline): MF and single-chain swap MCMC (at fw=1, T=1, 20000 post-burn-in samples — the target distribution PT samples from at default settings) agree on top-1 picks in 85.0% / 75.0% / 73.7% of teams at k = 1 / 2 / 3, with Spearman rank correlation of held-out-pair ranks at 0.94–0.95 across all k. Hit-rate / MRR deltas are ≤1.5 pp at every (k, K). Practical takeaways: (a) the validator's MF-based headline numbers are trustworthy estimates of true Ising performance; (b) MF is the default `/completer` technique for the same reason (instant, no MCMC tuning, same ranking quality up to head-permutation noise); (c) at very low T or very low `field_weight` the MF approximation is *not* validated — those regimes weren't tested. For low-T pure-J archetype-coherence work, stick with Parallel-tempered.
 
 ## Data file
 

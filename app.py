@@ -1230,11 +1230,11 @@ def _format_extreme_pairs(
 
 
 def _load_baseline_headline(phase_key: str) -> tuple[float, float] | None:
-    """Read the locked post-Phase-3 validation baseline (k=1, top-1 / MRR)
+    """Read the locked post-Phase-4 validation baseline (k=1, top-1 / MRR)
     for the model section that matches this phase. Returns None when the
     baseline file is missing or the phase has no validation entry.
     """
-    baseline_path = Path("tests/validation_baseline_post_phase3.json")
+    baseline_path = Path("tests/validation_baseline_post_phase4.json")
     if not baseline_path.exists():
         return None
     try:

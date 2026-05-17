@@ -1,0 +1,77 @@
+{
+  "_notes": [
+    "Canary baseline captured post-Phase-4 (strip_mega_prefix re-ingest).",
+    "Captured 2026-05-17 from validation.ipynb pair-prediction output.",
+    "vs post-Phase-3 baseline (team-level random 90/10 split):",
+    "  - Ising item-pair k=1 top-1: 42.5% -> 44.7% (+2.2pp)",
+    "  - Ising species   k=1 top-1: 33.9% -> 35.0% (+1.1pp)",
+    "  - co-occurrence   k=1 top-1: 19.3% -> 17.3% (-2.0pp)",
+    "  - PPMI            k=1 top-1:  6.5% -> 11.7% (+5.2pp; mega-strip merged",
+    "    rare 'Mega X' entries into more common species, shifting PPMI's",
+    "    rare-rare bias)",
+    "The headline finding (Phase 3 > Phase 2 > co-occurrence > marginal > PPMI)",
+    "is preserved and the Ising margin widened slightly. Cell-27 (MF vs MCMC,",
+    "100-team subset) Ising pair (MCMC) k=1 top-1 dropped 39%->36% but the",
+    "MF version was unchanged at 38% -- consistent with single-team noise on",
+    "the smaller compare subset rather than a model regression.",
+    "",
+    "Split: team-level random 90/10 (VALIDATION_SEED=42,",
+    "VALIDATION_TEAM_FRAC_TEST=0.10) -- identical to post-Phase-3.",
+    "Source of drift is corpus-side only (Mega <X> species names collapsed",
+    "to base species at ingest)."
+  ],
+  "source": "validation.ipynb cell 15 (cross-model) + cell 22 (pair-prediction) + cell 27 (MF vs MCMC, 100-team subset)",
+  "captured_at": "2026-05-17",
+  "split": "team-level random 90/10",
+  "validation_seed": 42,
+  "validation_team_frac_test": 0.10,
+  "cross_model_species_granularity": {
+    "marginal": {
+      "k=1": {"mrr": 0.258, "top_1": 0.116, "top_5": 0.417, "top_10": 0.558, "top_20": 0.760},
+      "k=2": {"mrr": 0.257, "top_1": 0.120, "top_5": 0.407, "top_10": 0.548, "top_20": 0.751},
+      "k=3": {"mrr": 0.250, "top_1": 0.112, "top_5": 0.399, "top_10": 0.558, "top_20": 0.753}
+    },
+    "co-occurrence": {
+      "k=1": {"mrr": 0.328, "top_1": 0.173, "top_5": 0.495, "top_10": 0.682, "top_20": 0.839},
+      "k=2": {"mrr": 0.315, "top_1": 0.160, "top_5": 0.474, "top_10": 0.667, "top_20": 0.813},
+      "k=3": {"mrr": 0.303, "top_1": 0.147, "top_5": 0.467, "top_10": 0.666, "top_20": 0.820}
+    },
+    "PPMI": {
+      "k=1": {"mrr": 0.196, "top_1": 0.117, "top_5": 0.257, "top_10": 0.354, "top_20": 0.479},
+      "k=2": {"mrr": 0.162, "top_1": 0.086, "top_5": 0.208, "top_10": 0.301, "top_20": 0.442},
+      "k=3": {"mrr": 0.132, "top_1": 0.059, "top_5": 0.178, "top_10": 0.271, "top_20": 0.397}
+    },
+    "Ising species": {
+      "k=1": {"mrr": 0.494, "top_1": 0.350, "top_5": 0.673, "top_10": 0.806, "top_20": 0.893},
+      "k=2": {"mrr": 0.397, "top_1": 0.226, "top_5": 0.596, "top_10": 0.749, "top_20": 0.870},
+      "k=3": {"mrr": 0.338, "top_1": 0.173, "top_5": 0.541, "top_10": 0.697, "top_20": 0.846}
+    },
+    "Ising item-pair": {
+      "k=1": {"mrr": 0.565, "top_1": 0.447, "top_5": 0.704, "top_10": 0.816, "top_20": 0.889},
+      "k=2": {"mrr": 0.440, "top_1": 0.262, "top_5": 0.650, "top_10": 0.779, "top_20": 0.871},
+      "k=3": {"mrr": 0.374, "top_1": 0.194, "top_5": 0.597, "top_10": 0.744, "top_20": 0.852}
+    }
+  },
+  "pair_prediction": {
+    "marginal-pair": {
+      "k=1": {"mrr": 0.222, "top_1": 0.118, "top_5": 0.297, "top_10": 0.426, "top_20": 0.615},
+      "k=2": {"mrr": 0.213, "top_1": 0.114, "top_5": 0.281, "top_10": 0.416, "top_20": 0.598},
+      "k=3": {"mrr": 0.194, "top_1": 0.098, "top_5": 0.267, "top_10": 0.386, "top_20": 0.557}
+    },
+    "co-occurrence-pair": {
+      "k=1": {"mrr": 0.320, "top_1": 0.190, "top_5": 0.455, "top_10": 0.608, "top_20": 0.741},
+      "k=2": {"mrr": 0.284, "top_1": 0.145, "top_5": 0.424, "top_10": 0.584, "top_20": 0.719},
+      "k=3": {"mrr": 0.255, "top_1": 0.126, "top_5": 0.389, "top_10": 0.546, "top_20": 0.698}
+    },
+    "Ising pair": {
+      "k=1": {"mrr": 0.497, "top_1": 0.383, "top_5": 0.636, "top_10": 0.739, "top_20": 0.823},
+      "k=2": {"mrr": 0.380, "top_1": 0.223, "top_5": 0.557, "top_10": 0.686, "top_20": 0.775},
+      "k=3": {"mrr": 0.308, "top_1": 0.158, "top_5": 0.487, "top_10": 0.614, "top_20": 0.739}
+    }
+  },
+  "mf_vs_mcmc_agreement": {
+    "k=1": {"top_1_match": 0.850, "rank_spearman_median": 0.944},
+    "k=2": {"top_1_match": 0.750, "rank_spearman_median": 0.954},
+    "k=3": {"top_1_match": 0.737, "rank_spearman_median": 0.951}
+  }
+}
