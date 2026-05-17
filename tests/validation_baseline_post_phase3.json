@@ -1,0 +1,74 @@
+{
+  "_notes": [
+    "Canary baseline captured post-Phase-3 (team-level random 90/10 split).",
+    "Captured 2026-05-17 from validation.ipynb pair-prediction output.",
+    "vs post-Phase-2 baseline (tournament-strided, TEST_STRIDE=5):",
+    "  - Ising pair (MF)   k=1 top-1: 40.0% -> 38.0%   (within MC noise on 100 teams)",
+    "  - Ising pair (MCMC) k=1 top-1: 40.0% -> 39.0%   (within MC noise on 100 teams)",
+    "  - MF-vs-MCMC top-1 match k=1:  81.8% -> 83.3%   (slight improvement)",
+    "Split change: VALIDATION_SEED=42, VALIDATION_TEAM_FRAC_TEST=0.10.",
+    "Random team-level shuffle decorrelates within-tournament sibling teams",
+    "that a strided tournament split would have grouped on one side. Test",
+    "set size is now exactly 10% of teams (1002/10015) rather than depending",
+    "on tournament-size distribution. The small absolute movement vs Phase 2",
+    "is the right signal -- changing how we sample the test set should",
+    "barely move headline numbers when the model is generalizing properly."
+  ],
+  "source": "validation.ipynb cell 22 (pair-prediction metric, Phase 3 only) + cell 27 (MF vs MCMC, 100 teams)",
+  "captured_at": "2026-05-17",
+  "split": "team-level random 90/10",
+  "validation_seed": 42,
+  "validation_team_frac_test": 0.10,
+  "n_train_teams": 9013,
+  "n_test_teams": 1002,
+  "n_in_vocab_test_teams": 880,
+  "cross_model_species_granularity": {
+    "marginal": {
+      "k=1": {"mrr": 0.277, "top_1": 0.148, "top_5": 0.414, "top_10": 0.549, "top_20": 0.748},
+      "k=2": {"mrr": 0.258, "top_1": 0.116, "top_5": 0.415, "top_10": 0.560, "top_20": 0.747},
+      "k=3": {"mrr": 0.251, "top_1": 0.115, "top_5": 0.397, "top_10": 0.552, "top_20": 0.742}
+    },
+    "co-occurrence": {
+      "k=1": {"mrr": 0.338, "top_1": 0.193, "top_5": 0.481, "top_10": 0.665, "top_20": 0.823},
+      "k=2": {"mrr": 0.317, "top_1": 0.163, "top_5": 0.472, "top_10": 0.666, "top_20": 0.811},
+      "k=3": {"mrr": 0.296, "top_1": 0.139, "top_5": 0.470, "top_10": 0.655, "top_20": 0.813}
+    },
+    "PPMI": {
+      "k=1": {"mrr": 0.149, "top_1": 0.065, "top_5": 0.216, "top_10": 0.303, "top_20": 0.423},
+      "k=2": {"mrr": 0.123, "top_1": 0.049, "top_5": 0.163, "top_10": 0.264, "top_20": 0.390},
+      "k=3": {"mrr": 0.105, "top_1": 0.037, "top_5": 0.144, "top_10": 0.217, "top_20": 0.348}
+    },
+    "Ising species": {
+      "k=1": {"mrr": 0.480, "top_1": 0.339, "top_5": 0.659, "top_10": 0.776, "top_20": 0.869},
+      "k=2": {"mrr": 0.391, "top_1": 0.222, "top_5": 0.596, "top_10": 0.744, "top_20": 0.860},
+      "k=3": {"mrr": 0.330, "top_1": 0.162, "top_5": 0.528, "top_10": 0.697, "top_20": 0.836}
+    },
+    "Ising item-pair": {
+      "k=1": {"mrr": 0.544, "top_1": 0.425, "top_5": 0.692, "top_10": 0.791, "top_20": 0.858},
+      "k=2": {"mrr": 0.441, "top_1": 0.270, "top_5": 0.646, "top_10": 0.769, "top_20": 0.851},
+      "k=3": {"mrr": 0.371, "top_1": 0.193, "top_5": 0.589, "top_10": 0.743, "top_20": 0.848}
+    }
+  },
+  "pair_prediction": {
+    "marginal-pair": {
+      "k=1": {"mrr": 0.224, "top_1": 0.135, "top_5": 0.282, "top_10": 0.411, "top_20": 0.586},
+      "k=2": {"mrr": 0.208, "top_1": 0.110, "top_5": 0.283, "top_10": 0.404, "top_20": 0.586},
+      "k=3": {"mrr": 0.190, "top_1": 0.094, "top_5": 0.263, "top_10": 0.390, "top_20": 0.553}
+    },
+    "co-occurrence-pair": {
+      "k=1": {"mrr": 0.312, "top_1": 0.182, "top_5": 0.455, "top_10": 0.600, "top_20": 0.715},
+      "k=2": {"mrr": 0.281, "top_1": 0.149, "top_5": 0.411, "top_10": 0.569, "top_20": 0.712},
+      "k=3": {"mrr": 0.250, "top_1": 0.120, "top_5": 0.373, "top_10": 0.532, "top_20": 0.690}
+    },
+    "Ising pair": {
+      "k=1": {"mrr": 0.482, "top_1": 0.372, "top_5": 0.620, "top_10": 0.714, "top_20": 0.786},
+      "k=2": {"mrr": 0.377, "top_1": 0.227, "top_5": 0.543, "top_10": 0.666, "top_20": 0.762},
+      "k=3": {"mrr": 0.304, "top_1": 0.158, "top_5": 0.472, "top_10": 0.607, "top_20": 0.729}
+    }
+  },
+  "mf_vs_mcmc_agreement": {
+    "k=1": {"top_1_match": 0.833, "rank_spearman_median": 0.944},
+    "k=2": {"top_1_match": 0.625, "rank_spearman_median": 0.942},
+    "k=3": {"top_1_match": 0.714, "rank_spearman_median": 0.943}
+  }
+}
