@@ -5,3 +5,7 @@ tournaments_cache/
 .ipynb_checkpoints/
 .streamlit/
 .venv/
+.claude/
+*.md
+docs/
+
