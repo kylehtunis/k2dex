@@ -635,3 +635,74 @@ def greedy_optimize(
         })
 
     return sorted(current), chain
+
+
+def rank_single_swaps(
+    J: np.ndarray,
+    h: np.ndarray,
+    team: list[int],
+    field_weight: float,
+    *,
+    species_of: list[str] | None = None,
+    item_of: list[str | None] | None = None,
+    top_n: int = 20,
+) -> list[dict]:
+    """Score every legal (out ∈ team, in ∉ team) single-swap from `team` and
+    return the top `top_n` by `ΔE_adj` (ascending — most improving first).
+
+    Unlike `greedy_optimize`, no swap is applied: every entry is evaluated
+    from the same starting team. This makes the output a *menu* of independent
+    one-step suggestions rather than a chain, useful for surfacing "the model's
+    N biggest critiques" of an observed team.
+
+    Each entry has keys: `out_idx`, `in_idx`, `delta_E_adj`, `delta_E_raw`,
+    `delta_sum_j`.
+    """
+    V = len(h)
+    fw = field_weight
+    team_arr = np.asarray(team, dtype=np.int64)
+    team_set = set(int(i) for i in team_arr)
+    team_mask = np.zeros(V, dtype=bool)
+    team_mask[team_arr] = True
+
+    results: list[dict] = []
+
+    for out_idx in team_arr:
+        out_idx = int(out_idx)
+        others = team_set - {out_idx}
+        others_arr = np.fromiter(others, dtype=np.int64, count=len(others))
+
+        # ΔE_adj = -fw*(h[in] - h[out]) - (J[in, others].sum() - J[out, others].sum())
+        # ΔE_raw is the same formula with fw=1.
+        # ΔΣ J  =  J[in, others].sum() - J[out, others].sum()  (the J-only piece)
+        j_in_others = J[:, others_arr].sum(axis=1)
+        j_out_others = float(J[out_idx, others_arr].sum())
+        delta_sum_j_all = j_in_others - j_out_others
+        delta_E_raw_all = -(h - h[out_idx]) - delta_sum_j_all
+        delta_E_adj_all = -fw * (h - h[out_idx]) - delta_sum_j_all
+
+        valid = ~team_mask.copy()
+        if species_of is not None:
+            others_species = {species_of[j] for j in others}
+            if others_species:
+                for i in range(V):
+                    if valid[i] and species_of[i] in others_species:
+                        valid[i] = False
+        if item_of is not None:
+            others_items = {item_of[j] for j in others if item_of[j] is not None}
+            if others_items:
+                for i in range(V):
+                    if valid[i] and item_of[i] is not None and item_of[i] in others_items:
+                        valid[i] = False
+
+        for in_idx in np.where(valid)[0]:
+            results.append({
+                "out_idx": out_idx,
+                "in_idx": int(in_idx),
+                "delta_E_adj": float(delta_E_adj_all[in_idx]),
+                "delta_E_raw": float(delta_E_raw_all[in_idx]),
+                "delta_sum_j": float(delta_sum_j_all[in_idx]),
+            })
+
+    results.sort(key=lambda r: r["delta_E_adj"])
+    return results[:top_n]

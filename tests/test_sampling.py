@@ -8,6 +8,7 @@ from sampling import (
     greedy_optimize,
     meanfield_marginals,
     parallel_tempered_mcmc,
+    rank_single_swaps,
     swap_mcmc,
     swap_violates_uniqueness,
     team_energy,
@@ -167,6 +168,39 @@ class TestSamplers(unittest.TestCase):
         # No chain step ever swaps out a pinned index.
         for step in chain:
             self.assertNotIn(step["out_idx"], {0, 1})
+
+
+class TestRankSingleSwaps(unittest.TestCase):
+    def test_sorted_ascending_by_delta_E_adj(self) -> None:
+        J, h = _toy_model()
+        team = list(range(6))
+        results = rank_single_swaps(J, h, team, field_weight=1.0, top_n=10)
+        deltas = [r["delta_E_adj"] for r in results]
+        self.assertEqual(deltas, sorted(deltas))
+
+    def test_top_swap_matches_greedy_first_step(self) -> None:
+        # The most-improving single swap from the starting team should be the
+        # same swap greedy_optimize takes on step 1.
+        J, h = _toy_model()
+        team = list(range(6))
+        ranked = rank_single_swaps(J, h, team, field_weight=1.0, top_n=1)
+        if not ranked:
+            return  # no improving swap exists -- nothing to compare
+        _, chain = greedy_optimize(J, h, 6, team, [], [], 1.0, max_swaps=1)
+        if not chain:
+            return
+        self.assertEqual(ranked[0]["out_idx"], chain[0]["out_idx"])
+        self.assertEqual(ranked[0]["in_idx"], chain[0]["in_idx"])
+        self.assertAlmostEqual(ranked[0]["delta_E_adj"], chain[0]["delta_E_adj"])
+
+    def test_in_idx_never_already_on_team(self) -> None:
+        J, h = _toy_model()
+        team = list(range(6))
+        results = rank_single_swaps(J, h, team, field_weight=1.0, top_n=50)
+        team_set = set(team)
+        for r in results:
+            self.assertNotIn(r["in_idx"], team_set)
+            self.assertIn(r["out_idx"], team_set)
 
 
 class TestTeamEnergy(unittest.TestCase):

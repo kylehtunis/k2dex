@@ -39,7 +39,6 @@ from rendering import (
     intra_team_sum_j,
     min_swaps_to_observed,
     pairwise_j_rows,
-    render_j_row_inspector,
     render_pairwise_j_table,
     team_obs_count,
 )
@@ -48,6 +47,7 @@ from sampling import (
     greedy_optimize,
     meanfield_marginals,
     parallel_tempered_mcmc,
+    rank_single_swaps,
     swap_mcmc,
     team_energy,
 )
@@ -953,21 +953,42 @@ def _render_analysis(phase_key: str, model: PhaseModel) -> None:
         "pairs is a diffuse, balanced team."
     )
 
-    # J-row inspector — partner couplings for one selected team member
-    st.markdown("##### J-row · partners")
-    selected_mon = st.selectbox(
-        "Inspect partner couplings for",
-        team_names,
-        key=f"analysis_jrow_{phase_key}",
+    # Top single-swap suggestions from the starting team (no chaining)
+    st.markdown("##### Top single swaps from this team")
+    top_n_swaps = st.slider(
+        "Show top N swaps", 5, 50, 15,
+        key=f"analysis_topn_swaps_{phase_key}",
+        help="Every legal (out ∈ team, in ∉ team) swap is scored from the "
+             "starting team and ranked by ΔE_adj. Unlike the greedy chain "
+             "below, no swap is applied — each row is an independent "
+             "one-step alternative.",
     )
-    sel_idx = name_to_idx[selected_mon]
-    st.markdown(render_j_row_inspector(sel_idx, set(team_idx), vocab, J))
-    st.caption(
-        "Top |J| partners for the selected mon, across the whole vocab — rows "
-        "with ✓ are already on the team (and appear above); the others are "
-        "off-team alternatives the model rates as strong (positive J) or "
-        "incompatible (negative J) with this mon."
+    ranked_swaps = rank_single_swaps(
+        J, h, team_idx, field_weight,
+        species_of=species_of, item_of=item_of, top_n=top_n_swaps,
     )
+    if not ranked_swaps:
+        st.info("No legal single swap exists from this team.")
+    else:
+        swap_md = [
+            "| # | swap | ΔE_adj | ΔE_raw | ΔΣ J |",
+            "| ---: | :--- | ---: | ---: | ---: |",
+        ]
+        for r, sw in enumerate(ranked_swaps, 1):
+            label = f"{vocab[sw['out_idx']]} → {vocab[sw['in_idx']]}"
+            swap_md.append(
+                f"| {r} | {label} | {sw['delta_E_adj']:+.3f} | "
+                f"{sw['delta_E_raw']:+.3f} | {sw['delta_sum_j']:+.3f} |"
+            )
+        st.markdown("\n".join(swap_md))
+        st.caption(
+            "Each row is evaluated **from the starting team** (not chained). "
+            "Negative ΔE_adj = improving swap under the current field_weight; "
+            "rows with ΔE_adj > 0 are still surfaced when fewer than the "
+            "requested top-N improving swaps exist. **ΔΣ J** isolates the "
+            "pairwise contribution to the swap — a swap with negative ΔE but "
+            "near-zero ΔΣ J is mostly a popularity (h) move, not a structural one."
+        )
 
     # Greedy swap-chain critique (no pinning — full team is fair game)
     st.markdown("##### Greedy critique · single-swap chain")
@@ -1096,27 +1117,29 @@ def _render_meta(phase_key: str, model: PhaseModel) -> None:
         summary_cols[4].metric("MRR @ k=1", "—")
     summary_cols[5].metric("Fit", fit_label)
 
-    # Top features by h
-    st.markdown("##### Top features by h")
+    # Extreme features by h — top and bottom side by side
+    st.markdown("##### Extreme features by h")
     n_show = st.slider(
-        "Show top N features", 10, min(150, V), 30,
+        "Show top N features (each direction)", 10, min(150, V // 2), 30,
         key=f"meta_topn_{phase_key}",
-        help="Sorted by h (log-odds of inclusion in a random team under the model).",
+        help="Sorted by h (log-odds of inclusion in a random team under the "
+             "model). Top +h are the most-popular features; top −h are the "
+             "features the model considers unlikely to appear on any team.",
     )
-    order = np.argsort(-h)
-    feature_md = [
-        "| # | feature | h | m̂ |",
-        "| ---: | :--- | ---: | ---: |",
-    ]
-    for rank, i in enumerate(order[:n_show], 1):
-        feature_md.append(
-            f"| {rank} | {vocab[i]} | {float(h[i]):+.3f} | {float(model.m[i]):.4f} |"
-        )
-    st.markdown("\n".join(feature_md))
+    order_desc = np.argsort(-h)
+    order_asc = np.argsort(h)
+    top_pos_col, top_neg_col = st.columns(2)
+    with top_pos_col:
+        st.markdown("**Top +h (most popular)**")
+        st.markdown(_format_feature_h_table(order_desc[:n_show], vocab, h, model.m))
+    with top_neg_col:
+        st.markdown("**Top −h (most unlikely)**")
+        st.markdown(_format_feature_h_table(order_asc[:n_show], vocab, h, model.m))
     st.caption(
         "**h** is the per-feature log-odds — `m̂ ≈ sigmoid(h + J·m)` under MF, "
-        "so for popular features h ≈ logit(m̂). The order here is the model's "
-        "popularity ranking with the pairwise correction folded in."
+        "so for popular features h ≈ logit(m̂). The −h side highlights features "
+        "the model is confident *won't* appear on a random team, which is often "
+        "more informative than the +h side for niche / role-locked picks."
     )
 
     # Top ±J pairs
@@ -1129,15 +1152,34 @@ def _render_meta(phase_key: str, model: PhaseModel) -> None:
     )
     iu, ju = np.triu_indices(V, k=1)
     j_flat = J[iu, ju]
+
+    # On Phase 3 the pair vocab has multiple item variants per species, so
+    # same-species pairs (e.g. Charizard @ A × Charizard @ B) dominate the
+    # extreme −J list as a trivial mutual-exclusion artifact. Filter them
+    # out so the table surfaces cross-species structure. Phase 1/2 vocabs
+    # are unique by species so the mask is a no-op there.
+    if model.species_of is not None:
+        species_arr = np.array(model.species_of)
+        cross_species = species_arr[iu] != species_arr[ju]
+        iu_v, ju_v, j_v = iu[cross_species], ju[cross_species], j_flat[cross_species]
+    else:
+        iu_v, ju_v, j_v = iu, ju, j_flat
+
     pos_col, neg_col = st.columns(2)
     with pos_col:
         st.markdown("**Top +J (synergies)**")
-        pos_order = np.argsort(-j_flat)[:n_pairs]
-        st.markdown(_format_extreme_pairs(iu, ju, j_flat, pos_order, vocab))
+        pos_order = np.argsort(-j_v)[:n_pairs]
+        st.markdown(_format_extreme_pairs(iu_v, ju_v, j_v, pos_order, vocab))
     with neg_col:
         st.markdown("**Top −J (exclusions)**")
-        neg_order = np.argsort(j_flat)[:n_pairs]
-        st.markdown(_format_extreme_pairs(iu, ju, j_flat, neg_order, vocab))
+        neg_order = np.argsort(j_v)[:n_pairs]
+        st.markdown(_format_extreme_pairs(iu_v, ju_v, j_v, neg_order, vocab))
+    if model.species_of is not None:
+        st.caption(
+            "Same-species pairs (different item variants of the same Pokemon) "
+            "are filtered out — they dominate the −J side as trivial "
+            "mutual-exclusion artifacts and aren't structurally interesting."
+        )
 
     # Distribution plots
     st.markdown("##### Distributional diagnostics")
@@ -1157,6 +1199,21 @@ def _render_meta(phase_key: str, model: PhaseModel) -> None:
     fig.tight_layout()
     st.pyplot(fig)
     plt.close(fig)
+
+
+def _format_feature_h_table(
+    order: np.ndarray,
+    vocab: list[str],
+    h: np.ndarray,
+    m: np.ndarray,
+) -> str:
+    lines = ["| # | feature | h | m̂ |", "| ---: | :--- | ---: | ---: |"]
+    for rank, i in enumerate(order, 1):
+        lines.append(
+            f"| {rank} | {vocab[int(i)]} | {float(h[int(i)]):+.3f} | "
+            f"{float(m[int(i)]):.4f} |"
+        )
+    return "\n".join(lines)
 
 
 def _format_extreme_pairs(

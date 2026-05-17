@@ -116,30 +116,3 @@ def render_pairwise_j_table(rows: list[PairwiseJRow]) -> str:
     return "\n".join(lines)
 
 
-def render_j_row_inspector(
-    selected_idx: int,
-    team_idx_set: set[int],
-    vocab: list[str],
-    J: NDArray[np.float64],
-    top_n: int = 15,
-) -> str:
-    """Markdown table of the top-N |J| partners for one selected mon.
-
-    "in team?" column marks partners that are currently on the team -- those
-    rows are pulled from the pairwise-J table above; the rest are off-team
-    candidates the model thinks pair strongly (positively or negatively)
-    with the selected mon.
-    """
-    j_row = J[selected_idx]
-    order = np.argsort(-np.abs(j_row))
-    lines = ["| partner | in team? | J |", "| :--- | :---: | ---: |"]
-    shown = 0
-    for i in order:
-        if i == selected_idx:
-            continue
-        marker = "✓" if int(i) in team_idx_set else ""
-        lines.append(f"| {vocab[i]} | {marker} | {j_row[i]:+.3f} |")
-        shown += 1
-        if shown >= top_n:
-            break
-    return "\n".join(lines)
