@@ -1,0 +1,48 @@
+{
+  "_notes": [
+    "Canary baseline captured post-Phase-2 (modules promoted to",
+    "constants.py / models.py / sampling.py / rendering.py).",
+    "Captured 2026-05-17 from validation.ipynb pair-prediction output.",
+    "vs v0 baseline (tests/validation_baseline_v0.json):",
+    "  - Ising MF k=1 top-1:   31.0% -> 40.0% (+9 pp)",
+    "  - Ising MCMC k=1 top-1: 30.0% -> 40.0% (+10 pp)",
+    "  - Baselines wobble ~5 pp (noise from refreshed corpus + test set).",
+    "Drivers: (1) vocab normalization collapsed split case-variant features",
+    "(e.g. 'Sitrus Berry' / 'Sitrus berry' -> 1 feature with full count);",
+    "(2) MIN_TEAMS_PER_TOURNAMENT 16 -> 64 filtered small/quirky tournaments,",
+    "leaving more uniformly meta-typed teams that are easier to predict.",
+    "Module promotion in Phase 2 is structurally identical to the v0 inline",
+    "loops, so the gain is attributable to Phase 1, not Phase 2."
+  ],
+  "source": "validation.ipynb pair-prediction metric (cell 22) + MF vs MCMC agreement (cell 27)",
+  "captured_at": "2026-05-17",
+  "test_stride": 5,
+  "seed": 42,
+  "pair_prediction": {
+    "marginal-pair": {
+      "k=1": {"mrr": 0.238, "top_1": 0.120, "top_5": 0.290, "top_10": 0.420, "top_20": 0.590},
+      "k=2": {"mrr": 0.157, "top_1": 0.050, "top_5": 0.255, "top_10": 0.335, "top_20": 0.520},
+      "k=3": {"mrr": 0.155, "top_1": 0.053, "top_5": 0.267, "top_10": 0.357, "top_20": 0.520}
+    },
+    "co-occurrence-pair": {
+      "k=1": {"mrr": 0.301, "top_1": 0.140, "top_5": 0.480, "top_10": 0.600, "top_20": 0.750},
+      "k=2": {"mrr": 0.230, "top_1": 0.070, "top_5": 0.395, "top_10": 0.555, "top_20": 0.715},
+      "k=3": {"mrr": 0.222, "top_1": 0.080, "top_5": 0.373, "top_10": 0.533, "top_20": 0.677}
+    },
+    "Ising pair (MF)": {
+      "k=1": {"mrr": 0.520, "top_1": 0.400, "top_5": 0.650, "top_10": 0.770, "top_20": 0.820},
+      "k=2": {"mrr": 0.399, "top_1": 0.255, "top_5": 0.580, "top_10": 0.665, "top_20": 0.810},
+      "k=3": {"mrr": 0.309, "top_1": 0.177, "top_5": 0.470, "top_10": 0.600, "top_20": 0.707}
+    },
+    "Ising pair (MCMC)": {
+      "k=1": {"mrr": 0.526, "top_1": 0.400, "top_5": 0.660, "top_10": 0.750, "top_20": 0.770},
+      "k=2": {"mrr": 0.360, "top_1": 0.205, "top_5": 0.540, "top_10": 0.660, "top_20": 0.770},
+      "k=3": {"mrr": 0.279, "top_1": 0.137, "top_5": 0.457, "top_10": 0.567, "top_20": 0.667}
+    }
+  },
+  "mf_vs_mcmc_agreement": {
+    "k=1": {"top_1_match": 0.818, "rank_spearman_median": 0.941},
+    "k=2": {"top_1_match": 0.607, "rank_spearman_median": 0.946},
+    "k=3": {"top_1_match": 0.600, "rank_spearman_median": 0.955}
+  }
+}
