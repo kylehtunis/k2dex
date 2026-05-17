@@ -1,4 +1,13 @@
-"""Streamlit webapp for the Ising team auto-completer.
+"""k2dex science — Streamlit webapp around the inverse-Ising team model.
+
+Three pages, all sharing one phase picker at the top:
+
+- **Team completer** — sample completions from the conditional Ising posterior
+  (Mean-field, Parallel-tempered, Sample, Anneal, Greedy descent).
+- **Team analysis** — per-team observables, pairwise J decomposition,
+  J-row partner inspector, greedy swap-chain critique.
+- **Meta data** — fitted-model summary, top features by h, top ±J pairs,
+  J / h distribution plots.
 
 Run with:
     streamlit run app.py
@@ -375,8 +384,8 @@ def meanfield_distribution(
     _item_of: list[str | None] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, int] | None:
     """Thin cached wrapper around `meanfield_marginals`. Cheap to recompute,
-    but cached for consistency with the MCMC modes (and so the same fixed/
-    field_weight combo hits the cache on re-render)."""
+    but cached for consistency with the MCMC techniques (and so the same
+    fixed/field_weight combo hits the cache on re-render)."""
     return meanfield_marginals(
         _J, _h, TEAM_SIZE,
         list(fixed_idx_tuple), list(excluded_idx_tuple),
