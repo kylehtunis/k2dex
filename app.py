@@ -7,6 +7,7 @@ Run with:
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass
 
 import numpy as np
 import streamlit as st
@@ -31,6 +32,31 @@ from sampling import (
     swap_mcmc,
     team_energy,
 )
+
+
+@dataclass
+class PhaseModel:
+    """Resolved bundle of everything a page needs to render under one phase.
+
+    `species_of` and `item_of` are None for Phase 1/2 (no uniqueness constraint)
+    and populated for Phase 3 (where the sampler must reject duplicate-species
+    and duplicate-item swap proposals).
+    """
+    vocab: list[str]
+    m: np.ndarray
+    J: np.ndarray
+    h: np.ndarray
+    team_counts: Counter | None
+    species_of: list[str] | None
+    item_of: list[str | None] | None
+
+
+def _load_phase(phase: str) -> tuple[str, PhaseModel]:
+    if phase.startswith("Phase 1"):
+        return "phase1", PhaseModel(*load_model_phase1())
+    if phase.startswith("Phase 2"):
+        return "phase2", PhaseModel(*load_model_phase2())
+    return "phase3", PhaseModel(*load_model_phase3())
 
 
 DATA_PATH_PHASE1 = "gen9championsvgc2026regma-1760.json"
@@ -376,762 +402,59 @@ def greedy_optimize_chain(
 
 
 def main() -> None:
-    st.set_page_config(page_title="VGC team auto-completer", layout="wide")
-    st.title("VGC team auto-completer")
+    st.set_page_config(page_title="k2dex · science", layout="wide")
 
-    with st.sidebar:
-        st.subheader("Model")
+    # Persistent header: wordmark + phase picker, shown above the tab bar.
+    # Streamlit re-runs the script on every interaction so the radio's value
+    # is naturally page-global without needing st.session_state plumbing.
+    header_col1, header_col2 = st.columns([3, 2])
+    with header_col1:
+        st.markdown("### k2dex · science")
+    with header_col2:
         phase = st.radio(
-            "Inverse Ising fit",
+            "Phase",
             ["Phase 1 (Gaussian)", "Phase 2 (PL, species)", "Phase 3 (PL, item-pair)"],
+            horizontal=True,
             label_visibility="collapsed",
+            key="phase_picker",
             help=(
-                "**Phase 1** — Gaussian / precision-matrix approximation on Smogon "
-                "chaos stats. Fast to fit but systematically under-magnitudes strong "
-                "negative couplings (mutually-exclusive pairs).\n\n"
-                "**Phase 2** — pseudo-likelihood on Limitless tournament team rosters, "
-                "species-only vocab (items collapsed). Wider dynamic range on −J than "
-                "Phase 1. Held-item formes (Mega Y vs Mega X) are invisible here.\n\n"
-                "**Phase 3** — pseudo-likelihood on (species, item) pairs from the "
-                "same Limitless data. Restores held-item forme distinctions and lets "
-                "the model see role specialization (Choice Scarf vs Charizardite-Y "
-                "Charizards as distinct features). Sampler enforces no-duplicate-"
-                "species and no-duplicate-item by proposal rejection. First-time "
-                "selection re-ingests if cache is at v1 (species-only) format."
+                "**Phase 1** — Gaussian / precision-matrix Ising fit on Smogon "
+                "chaos stats.  "
+                "**Phase 2** — pseudo-likelihood fit on Limitless team rosters, "
+                "species-only vocab.  "
+                "**Phase 3** — pseudo-likelihood fit on (species, item) pairs."
             ),
         )
 
-    if phase.startswith("Phase 1"):
-        phase_key = "phase1"
-        vocab, m, J, h, team_counts, species_of, item_of = load_model_phase1()
-        st.caption(
-            "Phase 1: Gaussian / precision-matrix inverse Ising fit on Smogon chaos "
-            "stats. Sample teams of 6 from the conditional distribution given fixed "
-            "(must appear) and excluded (must not appear) members."
-        )
-    elif phase.startswith("Phase 2"):
-        phase_key = "phase2"
-        vocab, m, J, h, team_counts, species_of, item_of = load_model_phase2()
-        st.caption(
-            "Phase 2: pseudo-likelihood inverse Ising fit on Limitless tournament "
-            "team data, species-only vocab. Same sampling controls as Phase 1; "
-            "(J, h) come from direct per-spin logistic regressions on real team "
-            "rosters. The **obs** column shows how many times each suggested team "
-            "appeared verbatim in the ingested corpus — a sanity check that the "
-            "model's high-probability completions correspond to teams real players "
-            "actually brought."
-        )
-    else:
-        phase_key = "phase3"
-        vocab, m, J, h, team_counts, species_of, item_of = load_model_phase3()
-        st.caption(
-            "Phase 3: pseudo-likelihood inverse Ising fit on (species, item) pairs "
-            "from Limitless tournament data. Vocab entries are formatted "
-            "'Species @ Item' (or bare species for itemless mons). The sampler "
-            "enforces no-duplicate-species and no-duplicate-item constraints by "
-            "rejecting illegal swap proposals. The **obs** column counts exact "
-            "(species, item)-roster appearances in the corpus."
-        )
+    phase_key, model = _load_phase(phase)
 
-    name_to_idx = {name: i for i, name in enumerate(vocab)}
-    sorted_vocab = sorted(vocab, key=lambda v: -m[name_to_idx[v]])
+    completer_tab, analysis_tab, meta_tab = st.tabs(
+        ["Team completer", "Team analysis", "Meta data"],
+    )
+    with completer_tab:
+        _render_completer(phase_key, model)
+    with analysis_tab:
+        _render_analysis(phase_key, model)
+    with meta_tab:
+        _render_meta(phase_key, model)
 
-    with st.sidebar:
-        st.subheader("Team constraints")
-        fixed_names = st.multiselect(
-            "Fix (must appear, max 6)",
-            sorted_vocab,
-            default=[],
-            max_selections=TEAM_SIZE,
-            placeholder="Choose Pokemon to pin at s=1",
-            key=f"fixed_{phase_key}",
-        )
-        excluded_names = st.multiselect(
-            "Exclude (must NOT appear)",
-            sorted_vocab,
-            default=[],
-            placeholder="Choose Pokemon to pin at s=0",
-            key=f"excluded_{phase_key}",
-        )
 
-        overlap = set(fixed_names) & set(excluded_names)
-        if overlap:
-            st.error(f"Cannot be both fixed and excluded: {', '.join(overlap)}")
-            st.stop()
+def _render_completer(phase_key: str, model: PhaseModel) -> None:
+    """Team completer page — Task 4.2 will fill this in."""
+    st.subheader("Team completer")
+    st.info("Coming in Task 4.2.")
 
-        st.subheader("Mode")
-        mode = st.radio(
-            "Run mode",
-            ["Sample distribution", "Anneal to MAP", "Parallel-tempered sample", "Mean-field (deterministic)", "Greedy team optimizer"],
-            label_visibility="collapsed",
-            help=(
-                "**Sample distribution** — independent-chain MCMC at one temperature. "
-                "Fast but at low T each chain gets stuck in one basin (frequencies "
-                "reflect basin discovery, not Boltzmann weight). "
-                "**Anneal to MAP** — multiple cooling-schedule runs, returns the "
-                "MAP teams each run converged to. "
-                "**Parallel-tempered sample** — replica-exchange MCMC across a "
-                "temperature ladder. Hot chains explore broadly, swap moves transmit "
-                "good states down to the cold chain. The cold-chain samples are "
-                "true Boltzmann draws at the target T. "
-                "**Mean-field (deterministic)** — analytic per-candidate marginals "
-                "via damped MF iteration. Instant, no sampling noise; validated as "
-                "a ranking-faithful proxy for PT at fw=1, T=1. Treats free slots as "
-                "independent, so weaker than PT at low T or when free slots correlate. "
-                "**Greedy team optimizer** — input a full starting team of 6, descend "
-                "the energy landscape one steepest single-swap at a time, return the "
-                "chain of swaps + per-team metrics. Deterministic local minimum from "
-                "the starting team; the swap order is a priority-ranked critique of "
-                "the starting team."
-            ),
-        )
 
-        st.subheader("Sampler")
-        field_weight = st.select_slider(
-            "Field weight (h scale)",
-            options=FIELD_WEIGHT_OPTIONS,
-            value=0.2,
-            help=(
-                "Scales the field h before sampling (log-spaced). "
-                "1.0 = data-calibrated posterior (meta-biased — popular mons dominate). "
-                "0.0 = pure pairwise model (no popularity prior — archetype-coherent "
-                "completions driven only by J)."
-            ),
-        )
+def _render_analysis(phase_key: str, model: PhaseModel) -> None:
+    """Team analysis page — Task 4.3 will fill this in."""
+    st.subheader("Team analysis")
+    st.info("Coming in Task 4.3.")
 
-        if mode == "Sample distribution":
-            temperature = st.select_slider(
-                "Temperature",
-                options=TEMPERATURE_OPTIONS,
-                value=0.05,
-                help=(
-                    "Sampling temperature (log-spaced). Lower = sharper distribution. "
-                    "Pair low T (0.02-0.05) with low field_weight for sharply peaked "
-                    "archetype completions."
-                ),
-            )
-            with st.expander("Sampling details", expanded=False):
-                n_chains = st.slider("Chains", 5, 50, 20)
-                n_steps = st.slider("Steps per chain", 2000, 20000, 8000, step=1000)
-                burn_in = st.slider("Burn-in", 0, 5000, 2000, step=500)
-                top_k = st.slider("Top-K teams shown", 5, 50, 20)
-            run = st.button("Sample teams", type="primary", use_container_width=True)
-        elif mode == "Anneal to MAP":
-            t_start = st.select_slider(
-                "Start temperature",
-                options=ANNEAL_T_START_OPTIONS,
-                value=3.0,
-                help="Hot temperature — high enough to explore broadly at the start.",
-            )
-            t_end = st.select_slider(
-                "End temperature",
-                options=ANNEAL_T_END_OPTIONS,
-                value=0.02,
-                help="Cold final temperature — sharp enough to lock into a local minimum.",
-            )
-            with st.expander("Annealing details", expanded=False):
-                n_runs = st.slider("Independent anneal runs", 5, 50, 20)
-                anneal_steps = st.slider("Steps per run", 5000, 50000, 20000, step=5000)
-            run = st.button("Anneal teams", type="primary", use_container_width=True)
-        elif mode == "Mean-field (deterministic)":
-            with st.expander("MF details", expanded=False):
-                mf_n_iters = st.slider(
-                    "Max iterations", 50, 500, 200, step=50,
-                    help="Cap on damped fixed-point iterations. Typical convergence "
-                         "is <50 iterations; this is just a safety bound.",
-                )
-                mf_tol_log = st.select_slider(
-                    "Convergence tolerance (log10)", options=[-3, -4, -5, -6], value=-5,
-                    help="Stop when max marginal change between iterations falls below "
-                         "10^tol. -5 is plenty for ranking; tighter rarely changes the top-K.",
-                )
-                top_k = st.slider("Top-K candidates shown", 5, 50, 20)
-            mf_tol = 10.0 ** mf_tol_log
-            run = st.button("Compute MF marginals", type="primary", use_container_width=True)
-        elif mode == "Greedy team optimizer":
-            starting_team_names = st.multiselect(
-                "Your team (exactly 6)",
-                sorted_vocab,
-                default=[],
-                max_selections=TEAM_SIZE,
-                placeholder="Choose your team of 6",
-                key=f"opt_team_{phase_key}",
-            )
-            if len(starting_team_names) != TEAM_SIZE:
-                st.warning(f"Need exactly 6 mons (have {len(starting_team_names)}).")
-            with st.expander("Optimizer details", expanded=False):
-                max_swaps = st.slider(
-                    "Max swaps", 1, 30, 15,
-                    help="Hard cap on swap chain length. Greedy descent usually "
-                         "converges in 3-10 swaps; this is just a safety bound.",
-                )
-            run = st.button(
-                "Optimize team", type="primary", use_container_width=True,
-                disabled=(len(starting_team_names) != TEAM_SIZE),
-            )
-        else:  # Parallel-tempered sample
-            pt_t_min = st.select_slider(
-                "Target temperature (cold chain)",
-                options=PT_T_MIN_OPTIONS,
-                value=0.1,
-                help="Samples are collected from a chain at this T. Lower = sharper "
-                     "Boltzmann distribution at the target.",
-            )
-            pt_t_max = st.select_slider(
-                "Max temperature (hot chain)",
-                options=PT_T_MAX_OPTIONS,
-                value=2.0,
-                help="Top of the replica ladder. Hot enough that the chain can cross "
-                     "basin barriers freely. Should be well above the energy scale.",
-            )
-            pt_K = st.slider(
-                "Ladder levels (K)", 3, 12, 7,
-                help="Number of replicas. More levels = better swap acceptance between "
-                     "adjacent T but slower per sweep. ~7 is a good default.",
-            )
-            with st.expander("PT details", expanded=False):
-                pt_n_runs = st.slider("Independent PT runs", 1, 10, 3)
-                pt_n_steps = st.slider("Sweeps per run", 2000, 30000, 10000, step=1000)
-                pt_burn_in = st.slider("Burn-in", 0, 10000, 3000, step=500)
-                pt_swap_interval = st.slider("Swap proposal interval", 1, 50, 10)
-                top_k = st.slider("Top-K teams shown", 5, 50, 20)
-            run = st.button("PT sample", type="primary", use_container_width=True)
 
-    if not run:
-        if mode == "Sample distribution":
-            st.info(
-                "Choose constraints in the sidebar and click **Sample teams**.\n\n"
-                "Defaults `field_weight=0.2, T=0.05` lean archetype-coherent. "
-                "Try `field_weight=0.0, T=0.02` for pure pairwise mode, or "
-                "`field_weight=1.0, T=0.1+` for the data-calibrated posterior."
-            )
-        elif mode == "Anneal to MAP":
-            st.info(
-                "Choose constraints in the sidebar and click **Anneal teams**.\n\n"
-                "Annealing runs simulated cooling from `t_start` to `t_end` "
-                "and returns whatever team each independent run converges to. "
-                "If multiple runs converge to the same team, that's the model's "
-                "robust MAP under the chosen `field_weight`. Multiple distinct "
-                "results indicate a shallow / multimodal energy landscape."
-            )
-        elif mode == "Mean-field (deterministic)":
-            st.info(
-                "Choose constraints in the sidebar and click **Compute MF marginals**.\n\n"
-                "Mean-field iteration computes per-candidate marginal probabilities "
-                "P(mon in team | fixed mons) directly — no sampling, no temperature, "
-                "no chains. Output is (a) the greedy MF-MAP completion (top free-slot "
-                "candidates by marginal, respecting uniqueness) and (b) a ranked list "
-                "of the top-K single-slot candidates with their marginals. "
-                "Free slots are treated as independent given fixed: fast and ~99% "
-                "agreement with PT at fw=1, T=1 in `validation.ipynb`, but blind to "
-                "joint structure between free slots. Use PT when you specifically "
-                "want low-T archetype coherence or strongly-correlated free slots."
-            )
-        elif mode == "Greedy team optimizer":
-            st.info(
-                "Enter your team of 6 in the sidebar and click **Optimize team**.\n\n"
-                "Greedy steepest-descent: at each step, the model evaluates every "
-                "possible single-mon swap and applies the one that drops `adj E` the "
-                "most. Stops at the first local minimum. The output is a chain of "
-                "swaps with per-team metrics — **the order is diagnostic**: swap #1 "
-                "is the model's biggest complaint about your starting team, swap #2 "
-                "is the next-biggest given #1 was applied, etc. Final team is the "
-                "local optimum reachable by single-swap moves from your starting team. "
-                "`field_weight=1.0` optimizes for popularity (meta-fit); `field_weight=0.0` "
-                "optimizes for pure pairwise structure (archetype coherence)."
-            )
-        else:
-            st.info(
-                "Choose constraints in the sidebar and click **PT sample**.\n\n"
-                "Parallel tempering runs a ladder of `K` chains at log-spaced "
-                "temperatures from `t_min` (cold target) to `t_max` (hot exploration). "
-                "Hot chains traverse basins freely; replica-exchange swaps every "
-                "`swap_interval` sweeps propagate good states down the ladder to "
-                "the cold chain. **Cold-chain samples are true Boltzmann draws at "
-                "the target T**, with proper basin-mixing — the fix for the "
-                "frequency-vs-energy non-monotonicity you see in single-chain mode."
-            )
-        with st.expander("How to read the output"):
-            st.markdown(
-                "**Sample distribution mode**\n"
-                "- **%** — empirical fraction of post-burn-in MCMC samples producing this completion.\n"
-                "- **raw E** / **adj E** — Ising energy with full / rescaled `h` (see below).\n\n"
-                "**Annealing mode**\n"
-                "- **runs** — how many of `n_runs` independent annealings converged to this team. "
-                "More = more robust MAP estimate; fewer distinct teams = sharper landscape.\n"
-                "- **raw E** / **adj E** — Ising energy with full / rescaled `h`. Annealing minimizes "
-                "**adj E** (the energy the sampler sees), so the top result has the lowest adj E.\n\n"
-                "**Both modes**\n"
-                "- **raw E** is `H(s) = -h·s - 0.5 s'Js` with the full data-calibrated field. "
-                "Independent of sampler knobs; comparable across runs.\n"
-                "- **adj E** is `H_adj(s) = -(field_weight·h)·s - 0.5 s'Js`. What the sampler/annealer "
-                "actually optimizes. At `field_weight=1.0` raw and adj are identical; at `0.0`, adj "
-                "drops the field term entirely."
-            )
-        return
-
-    fixed_idx = sorted({name_to_idx[n] for n in fixed_names})
-    excluded_idx = sorted({name_to_idx[n] for n in excluded_names})
-
-    if mode == "Sample distribution":
-        with st.spinner(f"Running {n_chains} chains × {n_steps} steps..."):
-            dist, n_kept, accept_rate = sample_distribution(
-                phase_key,
-                tuple(fixed_idx), tuple(excluded_idx), field_weight, temperature,
-                n_chains, n_steps, burn_in, J, h,
-                _species_of=species_of, _item_of=item_of,
-            )
-        if dist is None:
-            st.error("Not enough available Pokemon to fill the team after applying constraints.")
-            return
-
-        n_distinct = len(dist)
-        top5_mass = sum(c for _, c in dist[:5]) / n_kept * 100
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total samples", f"{n_kept:,}")
-        col2.metric("Distinct completions", f"{n_distinct:,}")
-        col3.metric("Top-5 mass", f"{top5_mass:.2f}%",
-                    help="Sum of probabilities for the five most-frequent completions. "
-                         "High = sharply peaked posterior; low = diffuse.")
-        col4.metric("MH accept %", f"{accept_rate * 100:.1f}%",
-                    help="Fraction of swap proposals accepted, averaged across chains. "
-                         "Healthy range 20-50%. Very low = chain stuck (rejecting most moves); "
-                         "very high = proposals too trivial.")
-
-        diag_header = " obs | Δ | Σ J |" if team_counts is not None else ""
-        diag_sep = " ---: | ---: | ---: |" if team_counts is not None else ""
-        md_lines = [
-            f"| # | % | raw E | adj E |{diag_header} completion |",
-            f"| ---: | ---: | ---: | ---: |{diag_sep} :--- |",
-        ]
-        for rank, (comp, count) in enumerate(dist[:top_k], 1):
-            state = np.zeros(len(vocab), dtype=bool)
-            for i in fixed_idx:
-                state[i] = True
-            for i in comp:
-                state[i] = True
-            prob_pct = (count / n_kept) * 100
-            raw_E = team_energy(state, J, h)
-            adj_E = team_energy(state, J, field_weight * h)
-            names = ", ".join(vocab[i] for i in comp)
-            if team_counts is not None:
-                obs = team_obs_count(state, vocab, team_counts)
-                delta = min_swaps_to_observed(state, vocab, team_counts)
-                sum_j = intra_team_sum_j(state, J)
-                diag_cells = f" {obs} | {delta} | {sum_j:+.3f} |"
-            else:
-                diag_cells = ""
-            md_lines.append(
-                f"| {rank} | {prob_pct:.2f}% | {raw_E:+.3f} | {adj_E:+.3f} |{diag_cells} {names} |"
-            )
-
-        st.markdown("\n".join(md_lines))
-        obs_caption = (
-            "  **obs** — exact-match count of this team in the corpus. 0 means no "
-            "player brought this exact roster. "
-            "**Δ** — minimum slot-swaps to the nearest observed team (0 ↔ exact "
-            "match). A high-probability completion with Δ=1 is a 1-swap variant of "
-            "a real team (defensible discovery / fine-tuning); Δ≥3 is a globally "
-            "distinct configuration (more likely overfit or genuine novelty). "
-            "**Σ J** — sum of intra-team pairwise couplings, i.e. the J-contribution "
-            "to −raw E. Large Σ J = structurally coherent (archetype-driven); small "
-            "Σ J = low-energy mainly via popular individual members (h-driven)."
-            if team_counts is not None else ""
-        )
-        st.caption(
-            "**%** — empirical fraction of post-burn-in samples producing this completion.  "
-            "**raw E** — Ising energy `H(s) = -h·s - 0.5 s'Js` with the full data-calibrated "
-            "field h. Independent of sampler settings; reflects the team's intrinsic "
-            "likelihood under the calibrated model.  "
-            "**adj E** — adjusted energy with the field rescaled by `field_weight`: "
-            "`H_adj(s) = -(field_weight·h)·s - 0.5 s'Js`. This is what the sampler uses; "
-            "ranking by `adj E` matches the sampled probability ordering. "
-            "At `field_weight=1.0` they're identical; at `field_weight=0.0`, adj E is "
-            "the pure pairwise term `-0.5 s'Js`."
-            + obs_caption
-        )
-
-    elif mode == "Mean-field (deterministic)":
-        with st.spinner("Computing mean-field marginals..."):
-            result = meanfield_distribution(
-                phase_key,
-                tuple(fixed_idx), tuple(excluded_idx), field_weight,
-                mf_n_iters, mf_tol,
-                J, h,
-                _species_of=species_of, _item_of=item_of,
-            )
-        if result is None:
-            st.error("Not enough available Pokemon to fill the team after applying constraints.")
-            return
-        marginals, valid_mask, iters_used = result
-
-        k_free = TEAM_SIZE - len(fixed_idx)
-        valid_idxs = list(np.where(valid_mask)[0])
-        sorted_candidates = sorted(valid_idxs, key=lambda i: -marginals[i])
-
-        # Greedy MF-MAP completion: top candidates by marginal, enforcing
-        # uniqueness incrementally as we add to the team.
-        greedy_completion: list[int] = []
-        greedy_species: set[str] = (
-            {species_of[i] for i in fixed_idx} if species_of is not None else set()
-        )
-        greedy_items: set[str] = (
-            {item_of[i] for i in fixed_idx if item_of[i] is not None}
-            if item_of is not None else set()
-        )
-        for cand in sorted_candidates:
-            if len(greedy_completion) == k_free:
-                break
-            if species_of is not None and species_of[cand] in greedy_species:
-                continue
-            if item_of is not None and item_of[cand] is not None and item_of[cand] in greedy_items:
-                continue
-            greedy_completion.append(int(cand))
-            if species_of is not None:
-                greedy_species.add(species_of[cand])
-            if item_of is not None and item_of[cand] is not None:
-                greedy_items.add(item_of[cand])
-
-        if len(greedy_completion) < k_free:
-            st.error("Could not greedy-fill the team — insufficient non-conflicting candidates.")
-            return
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Free slots", f"{k_free}")
-        col2.metric("Valid candidates", f"{len(valid_idxs)}")
-        col3.metric("MF iterations", f"{iters_used}")
-
-        # Greedy completion as the headline result
-        greedy_state = np.zeros(len(vocab), dtype=bool)
-        for i in fixed_idx:
-            greedy_state[i] = True
-        for i in greedy_completion:
-            greedy_state[i] = True
-        raw_E = team_energy(greedy_state, J, h)
-        adj_E = team_energy(greedy_state, J, field_weight * h)
-        names = ", ".join(vocab[i] for i in greedy_completion)
-
-        st.markdown("**Greedy MF-MAP completion** (top free-slot candidates by marginal)")
-        diag_header = " obs | Δ | Σ J |" if team_counts is not None else ""
-        diag_sep = " ---: | ---: | ---: |" if team_counts is not None else ""
-        if team_counts is not None:
-            obs = team_obs_count(greedy_state, vocab, team_counts)
-            delta = min_swaps_to_observed(greedy_state, vocab, team_counts)
-            sum_j = intra_team_sum_j(greedy_state, J)
-            diag_cells = f" {obs} | {delta} | {sum_j:+.3f} |"
-        else:
-            diag_cells = ""
-        st.markdown(
-            f"| raw E | adj E |{diag_header} completion |\n"
-            f"| ---: | ---: |{diag_sep} :--- |\n"
-            f"| {raw_E:+.3f} | {adj_E:+.3f} |{diag_cells} {names} |"
-        )
-
-        st.markdown(f"**Top-{top_k} candidates by MF marginal** (single-slot ranking)")
-        md_lines = [
-            "| # | MF prob | h_eff |  in greedy? | candidate |",
-            "| ---: | ---: | ---: | :---: | :--- |",
-        ]
-        greedy_set = set(greedy_completion)
-        for rank, i in enumerate(sorted_candidates[:top_k], 1):
-            prob_pct = float(marginals[i]) * 100
-            h_eff_i = field_weight * float(h[i])
-            in_greedy = "✓" if int(i) in greedy_set else ""
-            md_lines.append(
-                f"| {rank} | {prob_pct:.2f}% | {h_eff_i:+.3f} | {in_greedy} | {vocab[i]} |"
-            )
-        st.markdown("\n".join(md_lines))
-
-        st.caption(
-            "**MF prob** — mean-field marginal P(candidate in team | fixed) under "
-            "the field-weighted Ising. Free slots are treated as independent of each "
-            "other given fixed mons; the joint MAP under that approximation is the "
-            "greedy completion above. **h_eff** = `field_weight · h[candidate]` is "
-            "the candidate's own popularity contribution (independent of fixed mons); "
-            "marginal − sigmoid(h_eff) ≈ the net pull from `J @ m` (the interactions). "
-            "**in greedy?** flags whether this candidate was picked into the headline "
-            "completion (uniqueness can knock out high-marginal candidates that share "
-            "a species/item with a greedier pick). "
-            "Validated as a ranking-faithful proxy for PT at fw=1, T=1 (Spearman ρ "
-            "0.93-0.95, ≤1.5 pp hit-rate delta in `validation.ipynb`); at low fw or "
-            "when free slots correlate strongly through J, prefer PT."
-        )
-
-    elif mode == "Greedy team optimizer":
-        starting_team_idx = sorted({name_to_idx[n] for n in starting_team_names})
-
-        # Validate Phase 3 uniqueness of the starting team (Phase 1/2 vocabs
-        # are unique-by-construction so the loop is inert there).
-        if species_of is not None:
-            seen_sp: dict[str, str] = {}
-            for i in starting_team_idx:
-                sp = species_of[i]
-                if sp in seen_sp:
-                    st.error(f"Starting team has two entries for species **{sp}** "
-                             f"({seen_sp[sp]}, {vocab[i]}). Pick one variant.")
-                    return
-                seen_sp[sp] = vocab[i]
-        if item_of is not None:
-            seen_it: dict[str, str] = {}
-            for i in starting_team_idx:
-                it = item_of[i]
-                if it is None:
-                    continue
-                if it in seen_it:
-                    st.error(f"Starting team has two mons holding **{it}** "
-                             f"({seen_it[it]}, {vocab[i]}). Items must be unique.")
-                    return
-                seen_it[it] = vocab[i]
-
-        with st.spinner("Computing greedy descent..."):
-            final_team, chain = greedy_optimize_chain(
-                phase_key,
-                tuple(starting_team_idx), (),
-                (), field_weight, max_swaps,
-                J, h,
-                _species_of=species_of, _item_of=item_of,
-            )
-
-        def team_state(team_idx: list[int] | tuple[int, ...]) -> np.ndarray:
-            s = np.zeros(len(vocab), dtype=bool)
-            for i in team_idx:
-                s[i] = True
-            return s
-
-        start_state = team_state(starting_team_idx)
-        start_raw_E = team_energy(start_state, J, h)
-        start_adj_E = team_energy(start_state, J, field_weight * h)
-        start_sum_j = intra_team_sum_j(start_state, J)
-        final_state = team_state(final_team)
-        final_raw_E = team_energy(final_state, J, h)
-        final_adj_E = team_energy(final_state, J, field_weight * h)
-
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Swaps taken", f"{len(chain)} / {max_swaps}")
-        col2.metric("ΔE_adj (total)", f"{final_adj_E - start_adj_E:+.3f}",
-                    help="Cumulative decrease in adj E from starting to final team. "
-                         "Negative = team improved under the field-weighted model.")
-        col3.metric("ΔE_raw (total)", f"{final_raw_E - start_raw_E:+.3f}",
-                    help="Cumulative decrease in raw (un-rescaled) E. Comparable across "
-                         "different field_weight settings.")
-        col4.metric("Σ J change",
-                    f"{intra_team_sum_j(final_state, J) - start_sum_j:+.3f}",
-                    help="Change in intra-team pairwise-coupling sum. Positive = more "
-                         "structurally coherent (archetype-driven); useful at low fw.")
-
-        if not chain:
-            st.info(
-                "No improving single-swap exists — your starting team is already a "
-                "local minimum under the current `field_weight`. Try a different "
-                "`field_weight` (e.g., 0.0 for pure pairwise structure) to see if "
-                "the model would re-rank under a different objective."
-            )
-
-        # Unified chain table: starting team as row 0, then one row per swap.
-        diag_header = " obs | Δ |" if team_counts is not None else ""
-        diag_sep = " ---: | ---: |" if team_counts is not None else ""
-        st.markdown("**Swap chain** (greedy steepest descent — each row is the team *after* that swap)")
-        md_lines = [
-            f"| # | swap | adj E | raw E | Σ J |{diag_header} team |",
-            f"| ---: | :--- | ---: | ---: | ---: |{diag_sep} :--- |",
-        ]
-
-        def diag_cells(state: np.ndarray) -> str:
-            if team_counts is None:
-                return ""
-            obs = team_obs_count(state, vocab, team_counts)
-            delta_obs = min_swaps_to_observed(state, vocab, team_counts)
-            return f" {obs} | {delta_obs} |"
-
-        # Row 0: starting team
-        md_lines.append(
-            f"| 0 | _starting team_ | {start_adj_E:+.3f} | {start_raw_E:+.3f} | "
-            f"{start_sum_j:+.3f} |{diag_cells(start_state)} "
-            f"{', '.join(vocab[i] for i in starting_team_idx)} |"
-        )
-
-        # Rows 1..N: one per swap
-        for ev in chain:
-            swap_label = f"{vocab[ev['out_idx']]} → {vocab[ev['in_idx']]}"
-            after_state = team_state(ev["team_after"])
-            md_lines.append(
-                f"| {ev['step']} | {swap_label} | "
-                f"{ev['energy_adj_after']:+.3f} | {ev['energy_raw_after']:+.3f} | "
-                f"{ev['sum_j_after']:+.3f} |{diag_cells(after_state)} "
-                f"{', '.join(vocab[i] for i in ev['team_after'])} |"
-            )
-
-        st.markdown("\n".join(md_lines))
-
-        obs_caption = (
-            "  **obs** — exact-match count of the resulting team in the corpus. "
-            "**Δ** — minimum slot-swaps to the nearest observed team (0 ↔ exact match). "
-            if team_counts is not None else ""
-        )
-        st.caption(
-            "**swap** — Pokemon swapped OUT → IN at this step. "
-            "**adj E** — field-weighted energy `H_adj(s) = -(field_weight·h)·s - 0.5 s'Js` "
-            "of the team *after* this swap. Greedy descent minimizes this. "
-            "**raw E** — un-rescaled energy `H(s) = -h·s - 0.5 s'Js`, comparable across "
-            "field_weight settings. "
-            "**Σ J** — intra-team pairwise-coupling sum (the J-contribution to −raw E)."
-            + obs_caption
-            + " Greedy stops at the first local minimum reachable by single-swap moves; "
-            "the final team is NOT necessarily the global MAP — multi-swap rearrangements "
-            "may go lower. Run with `field_weight=0.0` to see what the pure pairwise "
-            "model would do; run with `field_weight=1.0` to see what the popularity-driven "
-            "posterior would do."
-        )
-
-    elif mode == "Anneal to MAP":
-        with st.spinner(f"Annealing {n_runs} runs × {anneal_steps} steps each..."):
-            results, accept_rate = run_anneals(
-                phase_key,
-                tuple(fixed_idx), tuple(excluded_idx), field_weight,
-                n_runs, anneal_steps, t_start, t_end, J, h,
-                _species_of=species_of, _item_of=item_of,
-            )
-        if results is None:
-            st.error("Not enough available Pokemon to fill the team after applying constraints.")
-            return
-
-        n_distinct = len(results)
-        top_count = results[0][1]
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total runs", f"{n_runs}")
-        col2.metric("Distinct outcomes", f"{n_distinct}")
-        col3.metric("MAP convergence", f"{top_count}/{n_runs}")
-        col4.metric("MH accept %", f"{accept_rate * 100:.1f}%",
-                    help="Mean fraction of swap proposals accepted across the cooling schedule, "
-                         "averaged over all annealing runs. Hot phase accepts most proposals; "
-                         "cold phase rejects almost all. So aggregate rate depends on schedule.")
-
-        diag_header = " obs | Δ | Σ J |" if team_counts is not None else ""
-        diag_sep = " ---: | ---: | ---: |" if team_counts is not None else ""
-        md_lines = [
-            f"| # | runs | raw E | adj E |{diag_header} completion |",
-            f"| ---: | ---: | ---: | ---: |{diag_sep} :--- |",
-        ]
-        for rank, (comp, count) in enumerate(results, 1):
-            state = np.zeros(len(vocab), dtype=bool)
-            for i in fixed_idx:
-                state[i] = True
-            for i in comp:
-                state[i] = True
-            raw_E = team_energy(state, J, h)
-            adj_E = team_energy(state, J, field_weight * h)
-            names = ", ".join(vocab[i] for i in comp)
-            if team_counts is not None:
-                obs = team_obs_count(state, vocab, team_counts)
-                delta = min_swaps_to_observed(state, vocab, team_counts)
-                sum_j = intra_team_sum_j(state, J)
-                diag_cells = f" {obs} | {delta} | {sum_j:+.3f} |"
-            else:
-                diag_cells = ""
-            md_lines.append(
-                f"| {rank} | {count}/{n_runs} | {raw_E:+.3f} | {adj_E:+.3f} |{diag_cells} {names} |"
-            )
-
-        st.markdown("\n".join(md_lines))
-        obs_caption = (
-            "  **obs** — exact-match count in the corpus. "
-            "**Δ** — minimum slot-swaps to the nearest observed team (0 ↔ exact "
-            "match). High obs *or* low Δ = the MAP basin is near realized teams. "
-            "**Σ J** — sum of intra-team pairwise couplings (J-contribution to −raw E). "
-            "Large Σ J = coherent archetype; small Σ J = the basin is held together "
-            "by popular individual mons rather than pairwise structure."
-            if team_counts is not None else ""
-        )
-        st.caption(
-            "**runs** — how many independent annealings converged to this team. "
-            "A single dominant team indicates a sharp / unimodal landscape; multiple "
-            "distinct teams indicate a shallow / multimodal one. "
-            "**raw E** is the data-calibrated energy `-h·s - 0.5 s'Js`; "
-            "**adj E** is `-(field_weight·h)·s - 0.5 s'Js`, which is what the annealer "
-            "actually minimizes. Lower adj E = the energy basin the annealer settled into."
-            + obs_caption
-        )
-
-    else:  # Parallel-tempered sample
-        with st.spinner(f"PT: {pt_n_runs} runs × {pt_K} chains × {pt_n_steps} sweeps..."):
-            dist, n_kept, mh_rate, swap_rate, ladder = parallel_tempered_distribution(
-                phase_key,
-                tuple(fixed_idx), tuple(excluded_idx), field_weight,
-                pt_t_min, pt_t_max, pt_K, pt_n_runs, pt_n_steps,
-                pt_burn_in, pt_swap_interval, J, h,
-                _species_of=species_of, _item_of=item_of,
-            )
-        if dist is None:
-            st.error("Not enough available Pokemon to fill the team after applying constraints.")
-            return
-
-        n_distinct = len(dist)
-        top5_mass = sum(c for _, c in dist[:5]) / n_kept * 100
-        col1, col2, col3, col4, col5 = st.columns(5)
-        col1.metric("Cold samples", f"{n_kept:,}")
-        col2.metric("Distinct completions", f"{n_distinct:,}")
-        col3.metric("Top-5 mass", f"{top5_mass:.2f}%",
-                    help="Sum of probabilities for the five most-frequent completions. "
-                         "Under PT this is a real Boltzmann statistic (basin mixing solved).")
-        col4.metric("Local accept %", f"{mh_rate * 100:.1f}%",
-                    help="Mean fraction of local swap-MH proposals accepted, averaged across "
-                         "chains and runs. Low at cold chain, high at hot chain — this is the "
-                         "averaged rate across the whole ladder.")
-        col5.metric("Replica swap %", f"{swap_rate * 100:.1f}%",
-                    help="Mean acceptance rate of replica-exchange swaps between adjacent T "
-                         "levels. Healthy range 20-50%. <10% means ladder is too sparse (raise K "
-                         "or lower t_max). >60% means ladder is overly dense (waste of chains).")
-
-        st.caption(f"Temperature ladder: " + " → ".join(f"{t:.3f}" for t in ladder))
-
-        diag_header = " obs | Δ | Σ J |" if team_counts is not None else ""
-        diag_sep = " ---: | ---: | ---: |" if team_counts is not None else ""
-        md_lines = [
-            f"| # | % | raw E | adj E |{diag_header} completion |",
-            f"| ---: | ---: | ---: | ---: |{diag_sep} :--- |",
-        ]
-        for rank, (comp, count) in enumerate(dist[:top_k], 1):
-            state = np.zeros(len(vocab), dtype=bool)
-            for i in fixed_idx:
-                state[i] = True
-            for i in comp:
-                state[i] = True
-            prob_pct = (count / n_kept) * 100
-            raw_E = team_energy(state, J, h)
-            adj_E = team_energy(state, J, field_weight * h)
-            names = ", ".join(vocab[i] for i in comp)
-            if team_counts is not None:
-                obs = team_obs_count(state, vocab, team_counts)
-                delta = min_swaps_to_observed(state, vocab, team_counts)
-                sum_j = intra_team_sum_j(state, J)
-                diag_cells = f" {obs} | {delta} | {sum_j:+.3f} |"
-            else:
-                diag_cells = ""
-            md_lines.append(
-                f"| {rank} | {prob_pct:.2f}% | {raw_E:+.3f} | {adj_E:+.3f} |{diag_cells} {names} |"
-            )
-
-        st.markdown("\n".join(md_lines))
-        obs_caption = (
-            "  **obs** — exact-match count in the corpus. "
-            "**Δ** — minimum slot-swaps to nearest observed team. Δ=0 ↔ obs≥1; "
-            "Δ=1 = 1-swap variant of a real team (defensible \"fine-tuning of meta\"); "
-            "Δ≥3 = globally distinct configuration. "
-            "**Σ J** — sum of intra-team pairwise couplings. Sweeping `field_weight` "
-            "from 1.0 → 0.0 makes top-K reorder by increasing Σ J: lower fw selects "
-            "for coherence, higher fw selects for popular individual members."
-            if team_counts is not None else ""
-        )
-        st.caption(
-            "**%** — Boltzmann probability at the target T, estimated from cold-chain samples. "
-            "Unlike single-chain sampling at low T, this **should be monotonically ordered with "
-            "adj E** (modulo Monte Carlo noise) — that's the whole point of parallel tempering. "
-            "If you see non-monotonicity, either chains haven't equilibrated (run more sweeps) "
-            "or the swap rate is too low (raise K or lower t_max). "
-            "**raw E** / **adj E** are the energies with full / rescaled h, same definitions as "
-            "the other modes."
-            + obs_caption
-        )
+def _render_meta(phase_key: str, model: PhaseModel) -> None:
+    """Meta data page — Task 4.4 will fill this in."""
+    st.subheader("Meta data")
+    st.info("Coming in Task 4.4.")
 
 
 if __name__ == "__main__":
