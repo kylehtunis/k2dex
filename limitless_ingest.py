@@ -51,16 +51,18 @@ from pathlib import Path
 
 logger = logging.getLogger("limitless_ingest")
 
+from constants import (
+    MIN_TEAMS_PER_TOURNAMENT,
+    PHASE2_MIN_TEAMS as DEFAULT_MIN_TEAMS,
+    TEAM_SIZE,
+)
+
 API_BASE = "https://play.limitlesstcg.com/api"
-TEAM_SIZE = 6
 DEFAULT_REGULATION = "M-A"
 DEFAULT_GAME = "VGC"
 DEFAULT_CACHE_DIR = Path("tournaments_cache")
-DEFAULT_MIN_TEAMS = 10000
 MIN_PROTECT_PER_PLAYER = 1.0
 POLITE_SLEEP_SEC = 2.0
-MIN_TEAMS_PER_TOURNAMENT = 64  # was 16; bumped 2026-05-17 to spread the corpus
-                               # more temporally and damp small-tournament quirks
 CACHE_VERSION = 3  # bumped when team payload schema changes; see module docstring
 
 

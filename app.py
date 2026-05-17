@@ -14,15 +14,17 @@ from sklearn.linear_model import LogisticRegression
 
 import helpers
 import limitless_ingest
+from constants import (
+    PHASE1_MIN_USAGE,
+    PHASE1_RIDGE_EPS,
+    PHASE2_LR_C,
+    PHASE2_MIN_TEAM_COUNT,
+    PHASE2_MIN_TEAMS,
+    TEAM_SIZE,
+)
 
 
 DATA_PATH_PHASE1 = "gen9championsvgc2026regma-1760.json"
-TEAM_SIZE = 6
-EPS = 0.01
-
-PHASE2_MIN_TEAMS = limitless_ingest.DEFAULT_MIN_TEAMS  # single source of truth; was drifting at 1500 while ingest default was 5000
-PHASE2_MIN_TEAM_COUNT = 5
-PHASE2_LR_C = 0.1
 
 # Log-spaced options for the two sliders. Both T and field_weight operate in
 # log space (T governs Boltzmann factors exp(-ΔH/T); field_weight scales h,
@@ -54,11 +56,11 @@ def load_model_phase1() -> tuple[
     learn forme exclusion via strong -J as documented.
     """
     chaos = helpers.load_chaos(DATA_PATH_PHASE1)
-    vocab = helpers.build_vocab(chaos, min_usage=0.002)
+    vocab = helpers.build_vocab(chaos, min_usage=PHASE1_MIN_USAGE)
     C = helpers.build_cooccurrence(chaos, vocab)
     m, p_joint = helpers.binary_moments(chaos, vocab, C, team_size=TEAM_SIZE)
     Corr = helpers.binary_correlation(m, p_joint)
-    J, _ = helpers.ising_gaussian(Corr, eps=EPS)
+    J, _ = helpers.ising_gaussian(Corr, eps=PHASE1_RIDGE_EPS)
     h = np.log(m / (1 - m)) - J @ m
     species_of = list(vocab)
     item_of: list[str | None] = [None] * len(vocab)
