@@ -6,9 +6,12 @@ Run with:
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
 
@@ -1042,9 +1045,148 @@ def _render_analysis(phase_key: str, model: PhaseModel) -> None:
 
 
 def _render_meta(phase_key: str, model: PhaseModel) -> None:
-    """Meta data page — Task 4.4 will fill this in."""
+    """Format-wide statistics derived from the fitted (J, h): summary strip,
+    top features by h, top ±J pairs (synergies / exclusions), distribution
+    plots for J and h. Cross-phase comparison and the J-graph figure are
+    deferred to v1.1 (both want real React work to land cleanly).
+    """
     st.subheader("Meta data")
-    st.info("Coming in Task 4.4.")
+    st.caption("Format-wide statistics derived from the fitted (J, h).")
+
+    vocab = model.vocab
+    J, h = model.J, model.h
+    team_counts = model.team_counts
+    V = len(vocab)
+
+    # Summary strip
+    n_corpus_teams = sum(team_counts.values()) if team_counts is not None else None
+    fit_label = (
+        "sklearn LogReg · L2 · C=0.1" if phase_key != "phase1"
+        else "Gaussian · ridge ε=0.01"
+    )
+    summary_cols = st.columns(6)
+    summary_cols[0].metric(
+        "Phase",
+        {"phase1": "Phase 1", "phase2": "Phase 2", "phase3": "Phase 3"}[phase_key],
+    )
+    summary_cols[1].metric("Vocab size", f"{V:,}")
+    summary_cols[2].metric(
+        "Corpus teams",
+        f"{n_corpus_teams:,}" if n_corpus_teams is not None else "—",
+        help="Phase 1 uses aggregate Smogon chaos stats (no per-team rosters).",
+    )
+    headline = _load_baseline_headline(phase_key)
+    if headline is not None:
+        top1, mrr = headline
+        summary_cols[3].metric("Top-1 @ k=1", f"{top1:.1%}",
+                               help="Held-out leave-1-out accuracy from validation.ipynb.")
+        summary_cols[4].metric("MRR @ k=1", f"{mrr:.3f}")
+    else:
+        summary_cols[3].metric("Top-1 @ k=1", "—",
+                               help="No locked validation baseline for this phase.")
+        summary_cols[4].metric("MRR @ k=1", "—")
+    summary_cols[5].metric("Fit", fit_label)
+
+    # Top features by h
+    st.markdown("##### Top features by h")
+    n_show = st.slider(
+        "Show top N features", 10, min(150, V), 30,
+        key=f"meta_topn_{phase_key}",
+        help="Sorted by h (log-odds of inclusion in a random team under the model).",
+    )
+    order = np.argsort(-h)
+    feature_rows = [
+        {
+            "rank": rank,
+            "feature": vocab[i],
+            "h": float(h[i]),
+            "m̂": float(model.m[i]),
+        }
+        for rank, i in enumerate(order[:n_show], 1)
+    ]
+    st.dataframe(feature_rows, hide_index=True, use_container_width=True)
+    st.caption(
+        "**h** is the per-feature log-odds — `m̂ ≈ sigmoid(h + J·m)` under MF, "
+        "so for popular features h ≈ logit(m̂). The order here is the model's "
+        "popularity ranking with the pairwise correction folded in."
+    )
+
+    # Top ±J pairs
+    st.markdown("##### Extreme couplings")
+    n_pairs = st.slider(
+        "Show top N pairs (each direction)", 10, 50, 25,
+        key=f"meta_npairs_{phase_key}",
+        help="Top +J pairs are synergies; top −J pairs are exclusions / "
+             "mutually-exclusive picks.",
+    )
+    iu, ju = np.triu_indices(V, k=1)
+    j_flat = J[iu, ju]
+    pos_col, neg_col = st.columns(2)
+    with pos_col:
+        st.markdown("**Top +J (synergies)**")
+        pos_order = np.argsort(-j_flat)[:n_pairs]
+        st.markdown(_format_extreme_pairs(iu, ju, j_flat, pos_order, vocab))
+    with neg_col:
+        st.markdown("**Top −J (exclusions)**")
+        neg_order = np.argsort(j_flat)[:n_pairs]
+        st.markdown(_format_extreme_pairs(iu, ju, j_flat, neg_order, vocab))
+
+    # Distribution plots
+    st.markdown("##### Distributional diagnostics")
+    fig, (ax_j, ax_h) = plt.subplots(1, 2, figsize=(10, 3.5))
+    ax_j.hist(j_flat, bins=80, log=True, color="#3a7d44", edgecolor="white", linewidth=0.4)
+    ax_j.set_title("J off-diagonal distribution")
+    ax_j.set_xlabel("J")
+    ax_j.set_ylabel("count (log)")
+    ax_j.axvline(0, color="black", lw=0.5)
+
+    h_sorted = np.sort(h)[::-1]
+    ax_h.plot(h_sorted, color="#3a7d44")
+    ax_h.set_title("h field (sorted descending)")
+    ax_h.set_xlabel("feature rank")
+    ax_h.set_ylabel("h")
+    ax_h.axhline(0, color="black", lw=0.5)
+    fig.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
+
+
+def _format_extreme_pairs(
+    iu: np.ndarray,
+    ju: np.ndarray,
+    j_flat: np.ndarray,
+    order: np.ndarray,
+    vocab: list[str],
+) -> str:
+    lines = ["| # | pair | J |", "| ---: | :--- | ---: |"]
+    for r, k in enumerate(order, 1):
+        lines.append(f"| {r} | {vocab[int(iu[k])]} × {vocab[int(ju[k])]} | {j_flat[k]:+.3f} |")
+    return "\n".join(lines)
+
+
+def _load_baseline_headline(phase_key: str) -> tuple[float, float] | None:
+    """Read the locked post-Phase-3 validation baseline (k=1, top-1 / MRR)
+    for the model section that matches this phase. Returns None when the
+    baseline file is missing or the phase has no validation entry.
+    """
+    baseline_path = Path("tests/validation_baseline_post_phase3.json")
+    if not baseline_path.exists():
+        return None
+    try:
+        baseline = json.loads(baseline_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    section_for_phase = {
+        "phase2": "Ising species",
+        "phase3": "Ising item-pair",
+    }
+    section_name = section_for_phase.get(phase_key)
+    if section_name is None:
+        return None
+    section = baseline.get("cross_model_species_granularity", {}).get(section_name)
+    if section is None or "k=1" not in section:
+        return None
+    return float(section["k=1"]["top_1"]), float(section["k=1"]["mrr"])
 
 
 if __name__ == "__main__":
