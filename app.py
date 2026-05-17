@@ -22,6 +22,7 @@ from constants import (
     TEAM_SIZE,
 )
 from models import fit_pl_ising
+from rendering import intra_team_sum_j, min_swaps_to_observed, team_obs_count
 from sampling import (
     anneal_mcmc,
     greedy_optimize,
@@ -174,46 +175,6 @@ def load_model_phase3() -> tuple[
 
     J, h = fit_pl_ising(X, C=PHASE2_LR_C)
     return vocab, m, J, h, team_counts, species_of, item_of
-
-
-def team_obs_count(
-    state: np.ndarray,
-    vocab: list[str],
-    team_counts: Counter[frozenset[str]] | None,
-) -> int | None:
-    """Lookup of how many times this exact 6-Pokemon team appeared in the ingested
-    tournament corpus. None when no team-level data is available (Phase 1)."""
-    if team_counts is None:
-        return None
-    team = frozenset(vocab[i] for i in np.where(state)[0])
-    return team_counts[team]
-
-
-def min_swaps_to_observed(
-    state: np.ndarray,
-    vocab: list[str],
-    team_counts: Counter[frozenset[str]] | None,
-) -> int | None:
-    """Minimum number of slot swaps to transform this team into any team in
-    the corpus. 0 means the team itself was observed; values >= 1 measure
-    how far the model's suggestion sits from realized teams. Useful to spot
-    when a high-probability completion is a Hamming-1 variant of a known team
-    (defensible "model picked a near-neighbor of the meta") vs a globally
-    distinct configuration (likely overfit or genuine discovery)."""
-    if not team_counts:
-        return None
-    team = frozenset(vocab[i] for i in np.where(state)[0])
-    return min(TEAM_SIZE - len(team & obs) for obs in team_counts)
-
-
-def intra_team_sum_j(state: np.ndarray, J: np.ndarray) -> float:
-    """Sum of pairwise couplings over the team's unordered pairs:
-    sum_{i<j: both in team} J_ij = 0.5 * s' J s. Measures structural coherence
-    under the fitted model -- the pairwise contribution to (-raw_E). A team
-    can have low raw_E either from popular members (large h.s) or coherent
-    pairs (large Sigma J); decomposing makes that visible."""
-    s = state.astype(np.float64)
-    return float(0.5 * s @ J @ s)
 
 
 def format_pair(species: str, item: str | None) -> str:
