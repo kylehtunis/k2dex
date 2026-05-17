@@ -10,7 +10,6 @@ from collections import Counter
 
 import numpy as np
 import streamlit as st
-from sklearn.linear_model import LogisticRegression
 
 import helpers
 import limitless_ingest
@@ -22,6 +21,7 @@ from constants import (
     PHASE2_MIN_TEAMS,
     TEAM_SIZE,
 )
+from models import fit_pl_ising
 
 
 DATA_PATH_PHASE1 = "gen9championsvgc2026regma-1760.json"
@@ -106,20 +106,7 @@ def load_model_phase2() -> tuple[
                 X[ti, j] = 1
     m = X.mean(axis=0)
 
-    J_asym = np.zeros((V, V), dtype=np.float64)
-    h = np.zeros(V, dtype=np.float64)
-    for i in range(V):
-        y = X[:, i]
-        if y.sum() < 2 or (1 - y).sum() < 2:
-            continue
-        mask = np.ones(V, dtype=bool)
-        mask[i] = False
-        lr = LogisticRegression(penalty="l2", C=PHASE2_LR_C, solver="lbfgs", max_iter=1000)
-        lr.fit(X[:, mask], y)
-        h[i] = lr.intercept_[0]
-        J_asym[i, mask] = lr.coef_[0]
-    J = 0.5 * (J_asym + J_asym.T)
-    np.fill_diagonal(J, 0.0)
+    J, h = fit_pl_ising(X, C=PHASE2_LR_C)
     species_of = list(vocab)
     item_of: list[str | None] = [None] * len(vocab)
     return vocab, m, J, h, team_counts, species_of, item_of
@@ -177,20 +164,7 @@ def load_model_phase3() -> tuple[
         if all(pair in pair_to_idx for pair in team):
             team_counts[frozenset(format_pair(s, i) for s, i in team)] += 1
 
-    J_asym = np.zeros((V, V), dtype=np.float64)
-    h = np.zeros(V, dtype=np.float64)
-    for i in range(V):
-        y = X[:, i]
-        if y.sum() < 2 or (1 - y).sum() < 2:
-            continue
-        mask = np.ones(V, dtype=bool)
-        mask[i] = False
-        lr = LogisticRegression(penalty="l2", C=PHASE2_LR_C, solver="lbfgs", max_iter=1000)
-        lr.fit(X[:, mask], y)
-        h[i] = lr.intercept_[0]
-        J_asym[i, mask] = lr.coef_[0]
-    J = 0.5 * (J_asym + J_asym.T)
-    np.fill_diagonal(J, 0.0)
+    J, h = fit_pl_ising(X, C=PHASE2_LR_C)
     return vocab, m, J, h, team_counts, species_of, item_of
 
 
