@@ -30,10 +30,12 @@ heuristic (we don't keep decklists). If MIN_PROTECT_PER_PLAYER is tightened,
 clear `tournaments_cache/` to force a clean re-validation.
 
 Cache format versioning: each payload includes a `version` field. v1 was the
-species-only format (team members were bare strings). v2 (current) stores
-each member as `[species, item_or_null]`. Loading a v1 cached file returns
-None, forcing a re-fetch -- the species-only format is information-poor and
-cannot be upgraded in place.
+species-only format (team members were bare strings). v2 added items, storing
+each member as `[species, item_or_null]`. v3 (current) applies `normalize_name`
+to both species and item at parse time, collapsing case/whitespace variants
+in the raw API ('Sitrus Berry' / 'Sitrus berry' / 'sitrus berry' -> one bucket).
+Loading a cached file at version < CACHE_VERSION returns None, forcing a
+re-fetch -- old formats are not upgraded in place.
 """
 
 from __future__ import annotations
@@ -57,8 +59,9 @@ DEFAULT_CACHE_DIR = Path("tournaments_cache")
 DEFAULT_MIN_TEAMS = 10000
 MIN_PROTECT_PER_PLAYER = 1.0
 POLITE_SLEEP_SEC = 2.0
-MIN_TEAMS_PER_TOURNAMENT = 16
-CACHE_VERSION = 2  # bumped when team payload schema changes; see module docstring
+MIN_TEAMS_PER_TOURNAMENT = 64  # was 16; bumped 2026-05-17 to spread the corpus
+                               # more temporally and damp small-tournament quirks
+CACHE_VERSION = 3  # bumped when team payload schema changes; see module docstring
 
 
 @dataclass(frozen=True)
@@ -195,19 +198,21 @@ def extract_teams(standings: list[dict]) -> list[frozenset[tuple[str, str | None
     species (incomplete submissions, drops before lock-in, or the game's
     no-duplicate-species rule violated by malformed data). Names come from
     the `name` field of each decklist entry; items from `item` (None when
-    missing/null). Vocab will be built directly from these tuples downstream
-    -- no cross-source normalization needed within the Limitless namespace.
+    missing/null). Both species and item are passed through `normalize_name`
+    so case/whitespace variants of the same name collapse to one vocab entry
+    -- the Limitless API has been observed to return e.g. 'Sitrus Berry',
+    'Sitrus berry', and 'sitrus berry' for the same item across tournaments.
     """
     teams: list[frozenset[tuple[str, str | None]]] = []
     for entry in standings:
         decklist = entry.get("decklist") or []
         members: list[tuple[str, str | None]] = []
         for mon in decklist:
-            name = mon.get("name")
+            name = normalize_name(mon.get("name"))
             if not name:
                 continue
-            item = mon.get("item")  # may be None or empty string; normalize empty -> None
-            members.append((name, item if item else None))
+            item = normalize_name(mon.get("item"))
+            members.append((name, item))
         if len(members) != TEAM_SIZE:
             continue
         # Reject teams with duplicate species (game rule)
