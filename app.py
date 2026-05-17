@@ -23,7 +23,14 @@ from constants import (
     TEAM_SIZE,
 )
 from models import fit_pl_ising
-from rendering import intra_team_sum_j, min_swaps_to_observed, team_obs_count
+from rendering import (
+    intra_team_sum_j,
+    min_swaps_to_observed,
+    pairwise_j_rows,
+    render_j_row_inspector,
+    render_pairwise_j_table,
+    team_obs_count,
+)
 from sampling import (
     anneal_mcmc,
     greedy_optimize,
@@ -837,9 +844,201 @@ def _render_completion_table(
 
 
 def _render_analysis(phase_key: str, model: PhaseModel) -> None:
-    """Team analysis page — Task 4.3 will fill this in."""
+    """Per-team analysis under the fitted (J, h): observables, pairwise J
+    decomposition, J-row partner inspector, and greedy swap-chain critique.
+    The team must be exactly 6 mons; no slot-filling or sampling.
+    """
     st.subheader("Team analysis")
-    st.info("Coming in Task 4.3.")
+    st.caption("Per-team observables under the fitted (J, h).")
+
+    vocab = model.vocab
+    J, h = model.J, model.h
+    species_of, item_of = model.species_of, model.item_of
+    team_counts = model.team_counts
+
+    name_to_idx = {n: i for i, n in enumerate(vocab)}
+    sorted_vocab = sorted(vocab, key=lambda v: -model.m[name_to_idx[v]])
+
+    team_names = st.multiselect(
+        f"Your team (exactly {TEAM_SIZE})",
+        sorted_vocab,
+        max_selections=TEAM_SIZE,
+        placeholder="Choose your team of 6",
+        key=f"analysis_team_{phase_key}",
+    )
+    if len(team_names) != TEAM_SIZE:
+        st.info(f"Pick {TEAM_SIZE} Pokemon to analyze (have {len(team_names)}).")
+        return
+
+    team_idx = sorted({name_to_idx[n] for n in team_names})
+
+    # Phase 3 uniqueness check (inert under Phase 1/2 vocabs).
+    if species_of is not None:
+        seen_sp: dict[str, str] = {}
+        for i in team_idx:
+            sp = species_of[i]
+            if sp in seen_sp:
+                st.error(f"Two entries for species **{sp}** ({seen_sp[sp]}, {vocab[i]}). "
+                         "Pick one variant.")
+                return
+            seen_sp[sp] = vocab[i]
+    if item_of is not None:
+        seen_it: dict[str, str] = {}
+        for i in team_idx:
+            it = item_of[i]
+            if it is None:
+                continue
+            if it in seen_it:
+                st.error(f"Two mons holding **{it}** ({seen_it[it]}, {vocab[i]}). "
+                         "Items must be unique.")
+                return
+            seen_it[it] = vocab[i]
+
+    state = np.zeros(len(vocab), dtype=bool)
+    state[team_idx] = True
+
+    field_weight = st.select_slider(
+        "Field weight (for E_adj and greedy critique)",
+        options=FIELD_WEIGHT_OPTIONS,
+        value=0.5,
+        key=f"analysis_fw_{phase_key}",
+        help=(
+            "Rescales the field h before computing E_adj and choosing greedy "
+            "swaps. E_raw always uses fw=1. Lower fw weights pairwise structure "
+            "more heavily relative to popularity."
+        ),
+    )
+
+    # Observables strip
+    raw_E = team_energy(state, J, h)
+    adj_E = team_energy(state, J, field_weight * h)
+    sum_j = intra_team_sum_j(state, J)
+    cols = st.columns(5)
+    cols[0].metric("E_adj", f"{adj_E:+.3f}", help=f"fw = {field_weight}")
+    cols[1].metric("E_raw", f"{raw_E:+.3f}", help="fw = 1.0")
+    cols[2].metric("Σ J", f"{sum_j:+.3f}",
+                   help="Intra-team pair sum (J-contribution to −E).")
+    if team_counts is not None:
+        obs = team_obs_count(state, vocab, team_counts)
+        delta = min_swaps_to_observed(state, vocab, team_counts)
+        cols[3].metric("Corpus obs", f"{obs}",
+                       help="Exact-roster appearances in the ingested corpus.")
+        cols[4].metric("Δ to obs", f"{delta}",
+                       help="Min single-swap distance to the nearest observed team.")
+    else:
+        cols[3].metric("Corpus obs", "—",
+                       help="Phase 1 has no per-team counts (Smogon aggregates).")
+        cols[4].metric("Δ to obs", "—")
+
+    # Pairwise J decomposition
+    st.markdown("##### Pairwise J decomposition")
+    rows = pairwise_j_rows(team_idx, vocab, J)
+    st.markdown(render_pairwise_j_table(rows))
+    st.caption(
+        "C(6, 2) = 15 unordered pairs. **% of |J| sum** shows which pair drives "
+        "the team's coherence (or anti-coherence): one row at ≥30% means a "
+        "single pair is doing most of the structural work; a flat 6-8% across "
+        "pairs is a diffuse, balanced team."
+    )
+
+    # J-row inspector — partner couplings for one selected team member
+    st.markdown("##### J-row · partners")
+    selected_mon = st.selectbox(
+        "Inspect partner couplings for",
+        team_names,
+        key=f"analysis_jrow_{phase_key}",
+    )
+    sel_idx = name_to_idx[selected_mon]
+    st.markdown(render_j_row_inspector(sel_idx, set(team_idx), vocab, J))
+    st.caption(
+        "Top |J| partners for the selected mon, across the whole vocab — rows "
+        "with ✓ are already on the team (and appear above); the others are "
+        "off-team alternatives the model rates as strong (positive J) or "
+        "incompatible (negative J) with this mon."
+    )
+
+    # Greedy swap-chain critique (no pinning — full team is fair game)
+    st.markdown("##### Greedy critique · single-swap chain")
+    max_swaps = st.slider(
+        "Max swaps", 1, 30, 15,
+        key=f"analysis_max_swaps_{phase_key}",
+        help="Hard cap on swap chain length. Greedy descent usually converges "
+             "in 3-10 swaps; this is a safety bound.",
+    )
+    with st.spinner("Computing greedy descent..."):
+        final_team, chain = greedy_optimize_chain(
+            phase_key,
+            tuple(team_idx), (),           # no pinning — full team is fair game
+            (), field_weight, max_swaps,
+            J, h,
+            _species_of=species_of, _item_of=item_of,
+        )
+
+    def team_state(idx_iter) -> np.ndarray:
+        s = np.zeros(len(vocab), dtype=bool)
+        for i in idx_iter:
+            s[i] = True
+        return s
+
+    start_state = team_state(team_idx)
+    start_raw_E = team_energy(start_state, J, h)
+    start_adj_E = team_energy(start_state, J, field_weight * h)
+    start_sum_j = intra_team_sum_j(start_state, J)
+    final_state = team_state(final_team)
+    final_raw_E = team_energy(final_state, J, h)
+    final_adj_E = team_energy(final_state, J, field_weight * h)
+    final_sum_j = intra_team_sum_j(final_state, J)
+
+    sc1, sc2, sc3, sc4 = st.columns(4)
+    sc1.metric("Swaps taken", f"{len(chain)} / {max_swaps}")
+    sc2.metric("ΔE_adj", f"{final_adj_E - start_adj_E:+.3f}")
+    sc3.metric("ΔE_raw", f"{final_raw_E - start_raw_E:+.3f}")
+    sc4.metric("ΔΣ J", f"{final_sum_j - start_sum_j:+.3f}")
+
+    if not chain:
+        st.info(
+            "No improving single-swap exists — this team is a local minimum "
+            "under the current field_weight. Try a different field_weight "
+            "(e.g. 0.0 for pure pairwise) to see if the model re-ranks under "
+            "a different objective."
+        )
+        return
+
+    diag_header = " obs | Δ |" if team_counts is not None else ""
+    diag_sep = " ---: | ---: |" if team_counts is not None else ""
+
+    def diag_cells(state: np.ndarray) -> str:
+        if team_counts is None:
+            return ""
+        return (
+            f" {team_obs_count(state, vocab, team_counts)} | "
+            f"{min_swaps_to_observed(state, vocab, team_counts)} |"
+        )
+
+    md = [
+        f"| # | swap | adj E | raw E | Σ J |{diag_header} team |",
+        f"| ---: | :--- | ---: | ---: | ---: |{diag_sep} :--- |",
+        f"| 0 | _starting team_ | {start_adj_E:+.3f} | {start_raw_E:+.3f} | "
+        f"{start_sum_j:+.3f} |{diag_cells(start_state)} "
+        f"{', '.join(vocab[i] for i in team_idx)} |",
+    ]
+    for ev in chain:
+        swap_label = f"{vocab[ev['out_idx']]} → {vocab[ev['in_idx']]}"
+        after_state = team_state(ev["team_after"])
+        md.append(
+            f"| {ev['step']} | {swap_label} | "
+            f"{ev['energy_adj_after']:+.3f} | {ev['energy_raw_after']:+.3f} | "
+            f"{ev['sum_j_after']:+.3f} |{diag_cells(after_state)} "
+            f"{', '.join(vocab[i] for i in ev['team_after'])} |"
+        )
+    st.markdown("\n".join(md))
+    st.caption(
+        "Each row is the team **after** that swap. The chain is diagnostic: "
+        "swap #1 is the model's biggest complaint about the starting team, "
+        "swap #2 is the next-biggest after #1 is applied, etc. The final team "
+        "is the local minimum reachable by single-swap moves — not "
+        "necessarily the global MAP."
+    )
 
 
 def _render_meta(phase_key: str, model: PhaseModel) -> None:
