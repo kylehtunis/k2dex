@@ -29,13 +29,12 @@ the name pre-check on load, but cannot be re-validated against the Protect
 heuristic (we don't keep decklists). If MIN_PROTECT_PER_PLAYER is tightened,
 clear `tournaments_cache/` to force a clean re-validation.
 
-Cache format versioning: each payload includes a `version` field. v1 was the
-species-only format (team members were bare strings). v2 added items, storing
-each member as `[species, item_or_null]`. v3 (current) applies `normalize_name`
-to both species and item at parse time, collapsing case/whitespace variants
-in the raw API ('Sitrus Berry' / 'Sitrus berry' / 'sitrus berry' -> one bucket).
-Loading a cached file at version < CACHE_VERSION returns None, forcing a
-re-fetch -- old formats are not upgraded in place.
+Cache format versioning: each payload includes a `version` field. Loading a
+cached file at version < CACHE_VERSION returns None, forcing a re-fetch; old
+formats are not upgraded in place. Bump CACHE_VERSION whenever the parsing
+logic changes in a way that would yield different team rosters than what's
+in cached files (item normalization, species canonicalization, etc.) so old
+caches are invalidated automatically.
 """
 
 from __future__ import annotations
@@ -63,7 +62,7 @@ DEFAULT_GAME = "VGC"
 DEFAULT_CACHE_DIR = Path("tournaments_cache")
 MIN_PROTECT_PER_PLAYER = 1.0
 POLITE_SLEEP_SEC = 2.0
-CACHE_VERSION = 3  # bumped when team payload schema changes; see module docstring
+CACHE_VERSION = 1  # bumped when team payload schema changes; see module docstring
 
 
 @dataclass(frozen=True)
@@ -89,6 +88,31 @@ class TournamentTeams:
 
     meta: TournamentMeta
     teams: list[frozenset[tuple[str, str | None]]]
+
+
+_MEGA_FORME_SUFFIXES = (" X", " Y", " Z")
+
+
+def strip_mega_prefix(species: str) -> str:
+    """Collapse 'Mega <Base>' / 'Mega <Base> X/Y/Z' species names down to
+    '<Base>'. Players are inconsistent about whether they prefix mega-evolved
+    species in the Limitless decklist; the held Mega Stone is the source of
+    truth for which mega forme. By stripping the prefix here we bucket
+    'Mega Blastoise @ Blastoisite' with 'Blastoise @ Blastoisite' (same
+    forme, same model feature), and 'Mega Charizard Y @ Charizardite Y' with
+    'Charizard @ Charizardite Y'. The trailing forme letter is stripped only
+    when the 'Mega ' prefix is present, to avoid mangling any non-mega species
+    name that happens to end in a stray letter. ' Z' is included for
+    future-proofing (e.g. 'Mega Lucario Z' -> 'Lucario').
+    """
+    if not species.startswith("Mega "):
+        return species
+    stripped = species[len("Mega "):]
+    for suffix in _MEGA_FORME_SUFFIXES:
+        if stripped.endswith(suffix):
+            stripped = stripped[: -len(suffix)]
+            break
+    return stripped
 
 
 def normalize_name(s: str | None) -> str | None:
@@ -213,6 +237,7 @@ def extract_teams(standings: list[dict]) -> list[frozenset[tuple[str, str | None
             name = normalize_name(mon.get("name"))
             if not name:
                 continue
+            name = strip_mega_prefix(name)
             item = normalize_name(mon.get("item"))
             members.append((name, item))
         if len(members) != TEAM_SIZE:
