@@ -1,0 +1,41 @@
+{
+  "_notes": [
+    "Canary baseline frozen at v0 (commit 86162dd-ish, pre-refactor).",
+    "Captured from validation.ipynb pair-prediction metric output.",
+    "Use as a sanity check after refactor phases that touch (J, h) or samplers;",
+    "this is NOT a hard regression gate -- generous tolerance is appropriate,",
+    "and Phase 1 (re-ingest) + Phase 3 (team-level split) will intentionally",
+    "shift the numbers. Re-snapshot post-Phase-1 and post-Phase-3."
+  ],
+  "source": "validation.ipynb cell 22 (pair-prediction metric, Phase 3 only) + cell 27 (MF vs MCMC agreement)",
+  "captured_at": "2026-05-17",
+  "test_stride": 5,
+  "seed": 42,
+  "pair_prediction": {
+    "marginal-pair": {
+      "k=1": {"mrr": 0.237, "top_1": 0.160, "top_5": 0.270, "top_10": 0.410, "top_20": 0.630},
+      "k=2": {"mrr": 0.194, "top_1": 0.100, "top_5": 0.285, "top_10": 0.390, "top_20": 0.525},
+      "k=3": {"mrr": 0.171, "top_1": 0.070, "top_5": 0.253, "top_10": 0.353, "top_20": 0.530}
+    },
+    "co-occurrence-pair": {
+      "k=1": {"mrr": 0.296, "top_1": 0.150, "top_5": 0.470, "top_10": 0.630, "top_20": 0.790},
+      "k=2": {"mrr": 0.261, "top_1": 0.120, "top_5": 0.425, "top_10": 0.530, "top_20": 0.735},
+      "k=3": {"mrr": 0.234, "top_1": 0.100, "top_5": 0.370, "top_10": 0.510, "top_20": 0.667}
+    },
+    "Ising pair (MF)": {
+      "k=1": {"mrr": 0.451, "top_1": 0.310, "top_5": 0.640, "top_10": 0.720, "top_20": 0.830},
+      "k=2": {"mrr": 0.372, "top_1": 0.215, "top_5": 0.565, "top_10": 0.690, "top_20": 0.795},
+      "k=3": {"mrr": 0.278, "top_1": 0.137, "top_5": 0.443, "top_10": 0.593, "top_20": 0.697}
+    },
+    "Ising pair (MCMC)": {
+      "k=1": {"mrr": 0.443, "top_1": 0.300, "top_5": 0.620, "top_10": 0.720, "top_20": 0.820},
+      "k=2": {"mrr": 0.355, "top_1": 0.200, "top_5": 0.535, "top_10": 0.670, "top_20": 0.775},
+      "k=3": {"mrr": 0.269, "top_1": 0.137, "top_5": 0.420, "top_10": 0.567, "top_20": 0.683}
+    }
+  },
+  "mf_vs_mcmc_agreement": {
+    "k=1": {"top_1_match": 0.794, "rank_spearman_median": 0.934},
+    "k=2": {"top_1_match": 0.773, "rank_spearman_median": 0.952},
+    "k=3": {"top_1_match": 0.643, "rank_spearman_median": 0.946}
+  }
+}
