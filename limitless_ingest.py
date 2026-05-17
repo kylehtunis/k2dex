@@ -86,6 +86,31 @@ class TournamentTeams:
     teams: list[frozenset[tuple[str, str | None]]]
 
 
+def normalize_name(s: str | None) -> str | None:
+    """Canonical form for a Limitless-API species or item string.
+
+    Collapses case/whitespace variants seen in the raw API ('Sitrus Berry',
+    'Sitrus berry', 'sitrus berry') into a single bucket. Goal is internal
+    consistency within the corpus, not matching any external canonical
+    source. Returns None for None or empty inputs.
+
+    Lowercases, then title-cases each whitespace-separated word, then each
+    hyphen/apostrophe-separated subpart, so multi-word names and hyphenated
+    formes both survive ('Tapu Koko', 'Charizard-Mega-Y', "Farfetch'd").
+    """
+    if not s:
+        return None
+    s = s.strip().lower()
+    if not s:
+        return None
+    # Word boundaries are whitespace and hyphens; apostrophes stay literal
+    # within a part so "Farfetch'd" / "Sirfetch'd" round-trip correctly.
+    return " ".join(
+        "-".join(sub.capitalize() for sub in part.split("-"))
+        for part in s.split()
+    )
+
+
 def _http_get_json(url: str) -> object:
     """Fetch a URL and parse the response body as JSON."""
     req = urllib.request.Request(url, headers={"User-Agent": "k2dex-science/0.1"})
