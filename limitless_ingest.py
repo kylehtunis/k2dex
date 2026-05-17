@@ -17,14 +17,23 @@ Singles filter (two-stage, cheap-first):
    in singles (0-1 per team), so the per-player rate cleanly separates them
    without depending on the tournament name convention.
 
-Cache strategy: per-tournament parsed team list only -- items, abilities,
-moves, tera, player names, records, drops are all discarded at parse time.
-Tournaments are immutable once finished, so the cache is write-once /
-read-many. Rejected tournaments are not cached; re-runs will re-fetch and
-re-reject. Cached entries are still subject to the name pre-check on load,
-but cannot be re-validated against the Protect heuristic (we don't keep
-decklists). If MIN_PROTECT_PER_PLAYER is tightened, clear `tournaments_cache/`
-to force a clean re-validation.
+Cache strategy: per-tournament parsed team list only -- abilities, moves,
+tera, player names, records, and drops are discarded at parse time. Each
+team member is preserved as a `(species, item)` tuple; items are kept
+because they (a) re-introduce held-item forme distinctions invisible in the
+species-only namespace, and (b) enable the Phase 3 item-pair Ising fit in
+`app.py:load_model_phase3`. Tournaments are immutable once finished, so the
+cache is write-once / read-many. Rejected tournaments are not cached;
+re-runs will re-fetch and re-reject. Cached entries are still subject to
+the name pre-check on load, but cannot be re-validated against the Protect
+heuristic (we don't keep decklists). If MIN_PROTECT_PER_PLAYER is tightened,
+clear `tournaments_cache/` to force a clean re-validation.
+
+Cache format versioning: each payload includes a `version` field. v1 was the
+species-only format (team members were bare strings). v2 (current) stores
+each member as `[species, item_or_null]`. Loading a v1 cached file returns
+None, forcing a re-fetch -- the species-only format is information-poor and
+cannot be upgraded in place.
 """
 
 from __future__ import annotations
@@ -45,9 +54,11 @@ TEAM_SIZE = 6
 DEFAULT_REGULATION = "M-A"
 DEFAULT_GAME = "VGC"
 DEFAULT_CACHE_DIR = Path("tournaments_cache")
-DEFAULT_MIN_TEAMS = 5000
+DEFAULT_MIN_TEAMS = 10000
 MIN_PROTECT_PER_PLAYER = 1.0
 POLITE_SLEEP_SEC = 2.0
+MIN_TEAMS_PER_TOURNAMENT = 16
+CACHE_VERSION = 2  # bumped when team payload schema changes; see module docstring
 
 
 @dataclass(frozen=True)
@@ -63,10 +74,16 @@ class TournamentMeta:
 
 @dataclass(frozen=True)
 class TournamentTeams:
-    """A tournament's parsed team rosters and minimal identifying metadata."""
+    """A tournament's parsed team rosters and minimal identifying metadata.
+
+    Each team is a frozenset of `(species, item)` tuples. `item` is None for
+    itemless mons (rare but legal in some formats). The frozenset enforces
+    that no two members share the exact same (species, item) pair -- though
+    the upstream Limitless data should never produce that anyway, since a
+    team with literally identical (species, item) entries would be illegal."""
 
     meta: TournamentMeta
-    teams: list[frozenset[str]]
+    teams: list[frozenset[tuple[str, str | None]]]
 
 
 def _http_get_json(url: str) -> object:
@@ -146,25 +163,32 @@ def passes_doubles_protect_check(
     return protect_count / len(standings) >= min_ratio
 
 
-def extract_teams(standings: list[dict]) -> list[frozenset[str]]:
-    """Parse standings into a list of teams (frozensets of Pokemon names).
+def extract_teams(standings: list[dict]) -> list[frozenset[tuple[str, str | None]]]:
+    """Parse standings into a list of teams (frozensets of `(species, item)` tuples).
 
-    Drops players whose decklist isn't exactly TEAM_SIZE distinct Pokemon
-    (incomplete submissions, drops before lock-in, or rare data anomalies).
-    Names come from the `name` field of each decklist entry, preserving the
-    Limitless capitalization convention -- vocab will be built directly from
-    these strings downstream, so no cross-source normalization is needed.
+    Drops players whose decklist isn't exactly TEAM_SIZE entries with distinct
+    species (incomplete submissions, drops before lock-in, or the game's
+    no-duplicate-species rule violated by malformed data). Names come from
+    the `name` field of each decklist entry; items from `item` (None when
+    missing/null). Vocab will be built directly from these tuples downstream
+    -- no cross-source normalization needed within the Limitless namespace.
     """
-    teams: list[frozenset[str]] = []
+    teams: list[frozenset[tuple[str, str | None]]] = []
     for entry in standings:
         decklist = entry.get("decklist") or []
-        names = [mon["name"] for mon in decklist if mon.get("name")]
-        if len(names) != TEAM_SIZE:
+        members: list[tuple[str, str | None]] = []
+        for mon in decklist:
+            name = mon.get("name")
+            if not name:
+                continue
+            item = mon.get("item")  # may be None or empty string; normalize empty -> None
+            members.append((name, item if item else None))
+        if len(members) != TEAM_SIZE:
             continue
-        team = frozenset(names)
-        if len(team) != TEAM_SIZE:
+        # Reject teams with duplicate species (game rule)
+        if len({species for species, _ in members}) != TEAM_SIZE:
             continue
-        teams.append(team)
+        teams.append(frozenset(members))
     return teams
 
 
@@ -175,6 +199,7 @@ def _cache_path(cache_dir: Path, tournament_id: str) -> Path:
 def _save_tournament(cache_dir: Path, t: TournamentTeams) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     payload = {
+        "version": CACHE_VERSION,
         "meta": {
             "id": t.meta.id,
             "name": t.meta.name,
@@ -182,20 +207,36 @@ def _save_tournament(cache_dir: Path, t: TournamentTeams) -> None:
             "regulation": t.meta.regulation,
             "players": t.meta.players,
         },
-        "teams": [sorted(team) for team in t.teams],
+        # Each team: list of [species, item_or_null], sorted by species for
+        # reproducible diffs across re-saves.
+        "teams": [
+            [list(member) for member in sorted(team, key=lambda m: m[0])]
+            for team in t.teams
+        ],
     }
     with _cache_path(cache_dir, t.meta.id).open("w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False)
 
 
 def _load_tournament(cache_dir: Path, tournament_id: str) -> TournamentTeams | None:
+    """Load a cached tournament, or return None if missing / outdated schema.
+
+    Returning None signals the caller to re-fetch from the API. Old (v1)
+    cached files lacked items and are incompatible with the current schema,
+    so we treat them as cache misses.
+    """
     p = _cache_path(cache_dir, tournament_id)
     if not p.exists():
         return None
     with p.open("r", encoding="utf-8") as f:
         payload = json.load(f)
+    if payload.get("version", 1) < CACHE_VERSION:
+        return None  # outdated schema; force re-fetch
     meta = TournamentMeta(**payload["meta"])
-    teams = [frozenset(t) for t in payload["teams"]]
+    teams = [
+        frozenset((member[0], member[1]) for member in team)
+        for team in payload["teams"]
+    ]
     return TournamentTeams(meta=meta, teams=teams)
 
 
@@ -210,9 +251,13 @@ def ingest(
 
     Walks `iter_catalog_pages` lazily across catalog pages; filters to the
     target regulation; skips tournaments flagged as singles by name (cache
-    hit or miss) or by Protect-ratio heuristic (fresh fetches only); serves
-    cached tournaments from disk if present, hits the API otherwise. Returns
-    once the running team total meets the cutoff.
+    hit or miss) or by Protect-ratio heuristic (fresh fetches only); skips
+    tournaments smaller than MIN_TEAMS_PER_TOURNAMENT (pre-fetch on registered
+    player count and post-extract on actual team count -- the second catches
+    high-dropout small events and re-filters cached tournaments if the
+    threshold is tightened, without needing a cache wipe); serves cached
+    tournaments from disk if present, hits the API otherwise. Returns once
+    the running team total meets the cutoff.
 
     Termination conditions (whichever fires first):
     - `total_teams >= min_teams` (target hit -- normal stop)
@@ -239,6 +284,15 @@ def ingest(
             if is_likely_singles_by_name(tm.name):
                 logger.info("[skip name]    %s '%s'", tm.id, tm.name)
                 continue
+            # Pre-fetch size check: registered players bound the team count
+            # from above (teams <= players always), so skipping here avoids
+            # API calls for events too small to clear the threshold.
+            if tm.players < MIN_TEAMS_PER_TOURNAMENT:
+                logger.info(
+                    "[skip small]   %s '%s' (players=%d < %d)",
+                    tm.id, tm.name, tm.players, MIN_TEAMS_PER_TOURNAMENT,
+                )
+                continue
             cached = _load_tournament(cache_dir, tm.id)
             if cached is not None:
                 ttd = cached
@@ -258,6 +312,15 @@ def ingest(
                 _save_tournament(cache_dir, ttd)
                 source = "fetched"
                 time.sleep(POLITE_SLEEP_SEC)
+            # Post-extract size check: catches cached tournaments under a
+            # newly-tightened threshold and high-dropout events where
+            # extract_teams trimmed below the limit.
+            if len(ttd.teams) < MIN_TEAMS_PER_TOURNAMENT:
+                logger.info(
+                    "[skip small]   %s '%s' (teams=%d < %d after extract)",
+                    tm.id, tm.name, len(ttd.teams), MIN_TEAMS_PER_TOURNAMENT,
+                )
+                continue
             out.append(ttd)
             total_teams += len(ttd.teams)
             logger.info(
@@ -278,9 +341,20 @@ def ingest(
     return out
 
 
-def all_teams(tournaments: list[TournamentTeams]) -> list[frozenset[str]]:
+def all_teams(tournaments: list[TournamentTeams]) -> list[frozenset[tuple[str, str | None]]]:
     """Flatten ingested tournaments into a single team list."""
     return [team for t in tournaments for team in t.teams]
+
+
+def species_only_teams(
+    teams: list[frozenset[tuple[str, str | None]]],
+) -> list[frozenset[str]]:
+    """Project (species, item) teams down to species-only frozensets.
+
+    Used by `app.py:load_model_phase2` and the validation harness to consume
+    the Phase 2 species-only namespace from the new v2 cache format.
+    """
+    return [frozenset(species for species, _ in team) for team in teams]
 
 
 if __name__ == "__main__":
@@ -291,4 +365,6 @@ if __name__ == "__main__":
     print(f"Total teams: {len(teams)}")
     if teams:
         sample = next(iter(teams))
-        print(f"Sample team: {sorted(sample)}")
+        print(f"Sample team:")
+        for species, item in sorted(sample, key=lambda m: m[0]):
+            print(f"  {species:<25} item: {item}")
