@@ -1310,18 +1310,23 @@ def _render_extreme_pairs_html(
     """
     head = (
         '<tr><th class="num">#</th><th>pair</th>'
-        '<th class="num">|Coupling|</th><th class="num">Coupling</th></tr>'
+        '<th class="num">Coupling</th></tr>'
     )
     body_rows: list[str] = []
     for r, k in enumerate(order, 1):
         k = int(k)
         j_val = float(j_flat[k])
+        coupling_cell = (
+            f'<div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;">'
+            f'{rh.signed_bar(j_val, max_value=max_j, width=80)}'
+            f'{rh.score_chip(j_val, "signed")}'
+            f'</div>'
+        )
         body_rows.append(
             '<tr>'
             f'<td class="rank">{r:02d}</td>'
             f'<td>{rh.pair_cell(vocab[int(iu[k])], vocab[int(ju[k])])}</td>'
-            f'<td class="num">{rh.signed_bar(j_val, max_value=max_j, width=80)}</td>'
-            f'<td class="num">{rh.score_chip(j_val, "signed")}</td>'
+            f'<td class="num">{coupling_cell}</td>'
             '</tr>'
         )
     st.markdown(

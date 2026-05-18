@@ -349,6 +349,18 @@ html, body, [class*="css"] {
    Within that scope, hide the native radio dot and turn each option into
    a boxed segment with active ink-fill (matches the design's top-right
    tri-box). */
+
+/* Vertically center the picker column relative to the wordmark column. */
+[data-testid="stHorizontalBlock"]:has(.lab-phase-picker-marker) {
+    align-items: center;
+}
+
+/* Right-align the picker within its column. */
+[data-testid="stColumn"]:has(.lab-phase-picker-marker)
+    [data-testid="stVerticalBlock"] {
+    align-items: flex-end;
+}
+
 [data-testid="stColumn"]:has(.lab-phase-picker-marker)
     [data-testid="stWidgetLabel"] { display: none; }
 [data-testid="stColumn"]:has(.lab-phase-picker-marker)
