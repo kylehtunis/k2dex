@@ -393,6 +393,18 @@ def _render_completer(phase_key: str, model: PhaseModel, corpus_caption: str) ->
     name_to_idx = {name: i for i, name in enumerate(vocab)}
     sorted_vocab = sorted(vocab, key=lambda v: -model.m[name_to_idx[v]])
 
+    # Excludes are species-level (not (species, item)-level): in Phase 3 it
+    # would be odd to exclude one specific item-variant but allow others of
+    # the same species. Build a species → [vocab idx] map and a popularity-
+    # sorted unique species list to feed the excluded multiselect.
+    species_to_idxs: dict[str, list[int]] = {}
+    for i, sp in enumerate(species_of):
+        species_to_idxs.setdefault(sp, []).append(i)
+    sorted_species = sorted(
+        species_to_idxs.keys(),
+        key=lambda s: -sum(model.m[i] for i in species_to_idxs[s]),
+    )
+
     # §01 Starting roster — slot-strip visualization sits above the actual
     # multiselect inputs. We reserve placeholders here, render the inputs
     # below, then write into the placeholders once their values are known.
@@ -410,16 +422,21 @@ def _render_completer(phase_key: str, model: PhaseModel, corpus_caption: str) ->
             key=f"completer_fixed_{phase_key}",
         )
     with constraint_col2:
-        excluded_names = st.multiselect(
+        excluded_species = st.multiselect(
             "Exclude (must NOT appear)",
-            sorted_vocab,
-            placeholder="Choose Pokemon to exclude",
+            sorted_species,
+            placeholder="Choose species to exclude",
             key=f"completer_excluded_{phase_key}",
+            help=(
+                "Excludes are species-level: selecting a species "
+                "rules out every (species, item) variant."
+            ),
         )
 
-    overlap = set(fixed_names) & set(excluded_names)
+    excluded_species_set = set(excluded_species)
+    overlap = {n for n in fixed_names if species_of[name_to_idx[n]] in excluded_species_set}
     if overlap:
-        st.error(f"Cannot be both pinned and excluded: {', '.join(overlap)}")
+        st.error(f"Cannot be both pinned and excluded: {', '.join(sorted(overlap))}")
         return
 
     section01_slot.markdown(
@@ -431,7 +448,7 @@ def _render_completer(phase_key: str, model: PhaseModel, corpus_caption: str) ->
         unsafe_allow_html=True,
     )
     excluded_slot.markdown(
-        rh.excluded_row(excluded_names, note=None),
+        rh.excluded_row(excluded_species, note=None),
         unsafe_allow_html=True,
     )
 
@@ -534,7 +551,9 @@ def _render_completer(phase_key: str, model: PhaseModel, corpus_caption: str) ->
         return
 
     fixed_idx = sorted({name_to_idx[n] for n in fixed_names})
-    excluded_idx = sorted({name_to_idx[n] for n in excluded_names})
+    excluded_idx = sorted({
+        i for sp in excluded_species for i in species_to_idxs.get(sp, [])
+    })
 
     if use_pt:
         with st.spinner(
@@ -1192,14 +1211,19 @@ def _render_meta(phase_key: str, model: PhaseModel, corpus_caption: str) -> None
     iu, ju = np.triu_indices(V, k=1)
     j_flat = J[iu, ju]
 
-    # On the Species @ Item vocab, same-species pairs (e.g. Charizard @ A ×
-    # Charizard @ B) dominate the extreme −Coupling list as a trivial
-    # mutual-exclusion artifact. Filter them out so the table surfaces
-    # cross-species structure. Species vocab is unique by species so the
-    # mask is a no-op there.
+    # On the Species @ Item vocab, two artifacts dominate the extreme
+    # −Coupling list as trivial mutual exclusions: same-species pairs (one
+    # mon can't hold two items) and same-item pairs (each item is unique
+    # per team under VGC rules). Filter both so the table surfaces real
+    # cross-species cross-item structure. Species vocab is unique by
+    # species and has item_of all-None, so both masks are no-ops there.
     species_arr = np.array(model.species_of)
+    item_arr = np.array([it if it is not None else "" for it in model.item_of])
+    has_item = item_arr != ""
     cross_species = species_arr[iu] != species_arr[ju]
-    iu_v, ju_v, j_v = iu[cross_species], ju[cross_species], j_flat[cross_species]
+    cross_item = ~(has_item[iu] & has_item[ju] & (item_arr[iu] == item_arr[ju]))
+    keep = cross_species & cross_item
+    iu_v, ju_v, j_v = iu[keep], ju[keep], j_flat[keep]
 
     # Bar scale: max(|Coupling|) over the filtered set, so positive and
     # negative tables share a calibration.
