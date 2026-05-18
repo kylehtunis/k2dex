@@ -3,7 +3,7 @@ __pycache__/
 .DS_Store
 tournaments_cache/
 .ipynb_checkpoints/
-.streamlit/
+.streamlit/secrets.toml
 .venv/
 .claude/
 *.md

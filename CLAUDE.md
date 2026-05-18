@@ -12,7 +12,7 @@ Three modeling phases, all using the inverse Ising pairwise-MaxEnt model with `(
 - **Phase 2** — pseudo-likelihood (PL) fit on Limitless tournament team rosters, species-only vocab.
 - **Phase 3** — PL fit on `(species, item)` pair features from the same Limitless data. Restores held-item forme distinctions Phase 2 collapses.
 
-The repo is a sequence of notebooks plus a Streamlit webapp. The webapp has **three pages** under one phase picker: `/completer` (sample completions, five techniques), `/analysis` (per-team diagnostics under the fitted `(J, h)`), `/meta` (format-wide statistics).
+The repo is a sequence of notebooks plus a Streamlit webapp. The webapp exposes only Phase 2 (Species) and Phase 3 (Species @ Item) — Phase 1 lives on in the notebooks but was cut from the user-facing surface in the v1 simplification. The webapp has **three pages** under one model picker: `/completer` (suggested completions or full PT sampling), `/analysis` (per-team diagnostics), `/meta` (format-wide statistics). Webapp user-facing terminology is decoupled from the underlying math: `J` → "Coupling Strength", `h` → "Bias", `ΣJ` → "Coherence", `E` → "Score" (sign-flipped so higher = better), `field_weight` → "Bias Adjustment". The webapp is one deliverable of the larger project — not the single end goal; deeper scientific content lives in the notebooks and a future explanatory page.
 
 ## Run commands
 
@@ -34,7 +34,15 @@ helpers.py              Phase 1 Gaussian inverse Ising primitives
 models.py               fit_pl_ising — Phase 2/3 PL fit
 sampling.py             MCMC family (swap / anneal / PT) + mean-field + greedy
                         + rank_single_swaps (top-N independent swap suggestions)
-rendering.py            Diagnostic helpers + markdown-table builders
+rendering.py            Diagnostic helpers + markdown-table builders (pure, no Streamlit)
+rendering_html.py       Lab-notebook HTML helpers (section labels, stat strips,
+                        score chips, signed/mini bars, sprite cells, slot cards,
+                        rich-row tables); paired with styles.py classes
+styles.py               Design tokens (LAB.* CSS vars), font import, widget
+                        overrides (st.tabs, phase picker, segmented control,
+                        primary button, multiselect chips)
+assets/                 Static assets bundled into the page as data URIs
+                        (currently just missingno.svg, the sprite fallback)
 limitless_ingest.py     Limitless API ingest with normalize_name + strip_mega_prefix
 tests/                  unittest tests + locked validation baselines
 ```
@@ -52,19 +60,32 @@ The notebooks form a dependency chain. Run in order, or re-derive intermediate s
 5. **`inverse_ising_phase2.ipynb`** — Phase 2 PL fit; mirrors notebook 2's analysis cells. Uses `models.fit_pl_ising`.
 6. **`validation.ipynb`** — leave-k-out evaluation harness. Three sections: cross-model species-granularity comparison (team-level random 90/10 split), pair-prediction metric (Phase 3 only), temporal-drift study (chronological appendix). Uses `models.fit_pl_ising`.
 7. **`app.py`** — three-page Streamlit webapp:
-   - **`/completer`** — five techniques (Mean-field / Parallel-tempered / Sample distribution / Anneal → MAP / Greedy descent) sharing one constraints + field-weight UI.
-   - **`/analysis`** — observables strip (E_adj, E_raw, ΣJ, corpus obs, Δswaps), pairwise J decomposition (15 pairs sorted by |J|), top single swaps from the starting team (one-shot menu, not chained), greedy swap-chain critique.
-   - **`/meta`** — fitted-model summary with locked headline validation numbers, side-by-side ±h feature tables, side-by-side ±J pair tables (same-species pairs filtered out on Phase 3), J/h distribution plots.
-   - Persistent phase picker at the top selects between Phase 1 / 2 / 3. Each page keeps its own multiselect state via `key=` suffixes.
+   - **`/completer`** — Bias Adjustment + Temperature sliders, pin/exclude multiselects, plus a single `Full statistical sampler (slow)` toggle. Toggle off (default): mean-field marginals at the chosen Bias Adjustment seed a greedy descent — fast, deterministic, returns one suggested team. Toggle on: parallel-tempered MCMC with the Temperature slider as the cold-chain target T and a fixed hot T = 2.0 — slow but yields a full Boltzmann distribution over the top-K completions. All other PT/MF/greedy knobs are locked to defaults (`PT_LADDER_LEVELS=7`, `PT_RUNS=3`, `PT_SWEEPS=10000`, `PT_BURN_IN=3000`, `PT_SWAP_INTERVAL=10`, `MF_MAX_ITERS=200`, `MF_TOL=1e-5`, `GREEDY_MAX_SWAPS=10`, `TOP_COMPLETIONS=10`). Error if cold > hot.
+   - **`/analysis`** — observables strip (Score (adj), Score (raw), Coherence, corpus), pairwise coupling decomposition (15 pairs sorted by |Coupling|), top single swaps from the starting team (`TOP_SINGLE_SWAPS=10`, independent — not chained), greedy swap-chain critique (`GREEDY_MAX_SWAPS=10`).
+   - **`/meta`** — fitted-model summary with locked headline validation numbers, side-by-side ±Bias feature tables (`META_TOP_FEATURES=25` each), side-by-side ±Coupling pair tables with same-species filter on Species @ Item (`META_TOP_PAIRS=25` each), Coupling/Bias distribution plots.
+   - Persistent model picker at the top selects between Species / Species @ Item. Each page keeps its own multiselect state via `key=` suffixes; internal `phase_key` values are `"species"` / `"species_item"`.
+   - **Sign convention:** the webapp displays `Score = -E` so higher = better team. The underlying `team_energy` in `sampling.py` is unchanged (Hamiltonian space, lower = more probable). All sign-flipping happens at the render layer only.
+   - **The merged `corpus` column** replaces the prior `obs` + `Δswaps` pair: a green `N×` badge when the exact roster was seen `N` times in the corpus; an amber/red `Δk (N)` badge when the nearest observed roster is `k` swaps away and was itself seen `N` times. Helpers: `rendering.nearest_observed` returns `(delta, count)`; `rendering_html.corpus_cell` renders the chip.
 
 ## Module structure
 
 - **`constants.py`** — vocab cutoffs, corpus size, regularization strength, validation seed / fraction, ingest filters. Change any knob here, not in the notebook or app.
 - **`helpers.py`** — Phase 1 only: `load_chaos`, `build_vocab`, `build_cooccurrence`, `build_ppmi`, `binary_moments`, `binary_correlation`, `ising_gaussian`. Frozen-dataclass return types throughout.
-- **`models.py`** — `fit_pl_ising(X, *, C, max_iter)` runs V per-spin L2 logistic regressions, skips degenerate spins, symmetrizes via `J = 0.5 * (J_asym + J_asym.T)`, zeros diagonal. Used by both notebooks 5/6 and `app.py:load_model_phase{2,3}`.
+- **`models.py`** — `fit_pl_ising(X, *, C, max_iter)` runs V per-spin L2 logistic regressions, skips degenerate spins, symmetrizes via `J = 0.5 * (J_asym + J_asym.T)`, zeros diagonal. Used by both notebooks 5/6 and `app.py:load_model_{species,species_item}`.
 - **`sampling.py`** — `swap_mcmc` / `anneal_mcmc` / `parallel_tempered_mcmc` / `meanfield_marginals` / `greedy_optimize` / `rank_single_swaps`. All accept keyword-only `species_of` / `item_of` for Phase 3 uniqueness (no-duplicate-species, no-duplicate-item). Shared inner loop in `_local_swap_step` so the three MCMC variants stay in sync.
-- **`rendering.py`** — pure-function helpers: `team_obs_count`, `min_swaps_to_observed`, `intra_team_sum_j`, `pairwise_j_rows`, `render_pairwise_j_table`. No Streamlit imports.
+- **`rendering.py`** — pure-function helpers: `team_obs_count`, `min_swaps_to_observed`, `nearest_observed` (joint delta + nearest count for the merged corpus column), `intra_team_sum_j`, `pairwise_j_rows`, `render_pairwise_j_table`. No Streamlit imports. `team_obs_count` and `min_swaps_to_observed` stay for notebook use; the webapp uses `nearest_observed` exclusively.
+- **`rendering_html.py`** — HTML-string builders for the lab-notebook visual language. Atoms: `section_label`, `stat`, `stat_strip`, `score_chip`, `signed_bar`, `mini_bar`, `corpus_cell` (merged obs / Δswaps badge — replaces the old `delta_swaps_badge`). Sprite primitives: `sprite_img` / `_sprite_box` (return `<object>` elements with native HTML5 fallback — see "Webapp visual language" gotchas below for *why*). Vocab parsing: `extract_species` / `extract_item` to split `"Species @ Item"` strings. Composed cells: `slot_card` / `slot_card_empty` / `slot_strip`, `comp_mon_cell`, `pair_cell`, `swap_cell`, `inline_mon`, `team_mini_strip`. Class names are paired with `styles.py` — renaming one means renaming both.
+- **`styles.py`** — design tokens (LAB.* CSS variables, Google Fonts import for Source Serif 4 / Inter / IBM Plex Mono) and Streamlit widget overrides. `inject()` is called once at the top of `main()`. Includes overrides for Streamlit's dark-mode auto-detection (`--primary-color` etc. forced to the lab palette so widget internals stay in light mode even when the OS reports `prefers-color-scheme: dark`).
 - **`limitless_ingest.py`** — fetches recent VGC Reg M-A tournaments from `play.limitlesstcg.com/api` (paginated, with name + Protect-ratio singles filters), extracts parsed team rosters and caches one small JSON per tournament under `tournaments_cache/`. Walks newest-first until `>= min_teams` (default `PHASE2_MIN_TEAMS = 10000`) teams accumulate. Cache schema is versioned (`CACHE_VERSION`); bump when parsing logic changes. `normalize_name` collapses case/whitespace variants in the raw API; `strip_mega_prefix` collapses `Mega <X>` species names (with optional X/Y/Z forme suffix) down to the base species — the held Mega Stone is the source of truth for which mega forme, and players were inconsistent about whether they prefixed the species name.
+
+## Webapp visual language
+
+Post-v0.4 the app uses a "lab notebook" palette + type system delivered via CSS injection. Four non-obvious things to know before touching it:
+
+- **Streamlit strips inline event handlers and won't execute `<script>` tags injected via `st.markdown`.** This is why `sprite_img` returns an HTML5 `<object>` with an inner `<span>` fallback — when the `data=` URL fails, the browser natively renders the inner content. We tried `onerror`-swap (handler stripped), layered `background-image` (transparent sprites let the missingno bleed through), and inline `<script>` rebinding (React's `dangerouslySetInnerHTML` refuses to execute it). `<object>` was the only path that worked.
+- **Sprite slug rules** (`rendering_html.species_to_slug`): first hyphen is treated as a forme separator and preserved (`Calyrex-Shadow` → `calyrex-shadow`, `Blastoise-Mega` → `blastoise-mega`); subsequent hyphens collapse (`Urshifu-Rapid-Strike` → `urshifu-rapidstrike`). Species whose canonical name *contains* a hyphen as part of the base (Ho-Oh, Chien-Pao, Porygon-Z, …) are in a curated `_HYPHEN_BASE_SPECIES` set and have all hyphens stripped. Missing sprites fall through to `assets/missingno.svg`, inlined as a data URI at import time.
+- **Widget-scoping via marker divs + `:has()`.** Streamlit doesn't let you wrap a widget in a custom-class div. To style only specific widgets, the pattern is: emit an invisible marker element (`<div class="lab-phase-picker-marker"></div>`) right before/inside the widget's column, then target via `[data-testid="stColumn"]:has(.lab-phase-picker-marker) [role="radiogroup"] { … }`. If Streamlit ever changes its `data-testid` hierarchy, these selectors are the first thing that breaks — search styles.py for `:has(`.
+- **OS dark mode bleeds into widget internals** unless `--primary-color` / `--background-color` / `--text-color` are forced on `:root` AND on `html[data-theme="dark"]`. `.streamlit/config.toml` would be the idiomatic fix but is gitignored.
 
 ## Conventions threaded through multiple files
 
@@ -116,6 +137,10 @@ Easy to get wrong if you only look at one file:
 
 - **Mean-field is a faithful fast proxy for the true sampler.** Direct head-to-head on 100 in-vocab test teams (matched held-out positions across methods, post-Phase-4 baseline): MF and single-chain swap MCMC (at fw=1, T=1, 20000 post-burn-in samples — the target distribution PT samples from at default settings) agree on top-1 picks in 85.0% / 75.0% / 73.7% of teams at k = 1 / 2 / 3, with Spearman rank correlation of held-out-pair ranks at 0.94–0.95 across all k. Hit-rate / MRR deltas are ≤1.5 pp at every (k, K). Practical takeaways: (a) the validator's MF-based headline numbers are trustworthy estimates of true Ising performance; (b) MF is the default `/completer` technique for the same reason (instant, no MCMC tuning, same ranking quality up to head-permutation noise); (c) at very low T or very low `field_weight` the MF approximation is *not* validated — those regimes weren't tested. For low-T pure-J archetype-coherence work, stick with Parallel-tempered.
 
+- **In the webapp `/completer`, MF marginals seed the greedy descent — bias adjustment is honored at every step.** Prior versions seeded greedy descent from a popularity-only initial fill (`sorted(range(V), key=-m[i])`), so the Bias Adjustment slider was effectively ignored at init and only entered at descent time; descent usually terminated in a handful of swaps before escaping the popularity basin. The post-v1 fast path computes MF marginals at the chosen Bias Adjustment first, greedy-fills from that ranking (which already accounts for popularity ± coupling structure under the bias-adjusted field), then runs greedy descent. Net: the slider has visible end-to-end effect now. Chain length of the descent step is itself a diagnostic — short chain means MF approximation is tight for this query; longer chain means the one-shot MF-fill missed an internally-inconsistent pairing.
+
+- **Phase 3 (Species @ Item) qualitatively mitigates the negative-ΣJ "balance team" artifact observed under Phase 2.** Under Phase 2 (species-only) the most-played teams had ΣJ < 0 — the model couldn't represent what made them work because the pairwise-MaxEnt fit on species labels alone is blind to role and item synergy. Adding the item dimension restores most of that information, so high-popularity rosters under Phase 3 are typically positive-ΣJ. Qualitative assessment only; worth a more rigorous comparison later — would need to project Phase 3's `(species, item)` rosters down to species, compute ΣJ on Phase 2's J for matched teams, and contrast.
+
 ## Data file
 
 `gen9championsvgc2026regma-1760.json` (VGC Reg M-A Champions, 1760 elo cutoff) is the current target metagame. An earlier 1500-cutoff file was tried, found equivalent, and dropped. An earlier BSS variant existed briefly; do not reintroduce it.
@@ -130,6 +155,17 @@ The pre-refactor state is tagged `v0`. Anything in the git history before that t
 
 1. **Sampler / MF / greedy code lived inline in `app.py`** (single ~1750-line file). It's now in `sampling.py`; `app.py` is purely rendering + Streamlit plumbing.
 2. **Validation used a tournament-strided split.** The numbers in older commit messages (e.g. "Phase 2 top-1: 37.8%", "Phase 3 top-1: 46.3%") were measured under that split. The current post-Phase-3 baseline above uses the team-level split.
-3. **Streamlit app was one page with five modes in the sidebar.** Now three pages with a top-of-page phase picker; the "Greedy team optimizer" mode became the centerpiece of the `/analysis` page.
+3. **Streamlit app was one page with five modes in the sidebar.** Now three pages with a top-of-page model picker; the "Greedy team optimizer" mode became the centerpiece of the `/analysis` page.
 
 If you need an old number, check `tests/validation_baseline_v0.json` for the canonical v0 figures.
+
+## v1 webapp simplification
+
+The pre-v1 webapp exposed Phase 1/2/3 in a phase picker, five techniques in `/completer` (Mean-field / Parallel-tempered / Sample distribution / Anneal → MAP / Greedy descent), per-technique slider expanders, and shared the underlying mathematical terminology (`E_adj`, `E_raw`, `ΣJ`, `J`, `h`, `field_weight`) in the UI. The v1 simplification cut all of that:
+
+1. **Phase 1 removed from the picker.** `helpers.py` and `load_model_phase1` in `app.py` (renamed `load_model_species` / `load_model_species_item`) survive for notebook use. The picker now has two options: `Species` and `Species @ Item`.
+2. **Five techniques collapsed to a single `Full statistical sampler (slow)` toggle.** Off (default) runs MF-marginals → greedy-fill → greedy-descent. On runs PT. `Sample distribution` and `Anneal → MAP` were dropped from the UI entirely (still in `sampling.py`).
+3. **Per-technique sliders locked to constants** (see the `/completer` description above for values).
+4. **User-facing terms decoupled from the math.** `E` → Score (sign-flipped), `E_adj` → Score (adj), `field_weight` → Bias Adjustment, `h` → Bias, `J` → Coupling Strength, `ΣJ` → Coherence. Internal code, notebook outputs, and `sampling.py` / `models.py` API keep the original names. Sign-flipping happens only at the render layer.
+5. **`obs` + `Δswaps` columns merged into one `corpus` column** rendered by `rendering_html.corpus_cell` (green `N×` if seen, amber/red `Δk (N)` if not). `rendering.nearest_observed` returns `(delta, count)`.
+6. **Inline captions stripped from `/analysis` and `/meta`** — column names + the planned future explanatory page carry the explanatory load.

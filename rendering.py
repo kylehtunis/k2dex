@@ -55,6 +55,37 @@ def min_swaps_to_observed(
     return min(len(team - obs) for obs in team_counts)
 
 
+def nearest_observed(
+    state: NDArray[np.bool_],
+    vocab: list[str],
+    team_counts: Counter[frozenset[str]] | None,
+) -> tuple[int, int] | None:
+    """Joint (min swap distance, count of the nearest observed roster).
+
+    delta == 0 means the team itself was observed; count is its own corpus
+    occurrence count. delta >= 1 returns the corpus count of *the* nearest
+    observed roster (ties broken by highest count — the most-played variant
+    among equally-close observed teams).
+
+    Returns None when team_counts is empty / unavailable.
+    """
+    if not team_counts:
+        return None
+    team = frozenset(vocab[i] for i in np.where(state)[0])
+    if team in team_counts:
+        return 0, int(team_counts[team])
+    best_delta = None
+    best_count = 0
+    for obs, c in team_counts.items():
+        d = len(team - obs)
+        if best_delta is None or d < best_delta or (d == best_delta and c > best_count):
+            best_delta = d
+            best_count = int(c)
+    if best_delta is None:
+        return None
+    return best_delta, best_count
+
+
 def intra_team_sum_j(
     state: NDArray[np.bool_],
     J: NDArray[np.float64],

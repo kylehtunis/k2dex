@@ -1,0 +1,17 @@
+# Project-tracked Streamlit configuration. Theme is part of the lab-notebook
+# visual identity and travels with the code. Only secrets.toml stays
+# gitignored (see .gitignore).
+
+[theme]
+# Force light theme so widget internals (multiselect tags, slider labels,
+# expander chrome) don't render in dark mode when the OS prefers it.
+base = "light"
+primaryColor = "#2d5e3d"          # forest green — matches --lab-accent in styles.py
+backgroundColor = "#faf7f0"        # --lab-bg (warm off-white)
+secondaryBackgroundColor = "#f3efe5"  # --lab-panel-alt
+textColor = "#1a1815"              # --lab-ink
+
+[client]
+# Hide the running/deploy toolbar in dev. Production hosts (Streamlit Cloud)
+# generally surface their own chrome and ignore this.
+toolbarMode = "minimal"
