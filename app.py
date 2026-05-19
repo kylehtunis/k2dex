@@ -30,9 +30,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
 
+import feature_classification
 import helpers
 import styles
 from constants import (
+    FEATURE_CLASSIFICATION_M_FLOOR,
+    META_CLASSIFIED_LABEL_K,
+    META_CLASSIFIED_PARTNERS_K,
+    META_TOP_CLASSIFIED,
     PHASE1_MIN_USAGE,
     PHASE1_RIDGE_EPS,
     PHASE2_LR_C,
@@ -1123,6 +1128,148 @@ def _render_meta(phase_key: str, model: PhaseModel) -> None:
     fig.tight_layout()
     st.pyplot(fig)
     plt.close(fig)
+
+    # --- Feature classification ---
+    st.markdown("##### Feature classification")
+    st.caption(
+        "Departure from the naive m ≈ σ(h) expectation, decomposed per partner. "
+        "Each feature is plotted as net coupling to the meta (J·m) vs total "
+        "coupling magnitude (|J|·m). Color encodes which top-K list the feature "
+        "appears in below."
+    )
+
+    metrics = feature_classification.feature_metrics(J, model.m)
+    classification = feature_classification.classify_features(
+        j_dot_m=metrics["j_dot_m"],
+        abs_j_dot_m=metrics["abs_j_dot_m"],
+        m=model.m,
+        m_floor=FEATURE_CLASSIFICATION_M_FLOOR,
+        top_k=META_TOP_CLASSIFIED,
+    )
+    fig_fc = feature_classification.build_scatter_figure(
+        j_dot_m=metrics["j_dot_m"],
+        abs_j_dot_m=metrics["abs_j_dot_m"],
+        m=model.m,
+        classification=classification,
+        vocab=vocab,
+        label_top_k=META_CLASSIFIED_LABEL_K,
+    )
+    st.pyplot(fig_fc)
+    plt.close(fig_fc)
+
+    row1_a, row1_b = st.columns(2)
+    with row1_a:
+        st.markdown("**Glue (top J·m)**")
+        st.markdown(_format_classified_table(
+            classification["glue"], vocab, model.m, metrics))
+    with row1_b:
+        st.markdown("**Outcast (bottom J·m)**")
+        st.markdown(_format_classified_table(
+            classification["outcast"], vocab, model.m, metrics))
+    row2_a, row2_b = st.columns(2)
+    with row2_a:
+        st.markdown("**Archetype specialist (high |J|·m, J·m ≈ 0)**")
+        st.markdown(_format_classified_table(
+            classification["specialist"], vocab, model.m, metrics))
+    with row2_b:
+        st.markdown("**Flex filler (low |J|·m, J·m ≈ 0)**")
+        st.markdown(_format_classified_table(
+            classification["flex"], vocab, model.m, metrics))
+
+    st.markdown("##### Drill into a feature")
+    surviving = [
+        int(i) for i in range(len(vocab))
+        if model.m[i] >= FEATURE_CLASSIFICATION_M_FLOOR
+    ]
+    if classification["glue"]:
+        default_idx = int(classification["glue"][0])
+    elif surviving:
+        default_idx = int(max(surviving, key=lambda i: model.m[i]))
+    else:
+        default_idx = 0
+
+    surviving_labels = [vocab[i] for i in surviving]
+    default_label = vocab[default_idx]
+    default_pos = (
+        surviving_labels.index(default_label)
+        if default_label in surviving_labels else 0
+    )
+    picked_label = st.selectbox(
+        "Feature",
+        options=surviving_labels,
+        index=default_pos,
+        key=f"meta_classify_drill_{phase_key}",
+    )
+    picked_idx = vocab.index(picked_label)
+
+    r_picked = float(feature_classification.residual(h, model.m)[picked_idx])
+    strip_cols = st.columns(4)
+    strip_cols[0].metric("m", f"{float(model.m[picked_idx]):.4f}")
+    strip_cols[1].metric("J·m", f"{float(metrics['j_dot_m'][picked_idx]):+.3f}")
+    strip_cols[2].metric("|J|·m", f"{float(metrics['abs_j_dot_m'][picked_idx]):.3f}")
+    strip_cols[3].metric("h − logit(m)", f"{r_picked:+.3f}")
+
+    contribs = feature_classification.partner_contributions(
+        J, model.m, i=picked_idx,
+    )
+    pos_col, neg_col = st.columns(2)
+    with pos_col:
+        st.markdown("**Top +contributions (J_ij · m_j)**")
+        pos_order = np.argsort(-contribs)[:META_CLASSIFIED_PARTNERS_K]
+        st.markdown(_format_partner_table(
+            pos_order, vocab, J, model.m, picked_idx, contribs))
+    with neg_col:
+        st.markdown("**Top −contributions (J_ij · m_j)**")
+        neg_order = np.argsort(contribs)[:META_CLASSIFIED_PARTNERS_K]
+        st.markdown(_format_partner_table(
+            neg_order, vocab, J, model.m, picked_idx, contribs))
+
+
+def _format_classified_table(
+    idxs: list[int],
+    vocab: list[str],
+    m: np.ndarray,
+    metrics: dict[str, np.ndarray],
+) -> str:
+    if not idxs:
+        return "_(no features in this quadrant under the current m floor)_"
+    lines = [
+        "| # | feature | m | J·m | |J|·m |",
+        "| ---: | :--- | ---: | ---: | ---: |",
+    ]
+    for rank, i in enumerate(idxs, 1):
+        i = int(i)
+        lines.append(
+            f"| {rank} | {vocab[i]} | {float(m[i]):.4f} | "
+            f"{float(metrics['j_dot_m'][i]):+.3f} | "
+            f"{float(metrics['abs_j_dot_m'][i]):.3f} |"
+        )
+    return "\n".join(lines)
+
+
+def _format_partner_table(
+    order: np.ndarray,
+    vocab: list[str],
+    J: np.ndarray,
+    m: np.ndarray,
+    picked_idx: int,
+    contribs: np.ndarray,
+) -> str:
+    lines = [
+        "| # | partner | J_ij | m_j | J_ij·m_j |",
+        "| ---: | :--- | ---: | ---: | ---: |",
+    ]
+    rank = 0
+    for k in order:
+        k = int(k)
+        if k == picked_idx:
+            continue
+        rank += 1
+        lines.append(
+            f"| {rank} | {vocab[k]} | {float(J[picked_idx, k]):+.3f} | "
+            f"{float(m[k]):.4f} | {float(contribs[k]):+.4f} |"
+        )
+    return "\n".join(lines)
 
 
 def _format_feature_h_table(
