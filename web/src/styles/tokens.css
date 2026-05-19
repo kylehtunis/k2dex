@@ -1,0 +1,45 @@
+/* Design tokens: lab palette + type system.
+ *
+ * Mirrors the LAB_* constants and :root vars from styles.py. Anything
+ * referenced via var(--lab-*) in the component CSS lives here. Three
+ * semantic chromas (pos / neg / warn) share luminance and chroma so
+ * only hue varies. */
+
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  --lab-bg: #faf7f0;
+  --lab-panel: #ffffff;
+  --lab-panel-alt: #f3efe5;
+  --lab-ink: #1a1815;
+  --lab-ink-soft: #5b554c;
+  --lab-ink-muted: #8b857a;
+  --lab-rule: #d9d2c2;
+  --lab-rule-soft: #e8e3d6;
+  --lab-accent: oklch(0.42 0.10 145);
+  --lab-pos: oklch(0.55 0.13 155);
+  --lab-neg: oklch(0.55 0.13 25);
+  --lab-warn: oklch(0.62 0.13 75);
+
+  --lab-font-serif: 'Source Serif 4', 'Georgia', serif;
+  --lab-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --lab-font-mono: 'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+
+  color-scheme: light;
+}
+
+/* Defensive: some browsers honor prefers-color-scheme on data-theme. */
+html[data-theme="dark"], [data-theme="dark"] {
+  color-scheme: light;
+}
+
+html, body {
+  margin: 0;
+  background: var(--lab-bg);
+  color: var(--lab-ink);
+  font-family: var(--lab-font-sans);
+}
+
+* {
+  box-sizing: border-box;
+}

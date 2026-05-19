@@ -1,0 +1,325 @@
+/* Component classes used by the atomic / composed render helpers.
+ * Mirrors the `.lab-*` component half of styles.py.
+ *
+ * Pairing rule: class names here are coupled 1:1 with the JSX in
+ * web/src/render/. Renaming one means renaming both. See the Phase F
+ * duplication register in STATIC_DEPLOY_PLAN.md. */
+
+/* ----- Stat cell + strip ----- */
+
+.lab-stat-strip {
+  display: grid;
+  gap: 28px;
+  background: var(--lab-panel);
+  border: 1px solid var(--lab-rule);
+  border-radius: 3px;
+  padding: 14px 18px;
+  margin-bottom: 12px;
+}
+.lab-stat-label {
+  font-family: var(--lab-font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lab-stat-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--lab-ink-muted);
+  border-radius: 50%;
+  font-family: var(--lab-font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--lab-ink-muted);
+  cursor: help;
+  transition: color 80ms ease, border-color 80ms ease;
+}
+.lab-stat-help:hover {
+  color: var(--lab-ink);
+  border-color: var(--lab-ink);
+}
+.lab-stat-value {
+  font-family: var(--lab-font-mono);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--lab-ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.lab-stat-sub {
+  font-family: var(--lab-font-mono);
+  font-size: 10px;
+  color: var(--lab-ink-muted);
+  margin-top: 4px;
+}
+
+/* ----- Score chip ----- */
+.lab-chip {
+  font-family: var(--lab-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  display: inline-block;
+}
+
+/* ----- Signed bar (bipolar around zero) ----- */
+.lab-bar-wrap {
+  display: inline-block;
+  position: relative;
+  height: 8px;
+  background: var(--lab-rule-soft);
+  border-radius: 1px;
+  vertical-align: middle;
+}
+.lab-bar-mid {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--lab-rule);
+}
+.lab-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 1px;
+}
+
+/* ----- Mini bar (unipolar) ----- */
+.lab-minibar-wrap {
+  display: inline-block;
+  height: 6px;
+  background: var(--lab-rule-soft);
+  border-radius: 1px;
+  vertical-align: middle;
+}
+.lab-minibar-fill {
+  height: 100%;
+  background: var(--lab-accent);
+  border-radius: 1px;
+}
+
+/* ----- Corpus badge (merged obs / Δswaps) ----- */
+.lab-badge {
+  display: inline-block;
+  font-family: var(--lab-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  padding: 2px 8px;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+}
+.lab-badge-seen { color: var(--lab-pos); }
+.lab-badge-near { color: var(--lab-warn); }
+.lab-badge-far  { color: var(--lab-neg); }
+
+/* ----- Sprite fallback box ----- */
+.lab-sprite {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
+}
+
+/* ----- Slot strip + cards (§01 starting roster) ----- */
+.lab-slot-strip {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.lab-slot {
+  background: var(--lab-panel);
+  border: 1px solid var(--lab-rule);
+  border-top: 3px solid var(--lab-ink);
+  border-radius: 0 0 3px 3px;
+  padding: 12px 10px 10px;
+  text-align: center;
+  position: relative;
+  min-height: 168px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+}
+.lab-slot-indicator {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-family: var(--lab-font-mono);
+  font-size: 9px;
+  color: var(--lab-ink-muted);
+  letter-spacing: 0.04em;
+}
+.lab-slot-sprite {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+}
+.lab-slot-name {
+  font-family: var(--lab-font-serif);
+  font-size: 13px;
+  color: var(--lab-ink);
+  line-height: 1.2;
+  margin-top: 4px;
+  text-align: center;
+}
+.lab-slot-divider {
+  border: none;
+  border-top: 1px dotted var(--lab-rule);
+  width: 100%;
+  margin: 8px 0 6px 0;
+}
+.lab-slot-item {
+  font-family: var(--lab-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+  margin-top: auto;
+}
+.lab-slot-empty {
+  background: transparent;
+  border: none;
+  text-align: center;
+  min-height: 168px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 10px;
+}
+.lab-slot-empty-label {
+  font-family: var(--lab-font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+  margin-bottom: 12px;
+}
+.lab-slot-empty-ord {
+  font-family: var(--lab-font-mono);
+  font-size: 28px;
+  color: var(--lab-ink-soft);
+  letter-spacing: 0.1em;
+}
+
+/* ----- Excluded tag row ----- */
+.lab-excluded-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 4px 0 8px 0;
+}
+.lab-excluded-label {
+  font-family: var(--lab-font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+}
+.lab-excluded-tag {
+  font-family: var(--lab-font-sans);
+  font-size: 11px;
+  color: var(--lab-neg);
+  border: 1px solid var(--lab-neg);
+  background: var(--lab-panel);
+  padding: 3px 10px;
+  border-radius: 2px;
+}
+.lab-excluded-note {
+  font-family: var(--lab-font-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--lab-ink-muted);
+}
+
+/* ----- Completion table (rich rows w/ sprite cells) ----- */
+.lab-comp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--lab-font-sans);
+  font-size: 13px;
+}
+.lab-comp-table th {
+  font-family: var(--lab-font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+  border-bottom: 1px solid var(--lab-rule);
+  padding: 10px 12px;
+  text-align: left;
+}
+.lab-comp-table th.num { text-align: right; }
+.lab-comp-table td {
+  border-bottom: 1px solid var(--lab-rule-soft);
+  padding: 12px;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+  color: var(--lab-ink);
+}
+.lab-comp-table td.num { text-align: right; font-family: var(--lab-font-mono); }
+.lab-comp-table td.rank {
+  font-family: var(--lab-font-mono);
+  color: var(--lab-ink-muted);
+  width: 40px;
+}
+.lab-comp-table tr.top-row {
+  background: color-mix(in oklch, var(--lab-accent) 8%, transparent);
+}
+.lab-comp-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lab-comp-mon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lab-comp-mon img,
+.lab-comp-mon object {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+.lab-comp-mon-name {
+  font-family: var(--lab-font-serif);
+  font-size: 13px;
+  color: var(--lab-ink);
+  line-height: 1.2;
+}
+.lab-comp-mon-item {
+  font-family: var(--lab-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--lab-ink-muted);
+}
+.lab-comp-freq {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.lab-comp-freq-pct {
+  font-family: var(--lab-font-mono);
+  font-size: 13px;
+  color: var(--lab-ink);
+}

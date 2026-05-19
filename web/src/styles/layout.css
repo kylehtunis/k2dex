@@ -1,0 +1,155 @@
+/* Page chrome: outer container, header row, section dividers, page
+ * title block. Mirrors the layout half of styles.py — Streamlit-
+ * specific selectors are replaced with explicit lab-* classes our
+ * components emit. */
+
+.lab-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1.5rem 3.5rem 4rem;
+}
+
+/* Top header row: wordmark on left, model picker on right. */
+.lab-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  margin-bottom: 24px;
+}
+
+.lab-wordmark {
+  font-family: var(--lab-font-sans);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--lab-ink);
+  letter-spacing: -0.01em;
+}
+.lab-wordmark-mono {
+  font-family: var(--lab-font-mono);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--lab-ink-muted);
+  margin-left: 6px;
+}
+
+/* Page tabs (nav across the three pages). */
+.lab-tabs {
+  display: flex;
+  gap: 32px;
+  border-bottom: 1px solid var(--lab-rule);
+  margin-bottom: 24px;
+}
+.lab-tab {
+  padding: 12px 4px 14px;
+  font-family: var(--lab-font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--lab-ink-muted);
+  letter-spacing: 0.02em;
+  background: transparent;
+  border: none;
+  border-bottom: 4px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+}
+.lab-tab.active {
+  color: var(--lab-ink);
+  font-weight: 600;
+  border-bottom-color: var(--lab-accent);
+}
+
+/* Page title block (eyebrow + H1 + optional subtitle + optional right
+ * caption). PageTitle component composes the inner divs. */
+.lab-page-title {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+.lab-eyebrow {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+}
+.lab-h1 {
+  font-family: var(--lab-font-serif);
+  font-size: 42px;
+  font-weight: 400;
+  line-height: 1.1;
+  color: var(--lab-ink);
+  margin: 4px 0 8px 0;
+  letter-spacing: -0.01em;
+}
+.lab-subtitle {
+  font-family: var(--lab-font-serif);
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--lab-ink-soft);
+  max-width: 72ch;
+}
+.lab-subtitle code {
+  font-family: var(--lab-font-mono);
+  font-style: normal;
+  font-size: 13px;
+  background: transparent;
+  color: var(--lab-ink);
+  padding: 0;
+}
+.lab-corpus-caption {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  color: var(--lab-ink-muted);
+  text-align: right;
+}
+
+/* Section header (§01 STARTING ROSTER · 4 OF 6 SET …). */
+.lab-section {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--lab-rule);
+  margin: 28px 0 18px 0;
+}
+.lab-section-title {
+  font-family: var(--lab-font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lab-ink);
+}
+.lab-section-num {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--lab-ink-muted);
+  margin-right: 10px;
+}
+.lab-section-right {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  color: var(--lab-ink-muted);
+}
+
+/* Sub-section headings (Top +Bias / Top −Bias dividers in /meta). */
+.lab-subheading {
+  font-family: var(--lab-font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin: 4px 0 8px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid currentColor;
+}
+.lab-subheading-pos { color: var(--lab-pos); }
+.lab-subheading-neg { color: var(--lab-neg); }

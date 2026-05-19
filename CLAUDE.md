@@ -12,18 +12,31 @@ Three modeling phases, all using the inverse Ising pairwise-MaxEnt model with `(
 - **Phase 2** — pseudo-likelihood (PL) fit on Limitless tournament team rosters, species-only vocab.
 - **Phase 3** — PL fit on `(species, item)` pair features from the same Limitless data. Restores held-item forme distinctions Phase 2 collapses.
 
-The repo is a sequence of notebooks plus a Streamlit webapp. The webapp exposes only Phase 2 (Species) and Phase 3 (Species @ Item) — Phase 1 lives on in the notebooks but was cut from the user-facing surface in the v1 simplification. The webapp has **three pages** under one model picker: `/completer` (suggested completions or full PT sampling), `/analysis` (per-team diagnostics), `/meta` (format-wide statistics). Webapp user-facing terminology is decoupled from the underlying math: `J` → "Coupling Strength", `h` → "Bias", `ΣJ` → "Coherence", `E` → "Score" (sign-flipped so higher = better), `field_weight` → "Bias Adjustment". The webapp is one deliverable of the larger project — not the single end goal; deeper scientific content lives in the notebooks and a future explanatory page.
+The repo is a sequence of notebooks plus **two coexisting webapp surfaces**: the original Streamlit app (`app.py`) and a static React/TypeScript port (`web/`) intended for future GitHub Pages deploy. Both surface only Phase 2 (Species) and Phase 3 (Species @ Item) — Phase 1 lives on in the notebooks but was cut from the user-facing surface in the v1 simplification. Both have **three pages** under one model picker: `/completer` (suggested completions or full PT sampling), `/analysis` (per-team diagnostics), `/meta` (format-wide statistics). User-facing terminology is decoupled from the underlying math: `J` → "Coupling Strength", `h` → "Bias", `ΣJ` → "Coherence", `E` → "Score" (sign-flipped so higher = better), `field_weight` → "Bias Adjustment". The webapp is one deliverable of the larger project — not the single end goal; deeper scientific content lives in the notebooks and a future explanatory page.
+
+Until the static webapp ships, `app.py` is the canonical reference implementation. The TS port mirrors every piece of math; any drift is caught by `tests/test_parity.py` (see "Code duplicated across Python and TypeScript" below).
 
 ## Run commands
 
 ```bash
-streamlit run app.py            # three-page webapp
+# Python side
+streamlit run app.py            # canonical Streamlit webapp
 jupyter lab                     # notebooks
-python -m unittest discover tests   # regression gate
+python -m unittest discover tests   # regression gate (includes parity tests)
 python -m limitless_ingest       # ingest tournaments (manual; cache is in tournaments_cache/)
+python precompute.py            # rebuild web/public/models/ artifacts (manual; inspect before commit)
+
+# Static webapp (all run from web/)
+(cd web && npm install)         # one-time
+(cd web && npm run dev)         # local dev server at http://localhost:5173
+(cd web && npm test)            # JS smoke tests
+(cd web && npm run build)       # production build → web/dist/
+(cd web && npm run emit-baseline)  # regenerate tests/parity_baseline.json
 ```
 
-No build system; dependencies live in the user's global Python env. **`pandas` and `pyarrow` are intentionally absent** — use markdown tables for tabular display in Streamlit, not `st.dataframe`. Confirm before adding any new dependency (per `~/.claude/CLAUDE.md`).
+No build system on the Python side; dependencies live in the user's global Python env. **`pandas` and `pyarrow` are intentionally absent** — use markdown tables for tabular display in Streamlit, not `st.dataframe`. Confirm before adding any new dependency (per `~/.claude/CLAUDE.md`).
+
+Static webapp has a `package.json` in `web/` (Vite + React 18 + TypeScript + Vitest + react-select + react-router-dom). No other JS deps. Same confirm-before-adding rule applies.
 
 ## Repo layout
 
@@ -31,6 +44,9 @@ No build system; dependencies live in the user's global Python env. **`pandas` a
 app.py                  Streamlit webapp (rendering only; samplers imported)
 constants.py            Shared numeric constants (vocab cutoffs, seeds, etc.)
 helpers.py              Phase 1 Gaussian inverse Ising primitives
+loaders.py              Pure (J, h, m, vocab) model builders; used by app.py
+                        via @st.cache_resource wrappers and by precompute.py
+                        for direct invocation
 models.py               fit_pl_ising — Phase 2/3 PL fit
 sampling.py             MCMC family (swap / anneal / PT) + mean-field + greedy
                         + rank_single_swaps (top-N independent swap suggestions)
@@ -44,7 +60,14 @@ styles.py               Design tokens (LAB.* CSS vars), font import, widget
 assets/                 Static assets bundled into the page as data URIs
                         (currently just missingno.svg, the sprite fallback)
 limitless_ingest.py     Limitless API ingest with normalize_name + strip_mega_prefix
+precompute.py           Offline pipeline: fits both models via loaders.py and
+                        serializes them to web/public/models/{species,species_item}/
+                        for the static webapp to load at runtime
 tests/                  unittest tests + locked validation baselines
+                        + parity_baseline.json (JS-side outputs gated by
+                          tests/test_parity.py)
+web/                    Static React/TypeScript webapp — see "Static web build"
+                        below for layout details
 ```
 
 The "promote when stable" convention still applies: new functions live in their notebook until they stabilize, then move to the relevant module. Phase 1 primitives are in `helpers.py`; the PL fit is in `models.py`; the MCMC family is in `sampling.py`. Each module's docstring lists what's already promoted.
@@ -62,17 +85,19 @@ The notebooks form a dependency chain. Run in order, or re-derive intermediate s
 7. **`app.py`** — three-page Streamlit webapp:
    - **`/completer`** — Bias Adjustment + Temperature sliders, pin/exclude multiselects, plus a single `Full statistical sampler (slow)` toggle. Toggle off (default): mean-field marginals at the chosen Bias Adjustment seed a greedy descent — fast, deterministic, returns one suggested team. Toggle on: parallel-tempered MCMC with the Temperature slider as the cold-chain target T and a fixed hot T = 2.0 — slow but yields a full Boltzmann distribution over the top-K completions. All other PT/MF/greedy knobs are locked to defaults (`PT_LADDER_LEVELS=7`, `PT_RUNS=3`, `PT_SWEEPS=10000`, `PT_BURN_IN=3000`, `PT_SWAP_INTERVAL=10`, `MF_MAX_ITERS=200`, `MF_TOL=1e-5`, `GREEDY_MAX_SWAPS=10`, `TOP_COMPLETIONS=10`). Error if cold > hot.
    - **`/analysis`** — observables strip (Score (adj), Score (raw), Coherence, corpus), pairwise coupling decomposition (15 pairs sorted by |Coupling|), top single swaps from the starting team (`TOP_SINGLE_SWAPS=10`, independent — not chained), greedy swap-chain critique (`GREEDY_MAX_SWAPS=10`).
-   - **`/meta`** — fitted-model summary with locked headline validation numbers, side-by-side ±Bias feature tables (`META_TOP_FEATURES=25` each), side-by-side ±Coupling pair tables with same-species filter on Species @ Item (`META_TOP_PAIRS=25` each), Coupling/Bias distribution plots.
+   - **`/meta`** — fitted-model stat strip (Model / Vocab / Corpus), side-by-side ±Bias feature tables (`META_TOP_FEATURES=25` each), side-by-side ±Coupling pair tables with same-species + same-item filters on Species @ Item (`META_TOP_PAIRS=25` each). The "locked headline validation numbers" stat strip and the Coupling/Bias distribution plots that existed in earlier versions have both been removed; live numbers come from `tests/validation_baseline_post_phase4.json` when needed.
    - Persistent model picker at the top selects between Species / Species @ Item. Each page keeps its own multiselect state via `key=` suffixes; internal `phase_key` values are `"species"` / `"species_item"`.
    - **Sign convention:** the webapp displays `Score = -E` so higher = better team. The underlying `team_energy` in `sampling.py` is unchanged (Hamiltonian space, lower = more probable). All sign-flipping happens at the render layer only.
    - **The merged `corpus` column** replaces the prior `obs` + `Δswaps` pair: a green `N×` badge when the exact roster was seen `N` times in the corpus; an amber/red `Δk (N)` badge when the nearest observed roster is `k` swaps away and was itself seen `N` times. Helpers: `rendering.nearest_observed` returns `(delta, count)`; `rendering_html.corpus_cell` renders the chip.
 
 ## Module structure
 
-- **`constants.py`** — vocab cutoffs, corpus size, regularization strength, validation seed / fraction, ingest filters. Change any knob here, not in the notebook or app.
+- **`constants.py`** — vocab cutoffs, corpus size, regularization strength, validation seed / fraction, ingest filters. Change any knob here, not in the notebook or app. (Static webapp mirrors a subset of these in `web/src/constants.ts` — see duplication register below.)
 - **`helpers.py`** — Phase 1 only: `load_chaos`, `build_vocab`, `build_cooccurrence`, `build_ppmi`, `binary_moments`, `binary_correlation`, `ising_gaussian`. Frozen-dataclass return types throughout.
-- **`models.py`** — `fit_pl_ising(X, *, C, max_iter)` runs V per-spin L2 logistic regressions, skips degenerate spins, symmetrizes via `J = 0.5 * (J_asym + J_asym.T)`, zeros diagonal. Used by both notebooks 5/6 and `app.py:load_model_{species,species_item}`.
-- **`sampling.py`** — `swap_mcmc` / `anneal_mcmc` / `parallel_tempered_mcmc` / `meanfield_marginals` / `greedy_optimize` / `rank_single_swaps`. All accept keyword-only `species_of` / `item_of` for Phase 3 uniqueness (no-duplicate-species, no-duplicate-item). Shared inner loop in `_local_swap_step` so the three MCMC variants stay in sync.
+- **`loaders.py`** — pure `build_species_model()` / `build_species_item_model()` that fit `(J, h, m, vocab, team_counts, species_of, item_of)` end-to-end. No Streamlit. `app.py` wraps them in `@st.cache_resource`; `precompute.py` calls them directly. Also exports `format_pair(species, item)`.
+- **`models.py`** — `fit_pl_ising(X, *, C, max_iter)` runs V per-spin L2 logistic regressions, skips degenerate spins, symmetrizes via `J = 0.5 * (J_asym + J_asym.T)`, zeros diagonal. Used by both notebooks 5/6 and `loaders.py` (which in turn feeds `app.py:load_model_{species,species_item}` and `precompute.py`).
+- **`precompute.py`** — CLI that fits both models via `loaders.py` and serializes each as `meta.json` + `J.bin` (float32 lower triangle) + `h.bin` + `m.bin` + `team_counts.json` under `web/public/models/<name>/`. Lower-triangle packing halves J's bytes; loader on the JS side reconstructs symmetric J. `--emit-parity-baseline` is unused (parity baseline emitted from JS — see `web/scripts/emit-parity-baseline.ts`); `--skip-team-counts` is a dev-iteration shortcut. The artifacts are committed to git after manual inspection — CI does **not** regenerate them.
+- **`sampling.py`** — `swap_mcmc` / `anneal_mcmc` / `parallel_tempered_mcmc` / `meanfield_marginals` / `greedy_optimize` / `rank_single_swaps`. All accept keyword-only `species_of` / `item_of` for Phase 3 uniqueness (no-duplicate-species, no-duplicate-item). Shared inner loop in `_local_swap_step` so the three MCMC variants stay in sync. **Mirrored 1:1 in `web/src/sampler/`** — every public symbol has a TypeScript counterpart gated by `tests/test_parity.py`.
 - **`rendering.py`** — pure-function helpers: `team_obs_count`, `min_swaps_to_observed`, `nearest_observed` (joint delta + nearest count for the merged corpus column), `intra_team_sum_j`, `pairwise_j_rows`, `render_pairwise_j_table`. No Streamlit imports. `team_obs_count` and `min_swaps_to_observed` stay for notebook use; the webapp uses `nearest_observed` exclusively.
 - **`rendering_html.py`** — HTML-string builders for the lab-notebook visual language. Atoms: `section_label`, `stat`, `stat_strip`, `score_chip`, `signed_bar`, `mini_bar`, `corpus_cell` (merged obs / Δswaps badge — replaces the old `delta_swaps_badge`). Sprite primitives: `sprite_img` / `_sprite_box` (return `<object>` elements with native HTML5 fallback — see "Webapp visual language" gotchas below for *why*). Vocab parsing: `extract_species` / `extract_item` to split `"Species @ Item"` strings. Composed cells: `slot_card` / `slot_card_empty` / `slot_strip`, `comp_mon_cell`, `pair_cell`, `swap_cell`, `inline_mon`, `team_mini_strip`. Class names are paired with `styles.py` — renaming one means renaming both.
 - **`styles.py`** — design tokens (LAB.* CSS variables, Google Fonts import for Source Serif 4 / Inter / IBM Plex Mono) and Streamlit widget overrides. `inject()` is called once at the top of `main()`. Includes overrides for Streamlit's dark-mode auto-detection (`--primary-color` etc. forced to the lab palette so widget internals stay in light mode even when the OS reports `prefers-color-scheme: dark`).
@@ -140,6 +165,95 @@ Easy to get wrong if you only look at one file:
 - **In the webapp `/completer`, MF marginals seed the greedy descent — bias adjustment is honored at every step.** Prior versions seeded greedy descent from a popularity-only initial fill (`sorted(range(V), key=-m[i])`), so the Bias Adjustment slider was effectively ignored at init and only entered at descent time; descent usually terminated in a handful of swaps before escaping the popularity basin. The post-v1 fast path computes MF marginals at the chosen Bias Adjustment first, greedy-fills from that ranking (which already accounts for popularity ± coupling structure under the bias-adjusted field), then runs greedy descent. Net: the slider has visible end-to-end effect now. Chain length of the descent step is itself a diagnostic — short chain means MF approximation is tight for this query; longer chain means the one-shot MF-fill missed an internally-inconsistent pairing.
 
 - **Phase 3 (Species @ Item) qualitatively mitigates the negative-ΣJ "balance team" artifact observed under Phase 2.** Under Phase 2 (species-only) the most-played teams had ΣJ < 0 — the model couldn't represent what made them work because the pairwise-MaxEnt fit on species labels alone is blind to role and item synergy. Adding the item dimension restores most of that information, so high-popularity rosters under Phase 3 are typically positive-ΣJ. Qualitative assessment only; worth a more rigorous comparison later — would need to project Phase 3's `(species, item)` rosters down to species, compute ΣJ on Phase 2's J for matched teams, and contrast.
+
+## Static web build
+
+The `web/` tree is a self-contained Vite + React 18 + TypeScript app that ports the Streamlit UI to a static site for GitHub Pages deployment. Its sampler math is a faithful port of `sampling.py`; rendering helpers mirror `rendering.py` + `rendering_html.py`; styles port `styles.py` to plain CSS.
+
+```
+web/
+  index.html
+  package.json              Vite + React 18 + TS + Vitest + react-select + react-router-dom
+  tsconfig.json
+  vite.config.ts            base path from VITE_BASE_PATH (production: /k2dex-science/)
+  scripts/
+    emit-parity-baseline.ts  Node script that emits tests/parity_baseline.json
+  public/
+    assets/missingno.svg     also copied into web/src/assets/ for ?url import
+    models/{species,species_item}/  ← precompute.py output, committed to git
+  src/
+    main.tsx, App.tsx        bootstrap + router
+    constants.ts             mirrors a subset of constants.py
+    assets/                  Vite-handled imports (missingno fallback)
+    state/ModelContext.tsx   load + cache (J, h, m, team_counts) per model
+    components/              Layout, ModelPicker, VocabSelect (react-select wrapper)
+    pages/{Completer,Analysis,Meta}Page.tsx
+    sampler/                 1:1 port of sampling.py — see duplication register
+      types.ts, rng.ts, model.ts, energy.ts,
+      meanfield.ts, greedy.ts, swap.ts, pt.ts, rank.ts
+    render/                  1:1 port of rendering.py + rendering_html.py
+      format.ts, corpus.ts, sprite-url.ts, Sprite.tsx, atoms.tsx,
+      cells.tsx, observables.ts
+    completer/               Page-local logic: fastPath, ptWorker, ptDriver,
+                             CompletionRow
+    analysis/                Page-local tables: PairwiseJTable, SwapsTable, ChainTable
+    meta/                    Page-local tables: FeatureBiasTable,
+                             ExtremeCouplingsTable, couplings
+    styles/                  tokens.css, layout.css, components.css, widgets.css
+  __tests__/                 vitest smoke tests for stochastic samplers
+```
+
+**Build artifacts pipeline:**
+1. Run `python precompute.py` locally after any change to corpus / fit hyperparams.
+2. Inspect `web/public/models/{species,species_item}/{meta.json,J.bin,...}` for sanity (vocab size, n_corpus_teams, file sizes).
+3. Commit the artifacts. CI is not allowed to regenerate them (the user wants manual eyeballing of every refresh).
+4. `npm run build` reads the artifacts as static files (Vite copies `public/` into `dist/`).
+
+**Parallel-tempered sampler** runs inside a Web Worker (`web/src/completer/ptWorker.ts`) so the UI stays responsive during the 10–30s sample. Structured-clone passes the model (~2.5 MB J for Species @ Item) into the worker; not a performance issue at this scale.
+
+**Sprite rendering** uses HTML5 `<object>` with a missingno fallback child — the same approach Streamlit-side took, ported as a React component (`web/src/render/Sprite.tsx`). The Showdown CDN URL builder + slug rules live in `web/src/render/sprite-url.ts` and mirror `rendering_html.species_to_slug`.
+
+**GH Pages deploy** is postponed — `STATIC_DEPLOY_PLAN.md` has the Phase E workflow draft when we're ready. Until then, `web/dist/` is local-only.
+
+## Code duplicated across Python and TypeScript
+
+Every duplicated symbol below must stay in sync. Editing one side without the other is allowed only if a parity test fails first and the fix updates both sides plus the gate.
+
+The invariant: **no Python↔TypeScript code duplication is allowed without a gate test.** New duplications added in future work must add a row to this table and a corresponding subtest in `tests/test_parity.py`.
+
+| Python | TypeScript | Gate test |
+| :--- | :--- | :--- |
+| `sampling.team_energy` | `sampler/energy.ts:teamEnergy` | parity (indirect, via MF/greedy) |
+| `sampling.build_constraint_sets` | `sampler/energy.ts:buildConstraintSets` | parity (indirect) |
+| `sampling.swap_violates_uniqueness` | `sampler/energy.ts:swapViolatesUniqueness` | parity (indirect) |
+| `sampling.initialize_state` | `sampler/energy.ts:initializeState` | JS smoke + parity (indirect) |
+| `sampling.meanfield_marginals` | `sampler/meanfield.ts:meanfieldMarginals` | `test_parity.py::test_meanfield_cases` |
+| `sampling.greedy_optimize` | `sampler/greedy.ts:greedyOptimize` | `test_parity.py::test_greedy_cases` |
+| `sampling._local_swap_step` | `sampler/swap.ts:localSwapStep` | JS smoke + parity (indirect) |
+| `sampling._init_chain` | `sampler/swap.ts:initChain` | JS smoke |
+| `sampling.swap_mcmc` | `sampler/swap.ts:swapMcmc` | JS smoke (stochastic — no parity baseline) |
+| `sampling.parallel_tempered_mcmc` | `sampler/pt.ts:parallelTemperedMcmc` | JS smoke (stochastic) |
+| `sampling.rank_single_swaps` | `sampler/rank.ts:rankSingleSwaps` | `test_parity.py::test_rank_cases` |
+| `rendering.intra_team_sum_j` | `render/observables.ts:intraTeamSumJ` | `test_parity.py::test_obs_cases` |
+| `rendering.pairwise_j_rows` | `render/observables.ts:pairwiseJRows` | `test_parity.py::test_obs_cases` |
+| `rendering.nearest_observed` | `render/corpus.ts:nearestObserved` | `test_parity.py::test_corpus_cases` |
+| `rendering_html.species_to_slug` + `_HYPHEN_BASE_SPECIES` | `render/sprite-url.ts:speciesToSlug` + `HYPHEN_BASE_SPECIES` | `test_parity.py::test_species_to_slug_cases` |
+| `rendering_html.extract_species` / `extract_item` | `render/format.ts:extractSpecies` / `extractItem` | covered indirectly by parity baseline construction |
+| `loaders.format_pair` | `render/format.ts:formatPair` | covered indirectly (precompute writes the joined string into `meta.json:vocab`) |
+| `precompute.pack_lower_triangle` (writer) | `sampler/model.ts:unpackLowerTriangle` (reader) | JS smoke + `tests/test_precompute.py` round-trip |
+| `precompute.serialize_team_counts` schema | `sampler/model.ts:loadTeamCounts` + `render/corpus.ts:teamKey` | `tests/test_precompute.py` + `test_parity.py::test_corpus_cases` |
+| `constants.{TEAM_SIZE, FIELD_WEIGHT_OPTIONS, TEMPERATURE_OPTIONS, TOP_COMPLETIONS, TOP_SINGLE_SWAPS, GREEDY_MAX_SWAPS, META_TOP_FEATURES, META_TOP_PAIRS, PT_*, MF_*}` | `web/src/constants.ts` | manual (rarely changes; values pinned by v1 simplification) |
+| `rendering_html` HTML class names (`lab-slot`, `lab-comp-table`, …) | `web/src/render/*.tsx` className strings + `web/src/styles/components.css` | visual — class renames must touch both sides |
+| `styles.py` `LAB_*` constants + CSS rules | `web/src/styles/{tokens,layout,components,widgets}.css` | visual — palette/typography changes touch both |
+
+Parity baseline regeneration:
+
+```bash
+cd web && npm run emit-baseline   # writes tests/parity_baseline.json (JS-side outputs)
+cd .. && python -m unittest tests.test_parity   # Python rerun + compare
+```
+
+The synthetic model used in the baseline is hand-built (V=12, team_size=4) so both stacks compute it byte-identically. Tolerance is `1e-9` for deterministic cases (MF, greedy, rank, obs); stochastic cases (swap MCMC, PT) are smoke-tested for well-formed output only.
 
 ## Data file
 

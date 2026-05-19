@@ -12,6 +12,15 @@ Three pages, all sharing one model picker at the top:
 
 Run with:
     streamlit run app.py
+
+Long-term role (see FUTURE_WORK.md): this file becomes the "scientist
+tool" surface — a local-only, clone-the-repo-to-use control panel that
+exposes every model knob without UI simplification. The public-facing,
+GitHub-Pages-deployed version lives in ``web/`` (static React/TS port,
+simplified UX). Until that split lands in earnest, both surfaces share
+the same Python math via ``loaders.py`` → ``precompute.py`` artifacts;
+parity is enforced by ``tests/test_parity.py``. See CLAUDE.md for the
+duplication register.
 """
 
 from __future__ import annotations
@@ -23,16 +32,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
 
-import limitless_ingest
 import rendering_html as rh
 import styles
-from constants import (
-    PHASE2_LR_C,
-    PHASE2_MIN_TEAM_COUNT,
-    PHASE2_MIN_TEAMS,
-    TEAM_SIZE,
+from constants import TEAM_SIZE
+from loaders import (
+    build_species_item_model,
+    build_species_model,
+    format_pair,
 )
-from models import fit_pl_ising
 from rendering import (
     intra_team_sum_j,
     nearest_observed,
@@ -96,113 +103,17 @@ MF_TOL = 1e-5
 
 
 @st.cache_resource(show_spinner="Loading Species model (pseudo-likelihood / Limitless teams)...")
-def load_model_species() -> tuple[
-    list[str], np.ndarray, np.ndarray, np.ndarray,
-    Counter[frozenset[str]],
-    list[str], list[str | None],
-]:
-    """Species model: pseudo-likelihood inverse Ising from Limitless tournament
-    team data, projected to species-only vocab.
-
-    Fits V per-spin logistic regressions (one per Pokemon in vocab) on the binary
-    species-indicator matrix; intercepts -> h, coefficients -> J rows.
-    Post-hoc symmetrization J = (J_asym + J_asym.T) / 2.
-
-    The ingest format is now (species, item) tuples (v2 cache); this model
-    projects down to species-only via `limitless_ingest.species_only_teams`.
-
-    Returns (vocab, m, J, h, team_counts, species_of, item_of). species_of equals
-    vocab (each species is one entry); item_of is all-None (items dropped at
-    projection). Sampler's uniqueness constraint is thus inert -- species can't
-    duplicate within a single-entry-per-species vocab.
-    """
-    tournaments = limitless_ingest.ingest(min_teams=PHASE2_MIN_TEAMS)
-    teams_full = limitless_ingest.all_teams(tournaments)
-    teams = limitless_ingest.species_only_teams(teams_full)
-    team_counts: Counter[frozenset[str]] = Counter(teams)
-
-    counts = Counter(name for team in teams for name in team)
-    vocab = sorted(name for name, c in counts.items() if c >= PHASE2_MIN_TEAM_COUNT)
-    name_to_i = {name: i for i, name in enumerate(vocab)}
-    V = len(vocab)
-
-    X = np.zeros((len(teams), V), dtype=np.int8)
-    for ti, team in enumerate(teams):
-        for name in team:
-            j = name_to_i.get(name)
-            if j is not None:
-                X[ti, j] = 1
-    m = X.mean(axis=0)
-
-    J, h = fit_pl_ising(X, C=PHASE2_LR_C)
-    species_of = list(vocab)
-    item_of: list[str | None] = [None] * len(vocab)
-    return vocab, m, J, h, team_counts, species_of, item_of
+def load_model_species():
+    """Streamlit-cached wrapper around `loaders.build_species_model`.
+    See that function's docstring for fit details."""
+    return build_species_model()
 
 
 @st.cache_resource(show_spinner="Loading Species @ Item model (pseudo-likelihood / item-pair vocab)...")
-def load_model_species_item() -> tuple[
-    list[str], np.ndarray, np.ndarray, np.ndarray,
-    Counter[frozenset[str]],
-    list[str], list[str | None],
-]:
-    """Species @ Item model: pseudo-likelihood inverse Ising over (species,
-    item) pairs.
-
-    Same fit machinery as the Species model but with each Pokemon-item pair as
-    its own feature. Restores held-item forme distinctions that the species
-    projection collapses; lets the model see role specialization (one Charizard
-    is a Mega sweeper, another is a Choice Scarf attacker). Vocab cutoff is
-    the same `PHASE2_MIN_TEAM_COUNT` (pair must appear in at least that many
-    teams).
-
-    Display strings: 'Species @ Item' for items, bare species for itemless mons
-    (see `format_pair`). species_of and item_of are populated so the sampler's
-    uniqueness constraint can reject duplicate-species and duplicate-item swaps.
-
-    team_counts here counts each exact (species, item)-roster's occurrences in
-    the corpus, keyed on frozensets of display strings.
-    """
-    tournaments = limitless_ingest.ingest(min_teams=PHASE2_MIN_TEAMS)
-    teams = limitless_ingest.all_teams(tournaments)
-
-    pair_counts = Counter(pair for team in teams for pair in team)
-    pair_list_above_cutoff = [p for p, c in pair_counts.items() if c >= PHASE2_MIN_TEAM_COUNT]
-    # Sort by display string for stable vocab ordering across reruns
-    pair_list = sorted(pair_list_above_cutoff, key=lambda p: format_pair(p[0], p[1]))
-    vocab = [format_pair(s, i) for s, i in pair_list]
-    pair_to_idx = {p: i for i, p in enumerate(pair_list)}
-    V = len(vocab)
-
-    species_of = [s for s, _ in pair_list]
-    item_of: list[str | None] = [i for _, i in pair_list]
-
-    X = np.zeros((len(teams), V), dtype=np.int8)
-    for ti, team in enumerate(teams):
-        for pair in team:
-            j = pair_to_idx.get(pair)
-            if j is not None:
-                X[ti, j] = 1
-    m = X.mean(axis=0)
-
-    # team_counts at exact (species, item) granularity, keyed on display strings.
-    # Skip teams with any out-of-vocab pair -- they can never be reached by
-    # completion under this model and shouldn't appear in obs lookups.
-    team_counts: Counter[frozenset[str]] = Counter()
-    for team in teams:
-        if all(pair in pair_to_idx for pair in team):
-            team_counts[frozenset(format_pair(s, i) for s, i in team)] += 1
-
-    J, h = fit_pl_ising(X, C=PHASE2_LR_C)
-    return vocab, m, J, h, team_counts, species_of, item_of
-
-
-def format_pair(species: str, item: str | None) -> str:
-    """Display-friendly form of a (species, item) pair used as Phase 3 vocab
-    strings. Bare species for itemless mons; otherwise 'Species @ Item'."""
-    if item is None:
-        return species
-    return f"{species} @ {item}"
+def load_model_species_item():
+    """Streamlit-cached wrapper around `loaders.build_species_item_model`.
+    See that function's docstring for fit details."""
+    return build_species_item_model()
 
 
 @st.cache_data(show_spinner=False)
@@ -465,8 +376,8 @@ def _render_completer(phase_key: str, model: PhaseModel, corpus_caption: str) ->
             key=f"completer_fw_{phase_key}",
             help=(
                 "Scales the Bias before sampling. 1.0 = data-calibrated "
-                "(popular mons dominate). 0.0 = pure coupling structure, no "
-                "popularity prior. Useful operating range 0.3–0.6."
+                "(popularity bias at full strength). 0.0 = pure coherence, "
+                "popularity disregarded. Useful operating range 0.2–0.8. "
             ),
         )
     with temp_col:

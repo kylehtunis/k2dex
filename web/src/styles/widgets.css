@@ -1,0 +1,202 @@
+/* Form widgets — buttons, model picker (segmented radio), sliders.
+ * react-select overrides are scoped via the `lab-select-*` classNames
+ * passed at component-construction time (not via this file). */
+
+/* Primary button — forest-green fill, mono uppercase label. */
+.lab-button-primary {
+  background: var(--lab-accent);
+  color: var(--lab-bg);
+  border: none;
+  border-radius: 3px;
+  font-family: var(--lab-font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  padding: 14px 24px;
+  cursor: pointer;
+  transition: filter 80ms ease;
+}
+.lab-button-primary:hover {
+  filter: brightness(1.05);
+}
+.lab-button-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Segmented control (model picker): horizontal row of pill-buttons. */
+.lab-segmented {
+  display: inline-flex;
+  gap: 0;
+}
+.lab-segmented-option {
+  background: var(--lab-panel);
+  border: 1px solid var(--lab-rule);
+  border-right: none;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-family: var(--lab-font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--lab-ink-soft);
+  transition: background 80ms ease;
+}
+.lab-segmented-option:first-child { border-radius: 3px 0 0 3px; }
+.lab-segmented-option:last-child {
+  border-radius: 0 3px 3px 0;
+  border-right: 1px solid var(--lab-rule);
+}
+.lab-segmented-option.active {
+  background: var(--lab-ink);
+  color: var(--lab-bg);
+  font-weight: 600;
+}
+
+/* Form labels (uppercase eyebrow style). */
+.lab-form-label {
+  font-family: var(--lab-font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+  margin-bottom: 6px;
+  display: block;
+}
+
+/* Native slider — kept minimal; we'll restyle if it becomes prominent. */
+.lab-slider {
+  width: 100%;
+  accent-color: var(--lab-accent);
+}
+
+/* Native checkbox + label — for the "Full statistical sampler" toggle. */
+.lab-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--lab-font-sans);
+  font-size: 13px;
+  color: var(--lab-ink);
+}
+.lab-checkbox-row input[type="checkbox"] {
+  accent-color: var(--lab-accent);
+}
+
+/* Disclosure (<details>) used for the PT "Sampler parameters" group. */
+.lab-expander {
+  border: 1px solid var(--lab-rule);
+  border-radius: 3px;
+  background: var(--lab-panel);
+}
+.lab-expander > summary {
+  font-family: var(--lab-font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lab-ink-soft);
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lab-expander > summary::-webkit-details-marker { display: none; }
+.lab-expander > summary::before {
+  content: "▸";
+  font-family: var(--lab-font-mono);
+  font-size: 10px;
+  color: var(--lab-ink-muted);
+  transition: transform 80ms ease;
+}
+.lab-expander[open] > summary::before {
+  transform: rotate(90deg);
+}
+.lab-expander[open] > summary {
+  border-bottom: 1px solid var(--lab-rule-soft);
+  color: var(--lab-ink);
+}
+.lab-expander > *:not(summary) {
+  padding: 18px 18px 18px;
+}
+
+/* Inline error / warning text under a form group. */
+.lab-form-error {
+  font-family: var(--lab-font-sans);
+  font-size: 12px;
+  color: var(--lab-neg);
+  margin-top: 6px;
+}
+.lab-form-note {
+  font-family: var(--lab-font-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--lab-ink-muted);
+  margin-top: 6px;
+}
+
+/* Caption variant: lives between the label and the input. Same look as
+ * lab-form-note but flipped margins so it pulls up to the label and
+ * pushes down toward the control. */
+.lab-form-caption {
+  font-family: var(--lab-font-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--lab-ink-muted);
+  margin: -2px 0 8px 0;
+}
+
+/* react-select shell. The library is theme-able via the `styles` prop
+ * but we'd rather drive everything from CSS vars. Setting
+ * `classNamePrefix="lab-select"` on the component opens these hooks. */
+.lab-select__control {
+  border-color: var(--lab-rule) !important;
+  border-radius: 3px !important;
+  background: var(--lab-panel) !important;
+  min-height: 38px !important;
+  font-family: var(--lab-font-sans) !important;
+  font-size: 13px !important;
+  box-shadow: none !important;
+}
+.lab-select__control--is-focused {
+  border-color: var(--lab-accent) !important;
+}
+.lab-select__multi-value {
+  background: var(--lab-panel) !important;
+  border: 1px solid var(--lab-rule) !important;
+  border-radius: 2px !important;
+}
+.lab-select__multi-value__label {
+  font-family: var(--lab-font-sans) !important;
+  font-size: 11px !important;
+  color: var(--lab-ink) !important;
+  padding: 2px 6px !important;
+}
+.lab-select__multi-value__remove {
+  color: var(--lab-ink-muted) !important;
+}
+.lab-select__multi-value__remove:hover {
+  background: var(--lab-rule-soft) !important;
+  color: var(--lab-ink) !important;
+}
+.lab-select__option {
+  font-family: var(--lab-font-sans) !important;
+  font-size: 13px !important;
+  color: var(--lab-ink) !important;
+  background: var(--lab-panel) !important;
+}
+.lab-select__option--is-focused {
+  background: var(--lab-rule-soft) !important;
+}
+.lab-select__option--is-selected {
+  background: var(--lab-ink) !important;
+  color: var(--lab-bg) !important;
+}
+.lab-select__menu {
+  border: 1px solid var(--lab-rule) !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06) !important;
+}
