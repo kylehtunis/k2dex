@@ -25,3 +25,19 @@ MIN_TEAMS_PER_TOURNAMENT = 64  # was 16; bump spreads corpus more temporally
 # --- Validation ---
 VALIDATION_TEAM_FRAC_TEST = 0.10   # 10% of teams (not tournaments) -> test
 VALIDATION_SEED = 42
+
+# --- Feature classification (analysis & /meta panel) ---
+# Tighter floor than the vocab cutoff (PHASE2_MIN_TEAM_COUNT, ~m=5e-4); a
+# separate threshold used only for ranking in the feature_classification view.
+# Below this, J rows from the PL fit are too noisy (few positive examples)
+# and crowd ranked lists with tail features for spurious reasons.
+FEATURE_CLASSIFICATION_M_FLOOR = 0.01
+
+# Per-quadrant (glue / outcast / specialist / flex) top-K shown in /meta tables.
+META_TOP_CLASSIFIED = 15
+
+# How many of the highest-m features get name annotations on the scatter plot.
+META_CLASSIFIED_LABEL_K = 10
+
+# Top-K positive and top-K negative partner contributions in the drill-down.
+META_CLASSIFIED_PARTNERS_K = 10
