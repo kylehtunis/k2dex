@@ -151,3 +151,31 @@ class TestClassifyFeatures(unittest.TestCase):
         self.assertEqual(out["outcast"], [3])
         self.assertEqual(out["specialist"], [2])
         self.assertEqual(out["flex"], [3])
+
+
+class TestBuildScatterFigure(unittest.TestCase):
+    def test_returns_figure_without_crash(self) -> None:
+        _, J, m, _ = _fixture()
+        metrics = feature_metrics(J, m)
+        classification = classify_features(
+            j_dot_m=metrics["j_dot_m"],
+            abs_j_dot_m=metrics["abs_j_dot_m"],
+            m=m,
+            m_floor=0.01,
+            top_k=1,
+        )
+        vocab = ["a", "b", "c", "d", "e", "f", "g"]
+        from feature_classification import build_scatter_figure
+        fig = build_scatter_figure(
+            j_dot_m=metrics["j_dot_m"],
+            abs_j_dot_m=metrics["abs_j_dot_m"],
+            m=m,
+            classification=classification,
+            vocab=vocab,
+            label_top_k=3,
+        )
+        self.assertEqual(len(fig.axes), 1)
+        ax = fig.axes[0]
+        self.assertGreater(len(ax.collections), 0)
+        import matplotlib.pyplot as plt
+        plt.close(fig)

@@ -108,3 +108,88 @@ def classify_features(
         "specialist": survivors[specialist_band].tolist(),
         "flex": survivors[flex_band].tolist(),
     }
+
+
+def build_scatter_figure(
+    *,
+    j_dot_m: np.ndarray,
+    abs_j_dot_m: np.ndarray,
+    m: np.ndarray,
+    classification: dict[str, list[int]],
+    vocab: list[str],
+    label_top_k: int,
+    figsize: tuple[float, float] = (10.0, 5.0),
+):
+    """Build the (J·m, |J|·m) scatter Figure.
+
+    Color rules:
+      glue       — warm green (#3a7d44)  matches positive-coupling color in app.py
+      outcast    — warm red   (#b03030)
+      specialist — purple     (#6a4ba8)
+      flex       — slate      (#5a6b78)
+      unclassified — light gray, low alpha, smaller marker
+
+    `label_top_k` highest-m features (independent of color class) get text
+    annotations using vocab names. No external label-deorbiting dep
+    (e.g. adjustText) — overlap is tolerated; tune offsets if it becomes
+    a problem.
+
+    Returns a matplotlib Figure. Caller is responsible for `plt.close()`.
+    """
+    import matplotlib.pyplot as plt
+
+    color_by_class = {
+        "glue":       "#3a7d44",
+        "outcast":    "#b03030",
+        "specialist": "#6a4ba8",
+        "flex":       "#5a6b78",
+    }
+
+    V = len(j_dot_m)
+    label_of: list[str | None] = [None] * V
+    for cname, idxs in classification.items():
+        for i in idxs:
+            label_of[int(i)] = cname
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    ax.axvline(0.0, color="black", lw=0.4, alpha=0.6)
+    median_abs_jm = float(np.median(np.abs(j_dot_m)))
+    ax.axhline(median_abs_jm, color="black", lw=0.4, alpha=0.6, linestyle="--")
+
+    unc_idx = [i for i in range(V) if label_of[i] is None]
+    if unc_idx:
+        ax.scatter(
+            j_dot_m[unc_idx], abs_j_dot_m[unc_idx],
+            s=np.clip(m[unc_idx] * 600, 4, 80),
+            color="#bfbfbf", alpha=0.5, linewidths=0,
+        )
+
+    for cname, color in color_by_class.items():
+        cls_idx = classification.get(cname, [])
+        if not cls_idx:
+            continue
+        cls_idx = [int(i) for i in cls_idx]
+        ax.scatter(
+            j_dot_m[cls_idx], abs_j_dot_m[cls_idx],
+            s=np.clip(m[cls_idx] * 600, 8, 120),
+            color=color, alpha=0.85, linewidths=0,
+            label=cname,
+        )
+
+    label_order = np.argsort(-m)[:label_top_k]
+    for i in label_order:
+        i = int(i)
+        ax.annotate(
+            vocab[i],
+            xy=(j_dot_m[i], abs_j_dot_m[i]),
+            xytext=(4, 4), textcoords="offset points",
+            fontsize=8, color="#222",
+        )
+
+    ax.set_xlabel("J·m  (signed net coupling to the meta)")
+    ax.set_ylabel("|J|·m  (popularity-weighted total coupling magnitude)")
+    ax.set_title("Feature classification")
+    ax.legend(loc="upper left", frameon=False, fontsize=8)
+    fig.tight_layout()
+    return fig
