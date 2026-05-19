@@ -1234,7 +1234,7 @@ def _format_classified_table(
     if not idxs:
         return "_(no features in this quadrant under the current m floor)_"
     lines = [
-        "| # | feature | m | J·m | |J|·m |",
+        "| # | feature | m | J·m | \\|J\\|·m |",
         "| ---: | :--- | ---: | ---: | ---: |",
     ]
     for rank, i in enumerate(idxs, 1):
