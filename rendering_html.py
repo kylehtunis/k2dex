@@ -52,6 +52,18 @@ _HYPHEN_BASE_SPECIES = frozenset({
     "nidoran-m",
 })
 
+# Limitless stores regional formes as "Adjective Species" (e.g. "Alolan Ninetales").
+# Maps the adjective → the Showdown regional suffix.
+_REGIONAL_ADJECTIVE: dict[str, str] = {
+    "alolan": "alola",
+    "galarian": "galar",
+    "hisuian": "hisui",
+    "paldean": "paldea",
+}
+
+# Limitless stores Rotom formes as "Forme Rotom" (e.g. "Wash Rotom").
+_ROTOM_FORMES: frozenset[str] = frozenset({"wash", "heat", "frost", "mow", "fan"})
+
 
 def _load_fallback_sprite() -> str:
     """Embed ``assets/missingno.{svg,png}`` as a ``data:`` URI used when a sprite 404s.
@@ -122,7 +134,17 @@ def species_to_slug(name: str) -> str:
     Misses still fall through to the ``onerror`` fallback in :func:`sprite_img`.
     """
     # Keep only alphanumerics, hyphens, and spaces; lowercase.
-    cleaned = re.sub(r"[^a-z0-9\s\-]+", "", name.lower())
+    cleaned = re.sub(r"[^a-z0-9\s\-]+", "", name.lower()).strip()
+    words = cleaned.split()
+    if len(words) >= 2:
+        # "Alolan Ninetales" → "ninetales-alola", "Hisuian Arcanine" → "arcanine-hisui"
+        if words[0] in _REGIONAL_ADJECTIVE:
+            region = _REGIONAL_ADJECTIVE[words[0]]
+            base = "".join(words[1:])
+            return f"{base}-{region}"
+        # "Wash Rotom" → "rotom-wash", "Heat Rotom" → "rotom-heat"
+        if len(words) == 2 and words[1] == "rotom" and words[0] in _ROTOM_FORMES:
+            return f"rotom-{words[0]}"
     # Spaces collapse to nothing per Showdown convention.
     no_spaces = re.sub(r"\s+", "", cleaned)
     if "-" not in no_spaces:
