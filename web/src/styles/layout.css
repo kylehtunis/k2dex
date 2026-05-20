@@ -59,6 +59,21 @@
   border-bottom-color: var(--lab-accent);
 }
 
+/* Split nav: left group = teambuilding tabs, right group = Science tab. */
+.lab-tabs-split {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 0;
+}
+.lab-tabs-group {
+  display: flex;
+  gap: 32px;
+}
+.lab-tabs-group-end {
+  margin-left: auto;
+}
+
 /* Page title block (eyebrow + H1 + optional subtitle + optional right
  * caption). PageTitle component composes the inner divs. */
 .lab-page-title {

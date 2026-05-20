@@ -4,6 +4,7 @@ import { Layout } from "./components/Layout";
 import { CompleterPage } from "./pages/CompleterPage";
 import { AnalysisPage } from "./pages/AnalysisPage";
 import { MetaPage } from "./pages/MetaPage";
+import { SciencePage } from "./pages/SciencePage";
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
             <Route path="completer" element={<CompleterPage />} />
             <Route path="analysis" element={<AnalysisPage />} />
             <Route path="meta" element={<MetaPage />} />
+            <Route path="science" element={<SciencePage />} />
             <Route path="*" element={<Navigate to="/completer" replace />} />
           </Route>
         </Routes>
