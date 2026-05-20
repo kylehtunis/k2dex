@@ -8,6 +8,7 @@ import { S3MCMC } from "../science/sections/S3MCMC";
 import { S4PT } from "../science/sections/S4PT";
 import { S5MeanField } from "../science/sections/S5MeanField";
 import { S6SCOTUS } from "../science/sections/S6SCOTUS";
+import { S7Pokemon } from "../science/sections/S7Pokemon";
 
 export function SciencePage() {
   useEffect(() => {
@@ -28,6 +29,7 @@ export function SciencePage() {
       <S4PT />
       <S5MeanField />
       <S6SCOTUS />
+      <S7Pokemon />
     </div>
   );
 }

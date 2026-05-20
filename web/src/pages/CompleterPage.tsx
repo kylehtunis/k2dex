@@ -16,6 +16,7 @@
 // in Task 21.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   FIELD_WEIGHT_OPTIONS,
   GREEDY_MAX_SWAPS,
@@ -85,11 +86,31 @@ type RunState =
 
 export function CompleterPage() {
   const { model, teamCounts, status } = useModel();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // Form state. Reset pins/excludes when the model phase changes; the
   // vocab is different and stale indices would refer to wrong mons.
   const phaseKey = model?.name ?? "—";
   const [fixedIdxs, setFixedIdxs] = useState<number[]>([]);
+
+  // Pre-pin a species from the ?pinned= query param (set by the /science page).
+  // Resolved once when the model becomes ready; cleared from the URL afterwards.
+  useEffect(() => {
+    if (status !== "ready" || !model) return;
+    const pinned = searchParams.get("pinned");
+    if (!pinned) return;
+    // Find the highest-marginal vocab entry for this species.
+    let bestIdx = -1;
+    let bestM = -1;
+    for (let i = 0; i < model.V; i++) {
+      if (model.speciesOf[i] === pinned && model.m[i] > bestM) {
+        bestM = model.m[i];
+        bestIdx = i;
+      }
+    }
+    if (bestIdx !== -1) setFixedIdxs([bestIdx]);
+    setSearchParams({}, { replace: true });
+  }, [status, model, searchParams, setSearchParams]);
   const [excludedSpecies, setExcludedSpecies] = useState<string[]>([]);
   const [fieldWeight, setFieldWeight] = useState(0.5);
   const [temperature, setTemperature] = useState(0.5);
