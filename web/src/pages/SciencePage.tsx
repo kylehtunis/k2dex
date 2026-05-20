@@ -7,6 +7,7 @@ import { S2Lattice } from "../science/sections/S2Lattice";
 import { S3MCMC } from "../science/sections/S3MCMC";
 import { S4PT } from "../science/sections/S4PT";
 import { S5MeanField } from "../science/sections/S5MeanField";
+import { S6SCOTUS } from "../science/sections/S6SCOTUS";
 
 export function SciencePage() {
   useEffect(() => {
@@ -26,6 +27,7 @@ export function SciencePage() {
       <S3MCMC />
       <S4PT />
       <S5MeanField />
+      <S6SCOTUS />
     </div>
   );
 }
