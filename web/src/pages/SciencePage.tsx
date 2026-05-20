@@ -2,6 +2,7 @@
 // Imports KaTeX CSS once; renders each section in order.
 
 import { useEffect } from "react";
+import { S1Magnets } from "../science/sections/S1Magnets";
 
 export function SciencePage() {
   useEffect(() => {
@@ -16,6 +17,7 @@ export function SciencePage() {
           This page walks through what that model is, why it works, and what it can't see.
         </p>
       </header>
+      <S1Magnets />
     </div>
   );
 }
