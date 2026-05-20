@@ -25,6 +25,7 @@ jupyter lab                     # notebooks
 python -m unittest discover tests   # regression gate (includes parity tests)
 python -m limitless_ingest       # ingest tournaments (manual; cache is in tournaments_cache/)
 python precompute.py            # rebuild web/public/models/ artifacts (manual; inspect before commit)
+python scotus_precompute.py     # rebuild web/public/scotus/ artifacts for the /science SCOTUS section (manual)
 
 # Static webapp (all run from web/)
 (cd web && npm install)         # one-time
@@ -63,6 +64,11 @@ limitless_ingest.py     Limitless API ingest with normalize_name + strip_mega_pr
 precompute.py           Offline pipeline: fits both models via loaders.py and
                         serializes them to web/public/models/{species,species_item}/
                         for the static webapp to load at runtime
+scotus_votes.txt        895 non-unanimous Rehnquist-court votes (9 bits per row,
+                        column order matches scotus_precompute.JUSTICES)
+scotus_precompute.py    Fits PL inverse Ising on scotus_votes.txt at several
+                        N checkpoints; writes web/public/scotus/{votes,fits}.json
+                        for the /science page's SCOTUS section
 tests/                  unittest tests + locked validation baselines
                         + parity_baseline.json (JS-side outputs gated by
                           tests/test_parity.py)
@@ -111,6 +117,7 @@ Post-v0.4 the app uses a "lab notebook" palette + type system delivered via CSS 
 - **Sprite slug rules** (`rendering_html.species_to_slug`): first hyphen is treated as a forme separator and preserved (`Calyrex-Shadow` → `calyrex-shadow`, `Blastoise-Mega` → `blastoise-mega`); subsequent hyphens collapse (`Urshifu-Rapid-Strike` → `urshifu-rapidstrike`). Species whose canonical name *contains* a hyphen as part of the base (Ho-Oh, Chien-Pao, Porygon-Z, …) are in a curated `_HYPHEN_BASE_SPECIES` set and have all hyphens stripped. Missing sprites fall through to `assets/missingno.svg`, inlined as a data URI at import time.
 - **Widget-scoping via marker divs + `:has()`.** Streamlit doesn't let you wrap a widget in a custom-class div. To style only specific widgets, the pattern is: emit an invisible marker element (`<div class="lab-phase-picker-marker"></div>`) right before/inside the widget's column, then target via `[data-testid="stColumn"]:has(.lab-phase-picker-marker) [role="radiogroup"] { … }`. If Streamlit ever changes its `data-testid` hierarchy, these selectors are the first thing that breaks — search styles.py for `:has(`.
 - **OS dark mode bleeds into widget internals** unless `--primary-color` / `--background-color` / `--text-color` are forced on `:root` AND on `html[data-theme="dark"]`. `.streamlit/config.toml` would be the idiomatic fix but is gitignored.
+- **Math typesetting (static webapp only)**: `/science` uses KaTeX via `react-katex`. The CSS bundle is lazy-imported once in `SciencePage` (`import("katex/dist/katex.min.css")`) so the ~45 KB stylesheet only loads when a user lands on that route. `web/src/science/widgets/Math.tsx` wraps `<InlineMath>` / `<BlockMath>` with the project's typography. Streamlit-side equations are still rendered via `st.latex` (server-side MathJax); no shared dependency.
 
 ## Conventions threaded through multiple files
 
@@ -181,13 +188,14 @@ web/
   public/
     assets/missingno.svg     also copied into web/src/assets/ for ?url import
     models/{species,species_item}/  ← precompute.py output, committed to git
+    scotus/{votes,fits}.json ← scotus_precompute.py output, committed to git
   src/
-    main.tsx, App.tsx        bootstrap + router
+    main.tsx, App.tsx        bootstrap + router (includes /science route)
     constants.ts             mirrors a subset of constants.py
     assets/                  Vite-handled imports (missingno fallback)
     state/ModelContext.tsx   load + cache (J, h, m, team_counts) per model
     components/              Layout, ModelPicker, VocabSelect (react-select wrapper)
-    pages/{Completer,Analysis,Meta}Page.tsx
+    pages/{Completer,Analysis,Meta,Science}Page.tsx
     sampler/                 1:1 port of sampling.py — see duplication register
       types.ts, rng.ts, model.ts, energy.ts,
       meanfield.ts, greedy.ts, swap.ts, pt.ts, rank.ts
@@ -199,6 +207,20 @@ web/
     analysis/                Page-local tables: PairwiseJTable, SwapsTable, ChainTable
     meta/                    Page-local tables: FeatureBiasTable,
                              ExtremeCouplingsTable, couplings
+    science/                 /science page — pedagogical Ising explainer
+      primitives/            Toy implementations: lattice, graph (+ ER + spring
+                             layout), mcmc, mf, pt, landscape (synthetic 2D
+                             energy surface with Metropolis + gradient descent)
+      widgets/               Math (KaTeX), LinePlot, SpinGrid, GraphView (now
+                             sprite-capable), ChainStrip, Landscape3D (SVG
+                             isometric mesh + walker overlays)
+      sections/              Magnets, Lattice, Graph, MCMC, PT (with energy-
+                             landscape intermission), MeanField, SCOTUS,
+                             Pokemon. Page order is the source of section
+                             identity — files have descriptive names, not
+                             S1/S2 prefixes.
+      data/scotusLayout.ts   Fixed 2D positions for the 9 justices
+      __tests__/             vitest smoke tests for the toy primitives
     styles/                  tokens.css, layout.css, components.css, widgets.css
   __tests__/                 vitest smoke tests for stochastic samplers
 ```
@@ -214,6 +236,22 @@ web/
 **Sprite rendering** uses HTML5 `<object>` with a missingno fallback child — the same approach Streamlit-side took, ported as a React component (`web/src/render/Sprite.tsx`). The Showdown CDN URL builder + slug rules live in `web/src/render/sprite-url.ts` and mirror `rendering_html.species_to_slug`.
 
 **GH Pages deploy** is postponed — `STATIC_DEPLOY_PLAN.md` has the Phase E workflow draft when we're ready. Until then, `web/dist/` is local-only.
+
+## /science page
+
+An interactive explainer for the math behind the project. Lives under `web/src/science/`; rendered at `/science`. The narrative arc is **Magnets → Lattice → Graph → MCMC → PT (with energy-landscape intermission) → MeanField → SCOTUS → Pokemon**, each section a self-contained interactive widget plus prose.
+
+Key design decisions and non-obvious facts:
+
+- **Toy primitives are independent of the production sampler.** `web/src/science/primitives/{lattice,graph,mcmc,mf,pt,landscape}.ts` are deliberately small re-implementations. They never import from `web/src/sampler/`, and they cover only the pedagogical case (single-spin flips on small spin systems, no team-size constraint). The production swap-move sampler is mentioned in the Pokemon section but not reused.
+- **PT swap-acceptance sign** (subtle): the correct exponent under detailed balance is `(β_cold − β_hot)(H_cold − H_hot)`. The toy `primitives/pt.ts` and the section's inline loop both had the inverted form during initial development; that was caught during the doc-review pass and fixed. `sampling.py:parallel_tempered_mcmc` was always correct. If you touch either of these files, double-check the sign — the simulation appears to "work" visually under the wrong sign because of two-well symmetry.
+- **Two spin conventions on one page.** The Magnets and Lattice sections use ±1 (physical magnet convention). Graph and everything downstream use {0, 1} (the convention `models.fit_pl_ising` and the Pokemon completer use). The Graph section's prose explicitly calls out the switch. The math is equivalent up to relabeling, but the energy formulas look different — `H = -Σ s_i s_j` vs. `H = -Σ h_i s_i - Σ_{i<j} J_ij s_i s_j` on the {0,1} side.
+- **Synthetic 2D energy landscape** (`primitives/landscape.ts`): a two-well surface, `E(x, y) = -3·exp(-((x±1)² + y²)/0.6) + 0.25·(x² + y²)`, rendered as an SVG isometric mesh by `widgets/Landscape3D.tsx`. Drives both the PT section (animated Metropolis walkers) and the MeanField section (deterministic gradient descent via the analytic `gradAt`). This is a caricature — not a projection of any actual Ising graph — but the basin-trapping/escape story it tells is the load-bearing intuition for both methods.
+- **Animation rates.** All animated sections use `requestAnimationFrame` with a `STEPS_PER_FRAME` constant; vsync (~60fps) caps the rate. PT runs 6 steps/frame, MF 1 step/frame, the Ising sections (Lattice/Graph/MCMC) run one sweep batch every 100 ms. The Ising sections also expose a manual Step button. Tune the per-section constants if the page feels too fast/slow.
+- **Random RNG seeds by default.** This is a playground page, not a determinism showcase — every reset / "New graph" pull from `Math.random()`. The toy `randomGraph()` still accepts a seed for tests and the Graph section's "New graph" button.
+- **SCOTUS section** is a mini team-completer: 3-state pin chips (unset → conservative → liberal → unset), top-N configurations panel by energy with corpus observation counts, and per-justice conditional marginal bars. Exact enumeration over 2^(9 − |pinned|) ≤ 512 configurations — no MF or PT needed at V=9. The color convention is **conservative = blue, liberal = red** across all components (pin chips, slot tiles, marginal bars, prose swatches). `JUSTICE_SPRITES: (string | null)[]` is the drop-in slot for justice sprite URLs; null falls back to the two-letter abbreviation.
+- **`GraphView` is sprite-capable.** Optional `sprite?: string` on each `GraphNode`; when set, renders `<image>` (with `onError` → bundled `missingno.svg` fallback in `widgets/GraphView.tsx`) instead of the default circle. The Pokemon section uses this with `spriteUrl()` from `render/sprite-url.ts`; SCOTUS will once justice sprites land.
+- **No code duplication with Python.** The page reuses the live model artifacts (`model.J`, `model.h`, `model.speciesOf`) via the existing `ModelContext`, but every section either uses toy primitives or operates directly on the loaded model. Nothing in `web/src/science/` needs to mirror a Python counterpart, so no parity-test obligation is added to `tests/test_parity.py`.
 
 ## Code duplicated across Python and TypeScript
 

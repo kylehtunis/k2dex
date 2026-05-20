@@ -31,7 +31,8 @@ export function Magnets() {
         
         </h4>
         <p>
-        I'll walk you through understanding how the physics of magnets can be used to understand the United States Supreme Court or build competitive Pokemon teams.
+        I'll walk you through understanding how the physics of magnets can be used to build competitive Pokemon teams 
+        (or understand voting patterns of the United States Supreme Court).
         The math might be a little intimidating, but this page is filled with interactive widgets to help you understand 
         exactly what each equation is doing and how everything fits together.
       </p>
