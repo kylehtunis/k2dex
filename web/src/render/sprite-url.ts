@@ -26,18 +26,44 @@ const HYPHEN_BASE_SPECIES = new Set([
   "nidoran-m",
 ]);
 
+// Limitless stores regional formes as "Adjective Species" (e.g. "Alolan Ninetales").
+const REGIONAL_ADJECTIVE: Record<string, string> = {
+  alolan: "alola",
+  galarian: "galar",
+  hisuian: "hisui",
+  paldean: "paldea",
+};
+
+// Limitless stores Rotom formes as "Forme Rotom" (e.g. "Wash Rotom").
+const ROTOM_FORME_NAMES = new Set(["wash", "heat", "frost", "mow", "fan"]);
+
 /** Convert a display species name to Showdown's home-sprite slug.
  *
  * Rules (parity with rendering_html.species_to_slug):
  *  1. Lowercase; strip apostrophes / periods / punctuation.
- *  2. Collapse internal whitespace to nothing.
- *  3. If the result is in HYPHEN_BASE_SPECIES, strip all hyphens.
- *  4. Otherwise first hyphen is a forme separator (kept); subsequent
+ *  2. "Adjective Species" regional forms reordered: "Alolan X" → "x-alola".
+ *  3. "Forme Rotom" reordered: "Wash Rotom" → "rotom-wash".
+ *  4. Collapse internal whitespace to nothing.
+ *  5. If the result is in HYPHEN_BASE_SPECIES, strip all hyphens.
+ *  6. Otherwise first hyphen is a forme separator (kept); subsequent
  *     hyphens are collapsed.
  */
 export function speciesToSlug(name: string): string {
   // Keep alphanumerics, hyphens, and whitespace. Drop everything else.
-  const cleaned = name.toLowerCase().replace(/[^a-z0-9\s-]+/g, "");
+  const cleaned = name.toLowerCase().replace(/[^a-z0-9\s-]+/g, "").trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    // "Alolan Ninetales" → "ninetales-alola", "Hisuian Arcanine" → "arcanine-hisui"
+    const region = REGIONAL_ADJECTIVE[words[0]];
+    if (region !== undefined) {
+      const base = words.slice(1).join("");
+      return `${base}-${region}`;
+    }
+    // "Wash Rotom" → "rotom-wash", "Heat Rotom" → "rotom-heat"
+    if (words.length === 2 && words[1] === "rotom" && ROTOM_FORME_NAMES.has(words[0])) {
+      return `rotom-${words[0]}`;
+    }
+  }
   // Whitespace collapses to nothing.
   const noSpaces = cleaned.replace(/\s+/g, "");
   if (!noSpaces.includes("-")) return noSpaces;

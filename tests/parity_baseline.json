@@ -229,7 +229,7 @@
         "excluded": [],
         "fieldWeight": 1,
         "nIters": 200,
-        "tol": 0.00001,
+        "tol": 1e-05,
         "damp": 0.5
       },
       "expected": {
@@ -275,7 +275,7 @@
         ],
         "fieldWeight": 0.5,
         "nIters": 200,
-        "tol": 0.00001,
+        "tol": 1e-05,
         "damp": 0.5
       },
       "expected": {
@@ -320,7 +320,7 @@
         "excluded": [],
         "fieldWeight": 0,
         "nIters": 200,
-        "tol": 0.00001,
+        "tol": 1e-05,
         "damp": 0.5
       },
       "expected": {
@@ -890,6 +890,50 @@
     {
       "input": "Necrozma-Dawn-Wings",
       "expected": "necrozma-dawnwings"
+    },
+    {
+      "input": "Alolan Ninetales",
+      "expected": "ninetales-alola"
+    },
+    {
+      "input": "Alolan Raichu",
+      "expected": "raichu-alola"
+    },
+    {
+      "input": "Galarian Slowbro",
+      "expected": "slowbro-galar"
+    },
+    {
+      "input": "Galarian Slowking",
+      "expected": "slowking-galar"
+    },
+    {
+      "input": "Hisuian Arcanine",
+      "expected": "arcanine-hisui"
+    },
+    {
+      "input": "Hisuian Zoroark",
+      "expected": "zoroark-hisui"
+    },
+    {
+      "input": "Wash Rotom",
+      "expected": "rotom-wash"
+    },
+    {
+      "input": "Heat Rotom",
+      "expected": "rotom-heat"
+    },
+    {
+      "input": "Frost Rotom",
+      "expected": "rotom-frost"
+    },
+    {
+      "input": "Mow Rotom",
+      "expected": "rotom-mow"
+    },
+    {
+      "input": "Fan Rotom",
+      "expected": "rotom-fan"
     }
   ],
   "obs": [
