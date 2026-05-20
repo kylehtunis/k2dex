@@ -2,6 +2,34 @@
 // scales with |weight|, color by sign. Caller is responsible for
 // laying nodes out — positions are passed in as {x, y} pairs.
 
+import { useEffect, useState } from "react";
+import missingnoUrl from "../../assets/missingno.svg?url";
+
+interface SpriteImageProps {
+  href: string;
+  x: number;
+  y: number;
+  size: number;
+}
+
+function SpriteImage({ href, x, y, size }: SpriteImageProps) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [href]);
+  return (
+    <image
+      href={failed ? missingnoUrl : href}
+      x={x}
+      y={y}
+      width={size}
+      height={size}
+      preserveAspectRatio="xMidYMid meet"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 export interface GraphNode {
   id: number;
   label: string;
@@ -9,6 +37,9 @@ export interface GraphNode {
   y: number;
   fill?: string;
   active?: boolean;
+  /** Optional sprite URL. When set, the node renders as an image with a small
+   * label below instead of the default circle + centered text. */
+  sprite?: string;
 }
 
 export interface GraphEdge {
@@ -58,27 +89,52 @@ export function GraphView({
           />
         );
       })}
-      {nodes.map((n) => (
-        <g key={n.id}>
-          <circle
-            cx={n.x}
-            cy={n.y}
-            r={nodeRadius}
-            fill={n.fill ?? (n.active ? "#1a1a1a" : "#e8e6df")}
-            stroke="#444"
-            strokeWidth={1}
-          />
-          <text
-            x={n.x}
-            y={n.y + 4}
-            textAnchor="middle"
-            fontSize="11"
-            fill={n.active ? "#fff" : "#222"}
-          >
-            {n.label}
-          </text>
-        </g>
-      ))}
+      {nodes.map((n) => {
+        if (n.sprite) {
+          const size = nodeRadius * 2.2;
+          return (
+            <g key={n.id}>
+              <SpriteImage
+                href={n.sprite}
+                x={n.x - size / 2}
+                y={n.y - size / 2}
+                size={size}
+              />
+              <text
+                x={n.x}
+                y={n.y + size / 2 + 12}
+                textAnchor="middle"
+                fontSize="11"
+                fill={n.active ? "#1a1a1a" : "#333"}
+                fontWeight={n.active ? 600 : 400}
+              >
+                {n.label}
+              </text>
+            </g>
+          );
+        }
+        return (
+          <g key={n.id}>
+            <circle
+              cx={n.x}
+              cy={n.y}
+              r={nodeRadius}
+              fill={n.fill ?? (n.active ? "#1a1a1a" : "#e8e6df")}
+              stroke="#444"
+              strokeWidth={1}
+            />
+            <text
+              x={n.x}
+              y={n.y + 4}
+              textAnchor="middle"
+              fontSize="11"
+              fill={n.active ? "#fff" : "#222"}
+            >
+              {n.label}
+            </text>
+          </g>
+        );
+      })}
     </svg>
   );
 }

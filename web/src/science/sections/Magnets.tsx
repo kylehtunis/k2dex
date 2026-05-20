@@ -21,10 +21,10 @@ function makeRandom(seed: number): Lattice {
   ) as Lattice;
 }
 
-export function S1Magnets() {
+export function Magnets() {
   return (
-    <section id="s1-magnets" className="lab-science-section">
-      <h2>1. Magnets and the Curie point</h2>
+    <section id="magnets" className="lab-science-section">
+      <h2>Magnets and the Curie point</h2>
       <p>
         A bar magnet works because the tiny magnetic moments inside it line up. Heat the
         bar past its <em>Curie temperature</em> and the alignment breaks down — the moments

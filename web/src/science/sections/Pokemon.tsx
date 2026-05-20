@@ -1,25 +1,16 @@
-// S7: bridge from toy to live model. Picker selects a species; renders
+// Bridge from toy to live model. Picker selects a species; renders
 // that species' top ±10 couplings from the fitted Phase 3 J as an ego graph.
 // Deep-links to /completer with that species pre-pinned.
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import Select, { type SingleValue } from "react-select";
 import { BlockMath } from "../widgets/Math";
 import { GraphView } from "../widgets/GraphView";
 import { useModel } from "../../state/ModelContext";
-
-const STARTER_SPECIES = [
-  "Calyrex-Shadow",
-  "Calyrex-Ice",
-  "Zacian",
-  "Miraidon",
-  "Koraidon",
-  "Urshifu",
-  "Incineroar",
-  "Amoonguss",
-  "Tornadus",
-  "Rillaboom",
-];
+import { speciesOptions } from "../../components/VocabSelect";
+import { spriteUrl } from "../../render/sprite-url";
+import { extractSpecies } from "../../render/format";
 
 interface EgoEntry {
   partnerIdx: number;
@@ -27,14 +18,26 @@ interface EgoEntry {
   J: number;
 }
 
-export function S7Pokemon() {
+export function Pokemon() {
   const { model, phaseKey, setPhaseKey, status } = useModel();
-  const [species, setSpecies] = useState(STARTER_SPECIES[0]);
+  const [species, setSpecies] = useState<string>("");
 
   // Force Phase 3 on mount so the ego graph shows item-pair J.
   useEffect(() => {
     if (phaseKey !== "species_item") setPhaseKey("species_item");
   }, []);
+
+  const speciesOpts = useMemo(
+    () => (model ? speciesOptions(model) : []),
+    [model],
+  );
+
+  // Default to the most popular species once the model is loaded.
+  useEffect(() => {
+    if (!species && speciesOpts.length > 0) {
+      setSpecies(speciesOpts[0].value);
+    }
+  }, [speciesOpts, species]);
 
   const ego: EgoEntry[] = useMemo(() => {
     if (!model || status !== "ready") return [];
@@ -68,20 +71,36 @@ export function S7Pokemon() {
 
   // Circular layout: seed in center, partners around the rim.
   const graphNodes = useMemo(() => {
-    const cx = 240;
-    const cy = 240;
-    const r = 180;
-    const out: { id: number; label: string; x: number; y: number; active?: boolean }[] =
-      [{ id: -1, label: species.split("-")[0], x: cx, y: cy, active: true }];
+    const cx = 270;
+    const cy = 270;
+    const r = 210;
+    const out: {
+      id: number;
+      label: string;
+      x: number;
+      y: number;
+      active?: boolean;
+      sprite?: string;
+    }[] = [
+      {
+        id: -1,
+        label: species,
+        x: cx,
+        y: cy,
+        active: true,
+        sprite: spriteUrl(species),
+      },
+    ];
     const n = ego.length;
     ego.forEach((e, k) => {
       const theta = (k / Math.max(n, 1)) * Math.PI * 2 - Math.PI / 2;
-      const rawLabel = e.partnerLabel.split(" @ ")[0];
+      const partnerSpecies = extractSpecies(e.partnerLabel);
       out.push({
         id: e.partnerIdx,
-        label: rawLabel.split("-")[0],
+        label: partnerSpecies,
         x: cx + r * Math.cos(theta),
         y: cy + r * Math.sin(theta),
+        sprite: spriteUrl(e.partnerLabel),
       });
     });
     return out;
@@ -93,8 +112,8 @@ export function S7Pokemon() {
   );
 
   return (
-    <section id="s7-pokemon" className="lab-science-section">
-      <h2>7. Same machinery, real Pokémon</h2>
+    <section id="pokemon" className="lab-science-section">
+      <h2>Same machinery, real Pokémon</h2>
       <p>
         The Pokémon completer uses the same pseudo-likelihood fit we just applied to SCOTUS,
         but on a binary indicator matrix where each column is a (species, held item) pair
@@ -114,26 +133,41 @@ export function S7Pokemon() {
         try the completer seeded with that pick.
       </p>
       <div className="lab-science-controls">
-        <label>
-          Species:{" "}
-          <select value={species} onChange={(e) => setSpecies(e.target.value)}>
-            {STARTER_SPECIES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+        <label className="lab-pokemon-species-label">
+          <span>Species:</span>
+          <div className="lab-pokemon-species-select">
+            <Select
+              classNamePrefix="lab-select"
+              options={speciesOpts}
+              value={
+                species
+                  ? speciesOpts.find((o) => o.value === species) ?? null
+                  : null
+              }
+              onChange={(sel: SingleValue<{ label: string; value: string }>) =>
+                setSpecies(sel?.value ?? "")
+              }
+              isClearable={false}
+              placeholder="Pick a species…"
+              menuPortalTarget={document.body}
+              styles={{ menuPortal: (base) => ({ ...base, zIndex: 9999 }) }}
+            />
+          </div>
         </label>
-        <Link
-          to={`/completer?pinned=${encodeURIComponent(species)}`}
-          className="lab-button"
-        >
-          Try a team with this seed →
-        </Link>
+        {species && (
+          <Link
+            to={`/completer?pinned=${encodeURIComponent(species)}`}
+            className="lab-button"
+          >
+            Try a team with this seed →
+          </Link>
+        )}
       </div>
       <figure>
         {status !== "ready" ? (
           <p style={{ color: "#888" }}>Loading the live Phase 3 model (~2.5 MB)…</p>
+        ) : !species ? (
+          <p style={{ color: "#888" }}>Pick a species above.</p>
         ) : ego.length === 0 ? (
           <p style={{ color: "#888" }}>
             No (species, item) entries found for {species} in the current vocab.
@@ -142,9 +176,9 @@ export function S7Pokemon() {
           <GraphView
             nodes={graphNodes as any}
             edges={graphEdges as any}
-            width={480}
-            height={480}
-            nodeRadius={22}
+            width={540}
+            height={540}
+            nodeRadius={26}
           />
         )}
         <figcaption>

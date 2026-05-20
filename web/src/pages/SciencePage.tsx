@@ -2,13 +2,14 @@
 // Imports KaTeX CSS once; renders each section in order.
 
 import { useEffect } from "react";
-import { S1Magnets } from "../science/sections/S1Magnets";
-import { S2Lattice } from "../science/sections/S2Lattice";
-import { S3MCMC } from "../science/sections/S3MCMC";
-import { S4PT } from "../science/sections/S4PT";
-import { S5MeanField } from "../science/sections/S5MeanField";
-import { S6SCOTUS } from "../science/sections/S6SCOTUS";
-import { S7Pokemon } from "../science/sections/S7Pokemon";
+import { Magnets } from "../science/sections/Magnets";
+import { Lattice } from "../science/sections/Lattice";
+import { Graph } from "../science/sections/Graph";
+import { MCMC } from "../science/sections/MCMC";
+import { PT } from "../science/sections/PT";
+import { MeanField } from "../science/sections/MeanField";
+import { SCOTUS } from "../science/sections/SCOTUS";
+import { Pokemon } from "../science/sections/Pokemon";
 
 export function SciencePage() {
   useEffect(() => {
@@ -23,13 +24,14 @@ export function SciencePage() {
           This page walks through what that model is, why it works, and what it can't see.
         </p>
       </header>
-      <S1Magnets />
-      <S2Lattice />
-      <S3MCMC />
-      <S4PT />
-      <S5MeanField />
-      <S6SCOTUS />
-      <S7Pokemon />
+      <Magnets />
+      <Lattice />
+      <Graph />
+      <MCMC />
+      <PT />
+      <MeanField />
+      <SCOTUS />
+      <Pokemon />
     </div>
   );
 }
