@@ -60,7 +60,7 @@ export function runPT(
     if (sw % swapInterval === 0) {
       for (let k = 0; k < K - 1; k++) {
         const dH =
-          graphEnergy(g, states[k + 1]) - graphEnergy(g, states[k]);
+          graphEnergy(g, states[k]) - graphEnergy(g, states[k + 1]);
         const dBeta = betas[k] - betas[k + 1];
         const logAcc = dBeta * dH;
         if (logAcc >= 0 || rng.random() < Math.exp(logAcc)) {

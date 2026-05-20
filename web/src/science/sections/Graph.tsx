@@ -2,33 +2,47 @@
 // an arbitrary graph (here an Erdős–Rényi giant component with Gaussian edge
 // weights), driven by a T slider, mirroring the Lattice section's interaction.
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BlockMath, InlineMath } from "../widgets/Math";
 import { GraphView } from "../widgets/GraphView";
-import { randomGraph, sweepGraph } from "../primitives/graph";
+import { randomGraph, springLayout, sweepGraph } from "../primitives/graph";
 import type { State } from "../primitives/graph";
 import { Rng } from "../../sampler/rng";
 
-const GRAPH_SEED = 11;
 const ER_N = 14;
 const ER_P = 0.32;
 const ER_SIGMA = 1.0;
 const SWEEP_BATCH = 10;
-const VIEW_SIZE = 360;
-const VIEW_RADIUS = 130;
+const RUN_INTERVAL_MS = 100;
+const VIEW_SIZE = 380;
+const VIEW_RADIUS = 150;
+
+function randSeed() {
+  return Math.floor(Math.random() * 2 ** 30);
+}
 
 export function Graph() {
-  const { graph, positions } = useMemo(
-    () => randomGraph(GRAPH_SEED, ER_N, ER_P, ER_SIGMA),
-    [],
-  );
+  const [graphSeed, setGraphSeed] = useState(() => randSeed());
+  const { graph, positions } = useMemo(() => {
+    const result = randomGraph(graphSeed, ER_N, ER_P, ER_SIGMA);
+    const layoutRng = new Rng(graphSeed ^ 0xa5a5a5);
+    const sprung = springLayout(result.graph, layoutRng, 240);
+    return { graph: result.graph, positions: sprung };
+  }, [graphSeed]);
   const initialState = useMemo<State>(
     () => new Array(graph.V).fill(0).map((_, i) => (i % 2 === 0 ? 1 : 0)),
     [graph.V],
   );
-  const rngRef = useRef(new Rng(31));
+  const rngRef = useRef(new Rng(randSeed()));
   const [state, setState] = useState<State>(initialState.slice());
   const [T, setT] = useState(1.0);
+  const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    rngRef.current = new Rng(randSeed());
+    setState(initialState.slice());
+    setRunning(false);
+  }, [graphSeed, initialState]);
 
   const step = useCallback(() => {
     setState((prev) => {
@@ -39,9 +53,24 @@ export function Graph() {
   }, [graph, T]);
 
   const reset = useCallback(() => {
-    rngRef.current = new Rng(31);
+    rngRef.current = new Rng(randSeed());
     setState(initialState.slice());
   }, [initialState]);
+
+  useEffect(() => {
+    if (!running) return;
+    let raf = 0;
+    let last = performance.now();
+    const loop = (now: number) => {
+      if (now - last >= RUN_INTERVAL_MS) {
+        last = now;
+        step();
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [running, step]);
 
   const nodes = positions.map((p, i) => ({
     id: i,
@@ -54,21 +83,23 @@ export function Graph() {
 
   return (
     <section id="graph" className="lab-science-section">
-      <h2>Beyond the lattice: the same model on any graph</h2>
+      <h2>Beyond the lattice</h2>
       <p>
-        Nothing about the Ising story required a grid. The same energy works on{" "}
-        <em>any</em> graph of spins:
+        The 2d lattice model works well for explaining magnets, but we can also think of it as a special case of a more general model.
+        The spins don't need to be in a grid, so we can represent any topology we want as a network of nodes (spins) and edges (couplings).
+        We can also say that each spin has a bias <InlineMath formula="h_i" />, representing a preference for how it wants to spin 
+        (for example, caused by an external magnetic field).
       </p>
+      <p>The energy formula becomes:</p>
       <BlockMath formula="H(s) = -\sum_i h_i s_i - \sum_{i < j} J_{ij}\, s_i s_j" />
       <p>
-        The lattice was a special case where every edge has the same{" "}
-        <InlineMath formula="J" /> and each spin has four neighbors. Drop that
-        restriction and the graph can be irregular, edge weights can vary in
-        sign and magnitude, and "neighbor" is whatever the structure of the
-        problem says it is. The graph below is a small random network with
-        Gaussian edge weights — some couplings positive (blue, agree), some
-        negative (red, disagree). Same Metropolis dynamics, same{" "}
-        <InlineMath formula="p(s) \propto e^{-H(s)/T}" />.
+        If you plug in 0 for <InlineMath formula="h_i" /> and 1 for <InlineMath formula="J_{ij}" />, you'll get the exact energy formula we used for the lattice version.
+      </p>
+      <p>
+        Couplings can also be negative, meaning that those spins prefer to be <i>opposite</i>, rather than aligned.
+        Also, from now on we'll think of spins as on or off (1 or 0) instead of +1 or -1.
+        It makes more sense for what's coming up, and it doesn't change the math.
+        Here's how a more general Ising model might look:
       </p>
       <div className="lab-science-controls">
         <label>
@@ -82,11 +113,17 @@ export function Graph() {
             onChange={(e) => setT(Number(e.target.value))}
           />
         </label>
-        <button type="button" onClick={step}>
+        <button type="button" onClick={() => setRunning((r) => !r)}>
+          {running ? "Pause" : "Play"}
+        </button>
+        <button type="button" onClick={step} disabled={running}>
           Step {SWEEP_BATCH} sweeps
         </button>
         <button type="button" onClick={reset}>
           Reset
+        </button>
+        <button type="button" onClick={() => setGraphSeed(randSeed())}>
+          New graph
         </button>
       </div>
       <figure>
@@ -104,12 +141,6 @@ export function Graph() {
           edge: J &lt; 0 (prefer disagreement). Thickness ∝ |J|.
         </figcaption>
       </figure>
-      <p>
-        This generality is the whole point. The graph of Supreme Court justices
-        and the graph of competitive Pokémon are not lattices — they're
-        irregular structures with their own positive and negative couplings.
-        Once we can fit J from data (next), the same machinery applies to both.
-      </p>
     </section>
   );
 }

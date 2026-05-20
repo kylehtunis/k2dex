@@ -2,7 +2,7 @@
 // step-by-step. Two-stage UI: Propose (compute ΔE and p) → Evaluate (roll the
 // RNG, accept or reject). Mass-update via sweeps is a separate button.
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BlockMath, InlineMath } from "../widgets/Math";
 import { SpinGrid } from "../widgets/SpinGrid";
 import { createLattice, sweepLattice } from "../primitives/lattice";
@@ -10,6 +10,8 @@ import type { Lattice, Spin } from "../primitives/lattice";
 import { Rng } from "../../sampler/rng";
 
 const SIZE = 12;
+const RUN_INTERVAL_MS = 100;
+const RUN_SWEEP_BATCH = 2;
 
 type Phase =
   | { kind: "idle" }
@@ -40,13 +42,19 @@ function neighborSum(L: Lattice, i: number, j: number): number {
   );
 }
 
+function randSeed() {
+  return Math.floor(Math.random() * 2 ** 30);
+}
+
 export function MCMC() {
-  const rngRef = useRef(new Rng(99));
+  const initSeedRef = useRef(randSeed());
+  const rngRef = useRef(new Rng(randSeed()));
   const [lattice, setLattice] = useState<Lattice>(() =>
-    createLattice(SIZE, SIZE, new Rng(11)),
+    createLattice(SIZE, SIZE, new Rng(initSeedRef.current)),
   );
   const [T, setT] = useState(2.3);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  const [running, setRunning] = useState(false);
 
   const propose = useCallback(() => {
     const i = rngRef.current.integers(SIZE);
@@ -78,20 +86,41 @@ export function MCMC() {
     });
   }, [phase]);
 
-  const runSweeps = useCallback(() => {
-    setLattice((prev) => {
-      const next = prev.map((r) => r.slice()) as Lattice;
-      sweepLattice(next, T, rngRef.current, 5);
-      return next;
-    });
-    setPhase({ kind: "idle" });
-  }, [T]);
+  const runSweeps = useCallback(
+    (batch = 5) => {
+      setLattice((prev) => {
+        const next = prev.map((r) => r.slice()) as Lattice;
+        sweepLattice(next, T, rngRef.current, batch);
+        return next;
+      });
+      setPhase({ kind: "idle" });
+    },
+    [T],
+  );
 
   const reset = useCallback(() => {
-    rngRef.current = new Rng(99);
-    setLattice(createLattice(SIZE, SIZE, new Rng(11)));
+    const newSeed = randSeed();
+    initSeedRef.current = newSeed;
+    rngRef.current = new Rng(randSeed());
+    setLattice(createLattice(SIZE, SIZE, new Rng(newSeed)));
     setPhase({ kind: "idle" });
+    setRunning(false);
   }, []);
+
+  useEffect(() => {
+    if (!running) return;
+    let raf = 0;
+    let last = performance.now();
+    const loop = (now: number) => {
+      if (now - last >= RUN_INTERVAL_MS) {
+        last = now;
+        runSweeps(RUN_SWEEP_BATCH);
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [running, runSweeps]);
 
   const highlight =
     phase.kind === "idle" ? null : { i: phase.i, j: phase.j };
@@ -109,20 +138,15 @@ export function MCMC() {
     <section id="mcmc" className="lab-science-section">
       <h2>Sampling: Metropolis MCMC</h2>
       <p>
-        We can't enumerate <InlineMath formula="2^{400}" /> lattice configurations. Markov
-        chain Monte Carlo gets around this by random-walking through configurations in a
-        way that, in the long run, visits each one with the correct Boltzmann weight.
+        I've let you play with a few Ising simulations now, but I haven't actually explained how to go from mathematical equations to simulation.
+        The key is the Markov Chain Monte Carlo (MCMC) method. The most basic version of MCMC, called the Metropolis algorithm,
+        just looks at one spin at a time and decides whether to flip it based on one rule:
       </p>
-      <p>The Metropolis rule:</p>
       <BlockMath formula="\text{accept proposal with } p = \min\bigl(1,\ e^{-\Delta E / T}\bigr)" />
       <p>
-        Each step has two halves. <strong>Propose</strong>: pick a random spin and compute
-        the energy change <InlineMath formula="\Delta E" /> if we flipped it; that determines
-        the accept probability <InlineMath formula="p" />. <strong>Evaluate</strong>: roll a
-        uniform random number; if it lands under <InlineMath formula="p" /> the flip happens,
-        otherwise the spin stays put. Energy-lowering flips always accepted; energy-raising
-        flips sometimes accepted (with probability that shrinks as{" "}
-        <InlineMath formula="T" /> drops).
+        In other words, if flipping the spin would lower the energy of the system, then we flip it.
+        If not, we still <i>might</i> flip it with a probability that increases as the energy difference gets smaller or as the temperature gets higher.
+        Given infinite time, this process will find itself in configuration <InlineMath formula="\vec{s}" /> at the exact rate predicted by the Boltzmann distribution.
       </p>
       <div className="lab-science-controls">
         <label>
@@ -136,10 +160,21 @@ export function MCMC() {
             onChange={(e) => setT(Number(e.target.value))}
           />
         </label>
-        <button type="button" onClick={stepAction}>
+        <button type="button" onClick={() => setRunning((r) => !r)}>
+          {running ? "Pause" : "Play"}
+        </button>
+        <button
+          type="button"
+          onClick={stepAction}
+          disabled={running}
+        >
           {stepLabel}
         </button>
-        <button type="button" onClick={runSweeps}>
+        <button
+          type="button"
+          onClick={() => runSweeps(5)}
+          disabled={running}
+        >
           Run 5 sweeps
         </button>
         <button type="button" onClick={reset}>

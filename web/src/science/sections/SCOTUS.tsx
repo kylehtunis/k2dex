@@ -1,8 +1,8 @@
 // Inverse Ising on SCOTUS votes. Two linked widgets:
 //   1. Fitted-J graph at N = all votes.
-//   2. Completer mirror: pin some justices to "voted with the bloc"; the
-//      same J/h give P(s_i = 1 | pinned) for each unpinned justice by exact
-//      enumeration over 2^(9 - |pinned|) configurations.
+//   2. Completer mirror: pin justices to conservative/liberal; show top
+//      configurations by energy with corpus-observation counts, plus per-
+//      justice conditional marginals.
 
 import { useEffect, useMemo, useState } from "react";
 import { GraphView } from "../widgets/GraphView";
@@ -25,13 +25,35 @@ interface VotesPayload {
 
 const BASE_URL = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
+// Short two-letter labels for in-row config display.
+const JUSTICE_ABBREV = ["Re", "St", "OC", "Sc", "Ke", "So", "Th", "Gi", "Br"];
+
+// Drop sprite URLs in later; null falls back to the abbreviation chip.
+const JUSTICE_SPRITES: (string | null)[] = [
+  null, null, null, null, null, null, null, null, null,
+];
+
+const TOP_N_CONFIGS = 6;
+
 type PinValue = 0 | 1;
 
-/**
- * Exact conditional marginals P(s_i = 1 | s_pinned) under the fitted
- * pairwise model. Energy: H(s) = -Σ h_i s_i - Σ_{i<j} J_ij s_i s_j.
- * Pinned justices are clamped to their pinned value (0 or 1).
- */
+function configEnergy(
+  J: number[][],
+  h: number[],
+  s: number[],
+): number {
+  let H = 0;
+  for (let i = 0; i < h.length; i++) if (s[i]) H -= h[i];
+  for (let i = 0; i < h.length; i++) {
+    if (!s[i]) continue;
+    for (let j = i + 1; j < h.length; j++) {
+      if (s[j]) H -= J[i][j];
+    }
+  }
+  return H;
+}
+
+/** Conditional marginals P(s_i = 1 | s_pinned) via exact enumeration. */
 function conditionalMarginals(
   J: number[][],
   h: number[],
@@ -47,19 +69,48 @@ function conditionalMarginals(
   const numer = new Array<number>(V).fill(0);
   for (let bits = 0; bits < 1 << K; bits++) {
     for (let k = 0; k < K; k++) s[unpinned[k]] = (bits >> k) & 1;
-    let H = 0;
-    for (let i = 0; i < V; i++) if (s[i]) H -= h[i];
-    for (let i = 0; i < V; i++) {
-      if (!s[i]) continue;
-      for (let j = i + 1; j < V; j++) {
-        if (s[j]) H -= J[i][j];
-      }
-    }
-    const w = Math.exp(-H);
+    const w = Math.exp(-configEnergy(J, h, s));
     Z += w;
     for (const i of unpinned) if (s[i]) numer[i] += w;
   }
   return numer.map((n) => n / Z);
+}
+
+interface RankedConfig {
+  bits: number;
+  spins: number[];
+  H: number;
+}
+
+/** Top-N configurations consistent with pins, sorted by lowest energy first. */
+function topConfigurations(
+  J: number[][],
+  h: number[],
+  pinned: ReadonlyMap<number, PinValue>,
+  topN: number,
+): RankedConfig[] {
+  const V = h.length;
+  const unpinned: number[] = [];
+  for (let i = 0; i < V; i++) if (!pinned.has(i)) unpinned.push(i);
+  const K = unpinned.length;
+  const s = new Array<number>(V).fill(0);
+  for (const [i, v] of pinned) s[i] = v;
+  const out: RankedConfig[] = [];
+  for (let bits = 0; bits < 1 << K; bits++) {
+    for (let k = 0; k < K; k++) s[unpinned[k]] = (bits >> k) & 1;
+    const H = configEnergy(J, h, s);
+    let fullBits = 0;
+    for (let i = 0; i < V; i++) if (s[i]) fullBits |= 1 << i;
+    out.push({ bits: fullBits, spins: s.slice(), H });
+  }
+  out.sort((a, b) => a.H - b.H);
+  return out.slice(0, topN);
+}
+
+function configBits(row: readonly number[]): number {
+  let bits = 0;
+  for (let i = 0; i < row.length; i++) if (row[i]) bits |= 1 << i;
+  return bits;
 }
 
 export function SCOTUS() {
@@ -78,6 +129,16 @@ export function SCOTUS() {
   }, []);
 
   const fit = fits?.all ?? null;
+
+  const corpusCounts = useMemo(() => {
+    const m = new Map<number, number>();
+    if (!votes) return m;
+    for (const row of votes.votes) {
+      const k = configBits(row);
+      m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return m;
+  }, [votes]);
 
   const { nodes, edges } = useMemo(() => {
     if (!fit || !votes) return { nodes: [], edges: [] };
@@ -98,9 +159,14 @@ export function SCOTUS() {
     return { nodes, edges };
   }, [fit, votes]);
 
-  const completions = useMemo(() => {
+  const marginals = useMemo(() => {
     if (!fit) return null;
     return conditionalMarginals(fit.J, fit.h, pinned);
+  }, [fit, pinned]);
+
+  const topConfigs = useMemo(() => {
+    if (!fit) return [] as RankedConfig[];
+    return topConfigurations(fit.J, fit.h, pinned, TOP_N_CONFIGS);
   }, [fit, pinned]);
 
   if (!fits || !votes || !fit) {
@@ -112,7 +178,6 @@ export function SCOTUS() {
     );
   }
 
-  // Cycle: unpinned → 1 (conservative side) → 0 (liberal side) → unpinned.
   const cyclePin = (i: number) => {
     setPinned((prev) => {
       const next = new Map(prev);
@@ -125,30 +190,56 @@ export function SCOTUS() {
   };
 
   const ranked =
-    completions === null
+    marginals === null
       ? []
       : votes.justices
-          .map((label, i) => ({ i, label, p: completions[i] }))
+          .map((label, i) => ({ i, label, p: marginals[i] }))
           .filter((r) => !pinned.has(r.i))
           .sort((a, b) => b.p - a.p);
 
+  const renderJusticeSlot = (i: number, vote: PinValue, isPinned: boolean) => {
+    const cls =
+      "lab-scotus-slot " +
+      (vote === 1 ? "lab-scotus-slot-c" : "lab-scotus-slot-l") +
+      (isPinned ? " is-pinned" : "");
+    const sprite = JUSTICE_SPRITES[i];
+    return (
+      <div key={i} className={cls} title={votes.justices[i]}>
+        {sprite ? (
+          <img src={sprite} alt={votes.justices[i]} />
+        ) : (
+          <span className="lab-scotus-slot-label">{JUSTICE_ABBREV[i]}</span>
+        )}
+      </div>
+    );
+  };
+
   return (
     <section id="scotus" className="lab-science-section">
-      <h2>Flipping the problem: inverse Ising on the Supreme Court</h2>
+      <h2>Flipping the problem: inverse Ising</h2>
       <p>
-        So far we've assumed someone hands us the couplings <em>J</em> and asks
-        us to sample. But where does <em>J</em> come from in practice? You only
-        get to <em>observe</em> samples — votes, teams, biological states — and
-        you have to recover the couplings from data. That's the{" "}
-        <em>inverse</em> Ising problem. The standard tool is pseudo-likelihood:
-        for each spin, fit a logistic regression predicting its state from all
-        the others. The regression coefficients become that spin's row of{" "}
-        <em>J</em>.
+        In all the examples so far, we've talked about what the model is <i>doing</i>, but where does it come <i>from</i>?
+        Well, suppose you have a system that you want to model using an Ising simulation.
+        You can observe the system and count all the times it appears in each state,
+        but for even a simple system like our 32x32 lattice, there are 2^1024 possible states, more than the number of protons in the universe.
+        Good luck even seeing the same one twice, let alone trying to get good estimates of their probabilities.
       </p>
       <p>
-        We applied this to {votes.votes.length} non-unanimous Rehnquist-court
-        decisions (the same data Lee, Broderick &amp; Frey used in their 2015
-        paper). Each vote is 9 bits. The fitted graph below shows positive
+        So, the task is to estimate the parameters of a system by observing an infinitesimal subset of the possible states.
+        This is called the <em>inverse</em> Ising problem
+        (and by now you should be getting a sense how this all might eventually tie back into Pokemon teams).
+      </p>
+      <p>
+        The standard tool for this is pseudo-likelihood estimation:
+        for each spin, fit a logistic regression predicting its state from all
+        the others. The regression coefficients become that spin's row of{" "}
+        <em>J</em>. To see how it works, we'll look at a real-world example that's small enough that we
+        <i>can</i> observe a significant portion of the possible configurations: voting patterns of the nine justices of the United States Supreme Court.
+      </p>
+      <h2>SCOTUS votes as an Ising model</h2>
+      <p>
+        This idea to fit Supreme Court votes to an Ising model comes from Lee, Broderick &amp; Frey's 2015
+        paper, and here I'm using the same method and data. Each vote is 9 spins. The fitted graph below shows positive
         couplings (blue) between justices who vote together more than chance,
         and negative couplings (red) between those who tend to disagree.
       </p>
@@ -167,15 +258,15 @@ export function SCOTUS() {
       </figure>
       <h3 className="lab-science-subhead">Same machinery: completing a vote</h3>
       <p>
-        Once we have <em>J</em> and <em>h</em>, predicting a missing spin
+        Once we have <em>J</em> and <em>h</em>, predicting unobserved spins
         conditional on observed ones is just another marginal computation —{" "}
         <em>exactly</em> what <em>/completer</em> does with Pokémon teams.
-        Click any justice below to pin them: once for <span className="lab-scotus-swatch lab-scotus-swatch-1" />{" "}
-        <em>conservative</em> side, again for <span className="lab-scotus-swatch lab-scotus-swatch-0" />{" "}
-        <em>liberal</em> side, again to clear. The model returns the
-        conditional probability each unpinned justice votes conservative
-        given that pattern. With only nine spins we compute it exactly by
-        enumeration — no MF or PT needed.
+        Click any justice to pin them: once for <span className="lab-scotus-swatch lab-scotus-swatch-1" />{" "}
+        <em>conservative</em>, again for <span className="lab-scotus-swatch lab-scotus-swatch-0" />{" "}
+        <em>liberal</em>, again to clear. With only nine spins we can enumerate
+        all 2<sup>9</sup> = 512 configurations exactly and rank them by energy.
+        The lowest-energy configurations are the ones the model thinks are most
+        likely to occur.
       </p>
       <div className="lab-scotus-completer">
         <div className="lab-scotus-pins" role="group" aria-label="Pin justices">
@@ -209,10 +300,52 @@ export function SCOTUS() {
             </button>
           )}
         </div>
+
+        <div className="lab-scotus-configs">
+          <div className="lab-scotus-configs-head">
+            <span className="lab-scotus-configs-head-spins">
+              Top-{TOP_N_CONFIGS} configurations (lowest energy first)
+            </span>
+            <span className="lab-scotus-configs-head-h">H</span>
+            <span className="lab-scotus-configs-head-score">score</span>
+            <span className="lab-scotus-configs-head-obs">observed</span>
+          </div>
+          {topConfigs.map((cfg) => {
+            const count = corpusCounts.get(cfg.bits) ?? 0;
+            return (
+              <div key={cfg.bits} className="lab-scotus-config-row">
+                <div className="lab-scotus-config-spins">
+                  {cfg.spins.map((vote, i) =>
+                    renderJusticeSlot(i, vote as PinValue, pinned.has(i)),
+                  )}
+                </div>
+                <span className="lab-scotus-config-h">
+                  {cfg.H.toFixed(2)}
+                </span>
+                <span className="lab-scotus-config-score">
+                  {(-cfg.H).toFixed(2)}
+                </span>
+                <span className="lab-scotus-config-obs">
+                  {count > 0 ? `${count}×` : "—"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <p className="lab-science-note">
+          The same Boltzmann distribution we used for spin lattices: lower H =
+          more probable. The "score" column is just −H, the same convention the
+          Pokémon completer uses so that higher = better. "Observed" counts how
+          many times that exact 9-vote pattern appeared in the {votes.votes.length} raw votes.
+        </p>
+
+        <h4 className="lab-scotus-subhead">
+          Conditional marginals for unpinned justices
+        </h4>
         <div className="lab-scotus-ranks">
           {ranked.length === 0 ? (
             <p className="lab-science-note">
-              All nine pinned. Unpin one to see predictions.
+              All nine pinned — every justice's vote is fixed.
             </p>
           ) : (
             ranked.map(({ i, label, p }) => (
@@ -234,14 +367,11 @@ export function SCOTUS() {
           )}
         </div>
         <p className="lab-science-note">
-          Bars show P(votes conservative) for each unpinned justice. With
-          nothing pinned, you see baseline marginals — how often each justice
-          voted conservative overall. Pin Scalia conservative and the other
-          conservatives (Rehnquist, Thomas) jump near 100%; pin Ginsburg
-          liberal and Breyer and Stevens drop sharply. Pin one of each — e.g.
-          Scalia conservative, Ginsburg liberal — and the swing justices
-          (O'Connor, Kennedy) settle in the middle. Same lift / suppression
-          dynamic as Pokémon teammates, on a graph you can hold in your head.
+          Blue fill = P(votes conservative); red remainder = P(votes liberal).
+          Pin Scalia conservative and the other conservatives (Rehnquist, Thomas)
+          jump near 100%. Pin Ginsburg liberal and Stevens / Breyer drop sharply.
+          Pin one of each — Scalia conservative, Ginsburg liberal — and the
+          swing justices (O'Connor, Kennedy) settle in the middle.
         </p>
       </div>
     </section>

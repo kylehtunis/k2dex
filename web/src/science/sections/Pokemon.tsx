@@ -3,7 +3,6 @@
 // Deep-links to /completer with that species pre-pinned.
 
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import Select, { type SingleValue } from "react-select";
 import { BlockMath } from "../widgets/Math";
 import { GraphView } from "../widgets/GraphView";
@@ -129,8 +128,7 @@ export function Pokemon() {
       </p>
       <BlockMath formula="\Delta H = h_{i_\text{out}} - h_{i_\text{in}} + (J_{i_\text{out}} - J_{i_\text{in}}) \cdot s + J_{i_\text{in},\, i_\text{out}}" />
       <p>
-        Pick a species below to see its top ±10 couplings from the live Phase 3 model. Then
-        try the completer seeded with that pick.
+        Pick a species below to see its top ±10 couplings from the live Phase 3 model.
       </p>
       <div className="lab-science-controls">
         <label className="lab-pokemon-species-label">
@@ -154,14 +152,6 @@ export function Pokemon() {
             />
           </div>
         </label>
-        {species && (
-          <Link
-            to={`/completer?pinned=${encodeURIComponent(species)}`}
-            className="lab-button"
-          >
-            Try a team with this seed →
-          </Link>
-        )}
       </div>
       <figure>
         {status !== "ready" ? (

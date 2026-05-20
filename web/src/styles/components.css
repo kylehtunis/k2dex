@@ -358,10 +358,11 @@
   margin: 0;
   text-align: center;
 }
-.lab-science-row figcaption {
+.lab-science-section figcaption {
   margin-top: 6px;
   font-size: 12px;
   color: var(--lab-ink-muted);
+  text-align: center;
 }
 .lab-science-controls {
   display: flex;
@@ -466,14 +467,14 @@
   background: var(--lab-paper-warm, #f1efe9);
 }
 .lab-scotus-pin.is-pinned-1 {
-  background: #9c2a2a;
-  color: #fff;
-  border-color: #9c2a2a;
-}
-.lab-scotus-pin.is-pinned-0 {
   background: #1f4e8c;
   color: #fff;
   border-color: #1f4e8c;
+}
+.lab-scotus-pin.is-pinned-0 {
+  background: #9c2a2a;
+  color: #fff;
+  border-color: #9c2a2a;
 }
 .lab-scotus-pin-clear {
   border-style: dashed;
@@ -489,10 +490,10 @@
   border: 1px solid rgba(0, 0, 0, 0.15);
 }
 .lab-scotus-swatch-1 {
-  background: #9c2a2a;
+  background: #1f4e8c;
 }
 .lab-scotus-swatch-0 {
-  background: #1f4e8c;
+  background: #9c2a2a;
 }
 .lab-scotus-ranks {
   display: flex;
@@ -510,8 +511,8 @@
   font-size: 13px;
 }
 .lab-scotus-rank-bar {
-  height: 10px;
-  background: #e9e6dd;
+  height: 12px;
+  background: #9c2a2a;
   border: 1px solid var(--lab-rule);
   border-radius: 2px;
   overflow: hidden;
@@ -525,6 +526,97 @@
   font-family: var(--lab-font-mono);
   font-size: 12px;
   text-align: right;
+  color: var(--lab-ink-muted);
+}
+.lab-scotus-subhead {
+  margin: 18px 0 8px;
+  font-family: var(--lab-font-display, var(--lab-font-body));
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--lab-ink);
+}
+.lab-scotus-configs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  border: 1px solid var(--lab-rule);
+  border-radius: 4px;
+  padding: 8px 10px;
+  background: var(--lab-paper);
+}
+.lab-scotus-configs-head,
+.lab-scotus-config-row {
+  display: grid;
+  grid-template-columns: 1fr 64px 64px 64px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+.lab-scotus-configs-head {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--lab-ink-muted);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--lab-rule);
+}
+.lab-scotus-configs-head-h,
+.lab-scotus-configs-head-score,
+.lab-scotus-configs-head-obs {
+  font-family: var(--lab-font-mono);
+  text-align: right;
+}
+.lab-scotus-config-row {
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.06);
+}
+.lab-scotus-config-row:last-child {
+  border-bottom: none;
+}
+.lab-scotus-config-spins {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.lab-scotus-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  font-family: var(--lab-font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+.lab-scotus-slot-c {
+  background: #1f4e8c;
+}
+.lab-scotus-slot-l {
+  background: #9c2a2a;
+}
+.lab-scotus-slot.is-pinned {
+  outline: 2px solid #1a1a1a;
+  outline-offset: 1px;
+}
+.lab-scotus-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 3px;
+}
+.lab-scotus-slot-label {
+  pointer-events: none;
+}
+.lab-scotus-config-h,
+.lab-scotus-config-score,
+.lab-scotus-config-obs {
+  font-family: var(--lab-font-mono);
+  font-size: 13px;
+  text-align: right;
+}
+.lab-scotus-config-obs {
   color: var(--lab-ink-muted);
 }
 .lab-science-pt-readout {

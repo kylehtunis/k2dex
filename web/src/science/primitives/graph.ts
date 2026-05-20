@@ -109,6 +109,77 @@ export function randomGraph(
 }
 
 /**
+ * Fruchterman-Reingold spring layout. Returns 2D positions normalized to fit
+ * in [-1, 1] x [-1, 1]. Uses repulsion among all node pairs and attraction
+ * along edges; cools the step size over iterations.
+ */
+export function springLayout(
+  g: Graph,
+  rng: Rng,
+  iterations = 200,
+): { x: number; y: number }[] {
+  const V = g.V;
+  const k = Math.sqrt(4 / Math.max(V, 1));
+  const positions = Array.from({ length: V }, () => ({
+    x: rng.random() * 2 - 1,
+    y: rng.random() * 2 - 1,
+  }));
+  let t = 0.4;
+  for (let it = 0; it < iterations; it++) {
+    const disp = Array.from({ length: V }, () => ({ x: 0, y: 0 }));
+    // Repulsion: every pair.
+    for (let i = 0; i < V; i++) {
+      for (let j = i + 1; j < V; j++) {
+        const dx = positions[i].x - positions[j].x;
+        const dy = positions[i].y - positions[j].y;
+        const dist = Math.max(Math.hypot(dx, dy), 1e-4);
+        const f = (k * k) / dist;
+        const ux = (dx / dist) * f;
+        const uy = (dy / dist) * f;
+        disp[i].x += ux;
+        disp[i].y += uy;
+        disp[j].x -= ux;
+        disp[j].y -= uy;
+      }
+    }
+    // Attraction: edges only.
+    for (const [i, j] of g.edges) {
+      const dx = positions[i].x - positions[j].x;
+      const dy = positions[i].y - positions[j].y;
+      const dist = Math.max(Math.hypot(dx, dy), 1e-4);
+      const f = (dist * dist) / k;
+      const ux = (dx / dist) * f;
+      const uy = (dy / dist) * f;
+      disp[i].x -= ux;
+      disp[i].y -= uy;
+      disp[j].x += ux;
+      disp[j].y += uy;
+    }
+    for (let i = 0; i < V; i++) {
+      const d = Math.max(Math.hypot(disp[i].x, disp[i].y), 1e-4);
+      positions[i].x += (disp[i].x / d) * Math.min(d, t);
+      positions[i].y += (disp[i].y / d) * Math.min(d, t);
+    }
+    t *= 0.96;
+  }
+  // Normalize to [-1, 1] preserving aspect ratio.
+  let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+  for (const p of positions) {
+    if (p.x < xMin) xMin = p.x;
+    if (p.x > xMax) xMax = p.x;
+    if (p.y < yMin) yMin = p.y;
+    if (p.y > yMax) yMax = p.y;
+  }
+  const span = Math.max(xMax - xMin, yMax - yMin, 1e-6);
+  const cx = (xMax + xMin) / 2;
+  const cy = (yMax + yMin) / 2;
+  return positions.map((p) => ({
+    x: ((p.x - cx) / span) * 1.8,
+    y: ((p.y - cy) / span) * 1.8,
+  }));
+}
+
+/**
  * One sweep = V single-spin Metropolis proposals on a graph state.
  * Mutates `s` in place. Pedagogical mirror of sweepLattice.
  */

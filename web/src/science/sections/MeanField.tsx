@@ -11,7 +11,7 @@ import {
   type Point,
 } from "../primitives/landscape";
 
-const STEPS_PER_FRAME = 2;
+const STEPS_PER_FRAME = 1;
 const ETA = 0.04;
 const CONVERGED_TOL = 1e-3;
 const TRAIL_SUBSAMPLE = 1;
@@ -109,26 +109,21 @@ export function MeanField() {
     <section id="mean-field" className="lab-science-section">
       <h2>Mean field: the cheap proxy</h2>
       <p>
-        Parallel tempering is correct but expensive — thousands of sweeps across{" "}
-        <InlineMath formula="K" /> chains. Mean field gives a much cheaper
-        approximation: replace each spin's neighbors with their{" "}
-        <em>average</em> values, then iterate until the averages stop changing.
+        Parallel tempering gives reliable results but it's computationally expensive, requiring thousands of sweeps across multiple chains. 
+        Mean field theory gives us an alternative which is much simpler to compute, at the cost of being only an approximation.
+        Rather than attempting to sample the full Boltzmann distribution, MF directly estimates the mean spin values by iteratively applying the MF update equation:
       </p>
       <BlockMath formula="m_i \leftarrow \sigma\!\bigl(\beta(h_i + {\textstyle\sum_j} J_{ij} m_j)\bigr)" />
       <p>
-        On the energy landscape, this is gradient descent: roll downhill with
-        no thermal noise. The marker below converges to whichever local minimum
-        it starts nearest and stops. No swap moves, no temperature, no escape.
+        On the energy landscape, this is gradient descent: just roll directly downhill.
+        The marker below converges to whichever local minimum
+        it starts nearest and stops. No swap moves, no temperature, no escape. 
+        This is similar to (though not exactly the same as) running Metropolis or Parallel Tempering at <InlineMath formula="T=0" />.
       </p>
       <p>
-        That's the whole tradeoff. For queries where one basin clearly
-        dominates, MF lands in the right one and the answer matches PT for a
-        fraction of the cost. For queries where multiple basins matter — or
-        where a different basin is actually the global minimum — MF commits
-        early and never finds out. On real Pokémon completions, MF and PT
-        agree on the top-1 pick about <strong>85%</strong> of the time, which
-        is why <em>/completer</em> uses MF by default and only switches to PT
-        when the "Full statistical sampler" toggle is on.
+        We also use it as the starting point for the Team Completer if you don't use full sampling. 
+        We were talking about Pokemon, remember? 
+        We'll get back to Pokemon and how this all ties together soon, but first I need to take <i>one more</i> detour and talk about the United States Supreme Court from 1994-2005.
       </p>
       <div className="lab-science-controls">
         <div

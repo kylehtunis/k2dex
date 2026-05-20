@@ -9,7 +9,7 @@ import { Landscape3D, type Walker } from "../widgets/Landscape3D";
 import { energyAt, metropolisStep, type Point } from "../primitives/landscape";
 import { Rng } from "../../sampler/rng";
 
-const STEPS_PER_FRAME = 18;
+const STEPS_PER_FRAME = 6;
 const SIGMA = 0.18;
 const COLD_T = 0.25;
 const PT_LADDER = [0.25, 0.8, 2.5];
@@ -61,12 +61,12 @@ export function PT() {
   const [mode, setMode] = useState<Mode>("single");
   const [running, setRunning] = useState(true);
   const [, forceTick] = useState(0);
-  const rngRef = useRef(new Rng(7));
+  const rngRef = useRef(new Rng(Math.floor(Math.random() * 2 ** 30)));
   const stateRef = useRef<SamplerState>(freshState());
   const swapCounterRef = useRef(0);
 
   const reset = useCallback(() => {
-    rngRef.current = new Rng(7);
+    rngRef.current = new Rng(Math.floor(Math.random() * 2 ** 30));
     stateRef.current = freshState();
     swapCounterRef.current = 0;
     forceTick((t) => t + 1);
@@ -104,7 +104,7 @@ export function PT() {
             for (let k = 0; k < PT_LADDER.length - 1; k++) {
               const a = st.ptChains[k];
               const b = st.ptChains[k + 1];
-              const dE = energyAt(b.x, b.y) - energyAt(a.x, a.y);
+              const dE = energyAt(a.x, a.y) - energyAt(b.x, b.y);
               const dBeta = 1 / PT_LADDER[k] - 1 / PT_LADDER[k + 1];
               const logAcc = dBeta * dE;
               if (logAcc >= 0 || rng.random() < Math.exp(logAcc)) {
@@ -156,33 +156,51 @@ export function PT() {
 
   return (
     <section id="pt" className="lab-science-section">
-      <h2>Parallel tempering: escaping basins at low T</h2>
+      <h2>Intermission: Energy Landscapes</h2>
       <p>
-        We can't visualize the full Ising energy surface over{" "}
-        <InlineMath formula="2^V" /> spin configurations, but its qualitative
-        shape is what matters here: a high-dimensional landscape with multiple
-        deep basins separated by ridges. The 2D analog below has the same key
-        property — two wells of equal depth at{" "}
-        <InlineMath formula="x = \pm 1" /> with a ridge in between.
+        Before we go further, it's important to understand the concept of an energy landscape.
+        If you're already comfortable with the concept of energy landscapes then skip right on ahead to the next section.
+        If not, I'll give you a quick primer here so that you can understand some of the more mind-bending concepts coming up.
       </p>
       <p>
-        At low <InlineMath formula="T" />, a single Metropolis chain barely
-        ever climbs that ridge. It samples one well densely and never sees the
-        other; the marginals it reports reflect <em>where it got trapped</em>,
-        not the true Boltzmann distribution.
+        An <b>energy landscape</b> is a way of visualizing the energy function that defines a system. 
+        Each point in the landscape corresponds to a particular configuration of the system, and the height of the landscape at that point corresponds to the energy of that configuration.
+        A "configuration" here means a specific arrangement of all the spins, 
+        so the small 32x32 lattice you played with earlier has <InlineMath formula="2^{32^2} = 2^{1024}" /> possible configurations.
+      </p>
+      <p>
+        Imagine a large mountain range: Each of those <InlineMath formula="2^{1024}" /> configurations is a different spot in that mountain range, and the altitude at each point is the energy of that configuration.
+        Valleys represent low-energy configurations (like a fully aligned magnet) and peaks represent high-energy configurations.
+        Systems, including the Ising model, tend to "roll downhill" in this energy landscape as they look for low-energy configurations.
+        The Metropolis algorithm can be thought of as a hiker exploring this landscape: every step, he points in a random direction. If it's downhill, he always takes it. If it's uphill, he might still take it, but he's less likely to if it's a steep climb. 
+      </p>
+      <p>
+        (Technically, the landscape in our case would be in a 1024-dimensional space, but picturing a 2d landscape (with the 3rd dimension representing energy) is an easy mental image and the math is exactly the same.)
+      </p>
+      <p>
+        Energy landscapes show up all over the place in science. 
+        The "mountain range" analogy is so common that it's common to use geographical terminology to describe what's going on.
+        When I use terms like "valley", "ridge", or "basin" in the next few sections, I'm referring to features of the energy landscape.
+        There are some simulations below that will make this all make a lot more sense.
+      </p>
+      <h2>Parallel tempering</h2>
+      <p>
+        If you got upset when I said earlier that Metropolis will sample the Boltzmann distribution "given infinite time", good instincts.
+        The random walk can get stuck in a specific basin for longer than the duration of a finite simulation.
+        You can see this in action by running the simulation below.
       </p>
       <p>
         Parallel tempering runs <InlineMath formula="K" /> chains at temperatures{" "}
         <InlineMath formula="T_1 < T_2 < \dots < T_K" />. The hottest chain
         roams over the whole landscape; the coldest stays concentrated in
-        whichever well it currently occupies. Periodically the algorithm
-        proposes a swap between adjacent rungs:
+        whichever well it currently occupies. Periodically, the algorithm
+        proposes that adjacent chains swap configurations, with an acceptance probability that preserves the Boltzmann distribution:
       </p>
-      <BlockMath formula="p_\text{swap} = \min\bigl(1,\ e^{(\beta_k - \beta_{k+1})(H_{k+1} - H_k)}\bigr)" />
+      <BlockMath formula="p_\text{swap} = \min\bigl(1,\ e^{(T_k^{-1} - T_{k+1}^{-1})(H_{k} - H_{k+1})}\bigr)" />
       <p>
-        The swap lets the cold chain "ride" the hot chain's mobility across
-        ridges, then resume detailed exploration on the other side. This is why
-        the "Full statistical sampler" toggle in <em>/completer</em> uses PT.
+        The hotter chains explore the full landscape, and periodically swap with colder chains for detailed exploration.
+        This gives a much more thorough sampling of the entire landscape relative to the single chain Metropolis version.
+        Check for yourself by switching back and forth between single-chain and PT modes in the simulation.
       </p>
       <div className="lab-science-controls">
         <div className="lab-t-picker" role="radiogroup" aria-label="Sampler">
@@ -253,10 +271,9 @@ export function PT() {
             </tbody>
           </table>
           <p className="lab-science-note">
-            The two wells are symmetric, so the true fraction of time in the
-            left well is exactly 50%. The single-chain estimate stays pinned
-            near 0% or 100% indefinitely; the PT cold chain drifts toward 50%
-            as swaps move it back and forth.
+            The two wells are exactly symmetric, so the random walker should spend 50% of the time in the left cell.
+            The single-chain will only rarely change basins, 
+            and the estimate will likely not converge in any reasonable amount of time. PT should converge to 50% relatively quickly.
           </p>
         </div>
       </div>

@@ -24,14 +24,30 @@ function makeRandom(seed: number): Lattice {
 export function Magnets() {
   return (
     <section id="magnets" className="lab-science-section">
-      <h2>Magnets and the Curie point</h2>
+      <h4>
+        When you heat a magnet it loses its magnetism. 
+        When it cools back down the magnetism returns, but sometimes the North and South poles swap.
+        What causes that, and what on earth does it have to do with Pokemon? 
+        
+        </h4>
+        <p>
+        I'll walk you through understanding how the physics of magnets can be used to understand the United States Supreme Court or build competitive Pokemon teams.
+        The math might be a little intimidating, but this page is filled with interactive widgets to help you understand 
+        exactly what each equation is doing and how everything fits together.
+      </p>
+
+    <h2>Magnets and the Curie point</h2>
       <p>
-        A bar magnet works because the tiny magnetic moments inside it line up. Heat the
-        bar past its <em>Curie temperature</em> and the alignment breaks down — the moments
-        point in random directions and the bulk magnetism vanishes. Cool it back down and
-        order returns. The Ising model is the simplest mathematical object that captures
-        this: a collection of two-state "spins" that prefer to agree with their neighbors,
-        but get jostled by thermal noise.
+        A any sort of magnet can be thought of as composed of individual tiny magnets, each with it's own magnetic field, called a "spin".
+        These spins can point either up or down, also called +1 and -1.
+        When the spins all align, their magnetic fields combine to create the strong magnetic effect we can see macroscopically.
+        The more aligned the spins are, the lower the energy of the system, and the stronger the magnet. 
+        Since nature prefers low energy states, these spins will align by themselves and create a macroscopic magnet.
+      </p>
+      <p>
+        However, spins can be randomly flipped by thermal fluctuations. Flips into lower energy states are more likely, 
+        but if you add enough heat then the spins will flip so often that they can't maintain their alignment. This is when the magnet "demagnetizes".
+        The temperature this happens at is called the Curie point.
       </p>
       <div className="lab-science-row">
         <figure>
