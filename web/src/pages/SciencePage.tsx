@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { S1Magnets } from "../science/sections/S1Magnets";
 import { S2Lattice } from "../science/sections/S2Lattice";
 import { S3MCMC } from "../science/sections/S3MCMC";
+import { S4PT } from "../science/sections/S4PT";
 
 export function SciencePage() {
   useEffect(() => {
@@ -22,6 +23,7 @@ export function SciencePage() {
       <S1Magnets />
       <S2Lattice />
       <S3MCMC />
+      <S4PT />
     </div>
   );
 }
