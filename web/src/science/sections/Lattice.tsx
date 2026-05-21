@@ -119,7 +119,7 @@ export function Lattice() {
           Reset
         </button>
       </div>
-      <div className="lab-science-row" style={{ flexWrap: "nowrap" }}>
+      <div className="lab-science-row">
         <figure>
           <SpinGrid lattice={lattice} cell={5} />
           <figcaption>Spin configuration (dark = +1, light = −1)</figcaption>

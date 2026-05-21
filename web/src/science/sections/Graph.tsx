@@ -141,32 +141,34 @@ export function Graph() {
           New graph
         </button>
       </div>
-      <figure>
-        <GraphView
-          nodes={nodes}
-          edges={edges}
-          width={VIEW_SIZE}
-          height={VIEW_SIZE}
-          nodeRadius={14}
-          maxStrokeWidth={4}
-        />
-        <figcaption>
-          Random graph ({graph.V} nodes, {graph.edges.length} edges). Dark node
-          = spin on; light = off. Blue edge: J &gt; 0 (prefer agreement). Red
-          edge: J &lt; 0 (prefer disagreement). Thickness ∝ |J|.
-        </figcaption>
-      </figure>
-      <figure>
-        <LinePlot
-          width={360}
-          height={160}
-          series={[{ data: magHistory, color: "#1f4e8c" }]}
-          yDomain={[0, 1]}
-          xLabel="sweeps (last 200)"
-          yLabel="frac on"
-        />
-        <figcaption>Magnetization over time</figcaption>
-      </figure>
+      <div className="lab-science-row">
+        <figure>
+          <GraphView
+            nodes={nodes}
+            edges={edges}
+            width={VIEW_SIZE}
+            height={VIEW_SIZE}
+            nodeRadius={14}
+            maxStrokeWidth={4}
+          />
+          <figcaption>
+            Random graph ({graph.V} nodes, {graph.edges.length} edges). Dark node
+            = spin on; light = off. Blue edge: J &gt; 0 (prefer agreement). Red
+            edge: J &lt; 0 (prefer disagreement). Thickness ∝ |J|.
+          </figcaption>
+        </figure>
+        <figure style={{ marginRight: 24 }}>
+          <LinePlot
+            width={360}
+            height={160}
+            series={[{ data: magHistory, color: "#1f4e8c" }]}
+            yDomain={[0, 1]}
+            xLabel="sweeps (last 200)"
+            yLabel="frac on"
+          />
+          <figcaption>Magnetization over time</figcaption>
+        </figure>
+      </div>
     </section>
   );
 }
