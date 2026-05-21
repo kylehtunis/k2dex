@@ -49,7 +49,7 @@ function makePath(
 export function LinePlot({ width, height, series, yDomain, xLabel, yLabel, hLines }: LinePlotProps) {
   const xMax = Math.max(0, ...series.map((s) => s.data.length - 1));
   return (
-    <svg width={width} height={height} role="img" className="lab-lineplot">
+    <svg width={width} height={height} role="img" className="lab-lineplot" overflow="visible">
       <line
         x1={PAD.left}
         x2={width - PAD.right}
@@ -72,10 +72,11 @@ export function LinePlot({ width, height, series, yDomain, xLabel, yLabel, hLine
       </text>
       {yLabel && (
         <text
-          x={4}
+          x={12}
           y={height / 2}
+          textAnchor="middle"
           fontSize="10"
-          transform={`rotate(-90 4 ${height / 2})`}
+          transform={`rotate(-90 12 ${height / 2})`}
         >
           {yLabel}
         </text>

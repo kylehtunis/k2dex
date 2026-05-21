@@ -353,6 +353,7 @@
   flex-wrap: wrap;
   align-items: flex-start;
   margin-top: 16px;
+  overflow-x: auto;
 }
 .lab-science-section figure {
   margin: 0;
