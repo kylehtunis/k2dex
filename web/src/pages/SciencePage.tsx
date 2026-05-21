@@ -21,7 +21,7 @@ export function SciencePage() {
         <h1>The science behind k2dex</h1>
         <p className="lab-science-lede">
           The completer, analysis, and meta tools all rest on a single statistical model.
-          This page walks through what that model is, why it works, and what it can't see.
+          This page uses interactive examples to explain what that model is and how it works.
         </p>
       </header>
       <Magnets />

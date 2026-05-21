@@ -238,8 +238,8 @@ export function SCOTUS() {
       </p>
       <h2>SCOTUS votes as an Ising model</h2>
       <p>
-        This idea to fit Supreme Court votes to an Ising model comes from Lee, Broderick &amp; Frey's 2015
-        paper, and here I'm using the same method and data. Each vote is 9 spins. The fitted graph below shows positive
+        This idea to fit Supreme Court votes to an Ising model comes from a 2015
+        paper (cite), and here I'm using the same method and data. Each vote is represented by a network of 9 spins. The fitted graph below shows positive
         couplings (blue) between justices who vote together more than chance,
         and negative couplings (red) between those who tend to disagree.
       </p>

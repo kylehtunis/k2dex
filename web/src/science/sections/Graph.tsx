@@ -8,6 +8,7 @@ import { GraphView } from "../widgets/GraphView";
 import { randomGraph, springLayout, sweepGraph } from "../primitives/graph";
 import type { State } from "../primitives/graph";
 import { Rng } from "../../sampler/rng";
+import { LinePlot } from "../widgets/LinePlot";
 
 const ER_N = 14;
 const ER_P = 0.32;
@@ -19,6 +20,10 @@ const VIEW_RADIUS = 150;
 
 function randSeed() {
   return Math.floor(Math.random() * 2 ** 30);
+}
+
+function graphMagnetization(state: State): number {
+  return state.reduce((a, s) => a + s, 0) / state.length;
 }
 
 export function Graph() {
@@ -37,10 +42,14 @@ export function Graph() {
   const [state, setState] = useState<State>(initialState.slice());
   const [T, setT] = useState(1.0);
   const [running, setRunning] = useState(false);
+  const [magHistory, setMagHistory] = useState<number[]>(() => [
+    graphMagnetization(initialState),
+  ]);
 
   useEffect(() => {
     rngRef.current = new Rng(randSeed());
     setState(initialState.slice());
+    setMagHistory([graphMagnetization(initialState)]);
     setRunning(false);
   }, [graphSeed, initialState]);
 
@@ -48,6 +57,7 @@ export function Graph() {
     setState((prev) => {
       const next = prev.slice();
       sweepGraph(next, graph, T, rngRef.current, SWEEP_BATCH);
+      setMagHistory((h) => [...h, graphMagnetization(next)].slice(-200));
       return next;
     });
   }, [graph, T]);
@@ -55,6 +65,7 @@ export function Graph() {
   const reset = useCallback(() => {
     rngRef.current = new Rng(randSeed());
     setState(initialState.slice());
+    setMagHistory([graphMagnetization(initialState)]);
   }, [initialState]);
 
   useEffect(() => {
@@ -99,14 +110,18 @@ export function Graph() {
         Couplings can also be negative, meaning that those spins prefer to be <i>opposite</i>, rather than aligned.
         Also, from now on we'll think of spins as on or off (1 or 0) instead of +1 or -1.
         It makes more sense for what's coming up, and it doesn't change the math.
-        Here's how a more general Ising model might look:
+      </p>
+      <p>
+        The figure below is a randomly generated network representing a more general Ising model.
+        While math can predict the Boltzmann distribution of the simple 2d lattice analytically,
+        that isn't yet possible for arbitrary graphs. Try a few random graphs at different temperatures to see how even a tiny system can behave completely unpredictably.
       </p>
       <div className="lab-science-controls">
         <label>
           T = {T.toFixed(2)}{" "}
           <input
             type="range"
-            min={0.2}
+            min={0.1}
             max={4}
             step={0.05}
             value={T}
@@ -140,6 +155,17 @@ export function Graph() {
           = spin on; light = off. Blue edge: J &gt; 0 (prefer agreement). Red
           edge: J &lt; 0 (prefer disagreement). Thickness ∝ |J|.
         </figcaption>
+      </figure>
+      <figure>
+        <LinePlot
+          width={360}
+          height={160}
+          series={[{ data: magHistory, color: "#1f4e8c" }]}
+          yDomain={[0, 1]}
+          xLabel="sweeps (last 200)"
+          yLabel="frac on"
+        />
+        <figcaption>Magnetization over time</figcaption>
       </figure>
     </section>
   );

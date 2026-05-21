@@ -9,6 +9,12 @@ export interface LinePlotSeries {
   label?: string;
 }
 
+export interface LinePlotHLine {
+  y: number;
+  color: string;
+  dashed?: boolean;
+}
+
 export interface LinePlotProps {
   width: number;
   height: number;
@@ -16,6 +22,7 @@ export interface LinePlotProps {
   yDomain: [number, number];
   xLabel?: string;
   yLabel?: string;
+  hLines?: LinePlotHLine[];
 }
 
 const PAD = { left: 36, right: 8, top: 8, bottom: 24 };
@@ -39,7 +46,7 @@ function makePath(
   return parts.join(" ");
 }
 
-export function LinePlot({ width, height, series, yDomain, xLabel, yLabel }: LinePlotProps) {
+export function LinePlot({ width, height, series, yDomain, xLabel, yLabel, hLines }: LinePlotProps) {
   const xMax = Math.max(0, ...series.map((s) => s.data.length - 1));
   return (
     <svg width={width} height={height} role="img" className="lab-lineplot">
@@ -78,6 +85,23 @@ export function LinePlot({ width, height, series, yDomain, xLabel, yLabel }: Lin
           {xLabel}
         </text>
       )}
+      {hLines?.map((hl, k) => {
+        const innerH = height - PAD.top - PAD.bottom;
+        const [y0, y1] = yDomain;
+        const yPx = PAD.top + innerH - ((hl.y - y0) / (y1 - y0)) * innerH;
+        return (
+          <line
+            key={k}
+            x1={PAD.left}
+            x2={width - PAD.right}
+            y1={yPx}
+            y2={yPx}
+            stroke={hl.color}
+            strokeDasharray={hl.dashed ? "4 3" : undefined}
+            strokeWidth={1}
+          />
+        );
+      })}
       {series.map((s, k) => (
         <path
           key={k}

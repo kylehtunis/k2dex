@@ -354,15 +354,19 @@
   align-items: flex-start;
   margin-top: 16px;
 }
-.lab-science-row figure {
+.lab-science-section figure {
   margin: 0;
-  text-align: center;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
 }
 .lab-science-section figcaption {
   margin-top: 6px;
   font-size: 12px;
   color: var(--lab-ink-muted);
   text-align: center;
+  width: 0;
+  min-width: 100%;
 }
 .lab-science-controls {
   display: flex;
@@ -370,6 +374,16 @@
   align-items: center;
   margin: 12px 0;
   flex-wrap: wrap;
+}
+.lab-science-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--lab-font-mono);
+  font-size: 13px;
+  color: var(--lab-ink-soft);
+  cursor: pointer;
+  user-select: none;
 }
 .lab-science-note {
   font-size: 13px;
@@ -416,6 +430,7 @@
   line-height: 1.1;
 }
 .lab-t-btn-hint {
+  font-family: var(--lab-font-mono);
   font-size: 10px;
   color: var(--lab-ink-muted);
   text-transform: lowercase;

@@ -9,12 +9,19 @@ import { createLattice, latticeMagnetization, sweepLattice } from "../primitives
 import type { Lattice } from "../primitives/lattice";
 import { Rng } from "../../sampler/rng";
 
-const SIZE = 32;
+const SIZE = 64;
 const SWEEP_BATCH = 20;
 const RUN_INTERVAL_MS = 100;
+const TC = 2 / Math.log(1 + Math.SQRT2); // ≈ 2.269
 
 function randSeed() {
   return Math.floor(Math.random() * 2 ** 30);
+}
+
+function onsagerM(T: number): number {
+  if (T >= TC) return 0;
+  const s = Math.sinh(2 / T);
+  return Math.pow(1 - Math.pow(s, -4), 0.125);
 }
 
 export function Lattice() {
@@ -24,19 +31,21 @@ export function Lattice() {
     createLattice(SIZE, SIZE, new Rng(initSeedRef.current)),
   );
   const [T, setT] = useState(2.3);
+  const TRef = useRef(T);
+  TRef.current = T;
   const [magHistory, setMagHistory] = useState<number[]>([
-    latticeMagnetization(createLattice(SIZE, SIZE, new Rng(initSeedRef.current))),
+    Math.abs(latticeMagnetization(createLattice(SIZE, SIZE, new Rng(initSeedRef.current)))),
   ]);
   const [running, setRunning] = useState(false);
 
   const step = useCallback(() => {
     setLattice((prev) => {
       const next = prev.map((row) => row.slice()) as Lattice;
-      sweepLattice(next, T, rngRef.current, SWEEP_BATCH);
-      setMagHistory((h) => [...h, latticeMagnetization(next)].slice(-200));
+      sweepLattice(next, TRef.current, rngRef.current, SWEEP_BATCH);
+      setMagHistory((h) => [...h, Math.abs(latticeMagnetization(next))].slice(-200));
       return next;
     });
-  }, [T]);
+  }, []);
 
   const reset = useCallback(() => {
     const newSeed = randSeed();
@@ -44,7 +53,7 @@ export function Lattice() {
     rngRef.current = new Rng(randSeed());
     const L = createLattice(SIZE, SIZE, new Rng(newSeed));
     setLattice(L);
-    setMagHistory([latticeMagnetization(L)]);
+    setMagHistory([Math.abs(latticeMagnetization(L))]);
   }, []);
 
   useEffect(() => {
@@ -79,6 +88,9 @@ export function Lattice() {
       </p>
       <p>
         In basic terms, it means that the energy of the system is lower when more neighbors are aligned, and that lower energy states are more likely to occur, especially at low temperatures.
+        This 2d lattice Ising model has been well-studied, and many aspects of its behavior have been solved analytically (without needing to simulate it) (cite Onsager).
+        For example, the dotted red line in the plot below shows the expected magnetization 
+        <InlineMath formula="\langle m \rangle = \frac{1}{N}\sum_i s_i" />) for any temperature below the critical temperature (~2.269), where the system transitions between ordered and disordered phases.
       </p>
       <p>
         The widget below lets you run a simulation of the Ising model and see how it behaves at high and low temperatures.
@@ -90,8 +102,8 @@ export function Lattice() {
           T = {T.toFixed(2)}{" "}
           <input
             type="range"
-            min={0}
-            max={5}
+            min={1}
+            max={3}
             step={0.05}
             value={T}
             onChange={(e) => setT(Number(e.target.value))}
@@ -109,7 +121,7 @@ export function Lattice() {
       </div>
       <div className="lab-science-row">
         <figure>
-          <SpinGrid lattice={lattice} cell={10} />
+          <SpinGrid lattice={lattice} cell={5} />
           <figcaption>Spin configuration (dark = +1, light = −1)</figcaption>
         </figure>
         <figure>
@@ -117,19 +129,12 @@ export function Lattice() {
             width={360}
             height={160}
             series={[{ data: magHistory, color: "#1f4e8c" }]}
-            yDomain={[-1, 1]}
-            xLabel="sweeps (last 200)"
-            yLabel="m"
-          />
-          <LinePlot
-            width={360}
-            height={160}
-            series={[{ data: magHistory.map(Math.abs), color: "#9c2a2a" }]}
             yDomain={[0, 1]}
             xLabel="sweeps (last 200)"
             yLabel="|m|"
+            hLines={[{ y: onsagerM(T), color: "#9c2a2a", dashed: true }]}
           />
-          <figcaption>Magnetization (top) and its magnitude (bottom)</figcaption>
+          <figcaption>Magnetization over time</figcaption>
         </figure>
       </div>
     </section>

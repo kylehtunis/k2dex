@@ -59,7 +59,8 @@ function pushTrail(trail: Point[], p: Point) {
 
 export function PT() {
   const [mode, setMode] = useState<Mode>("single");
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [showHotChains, setShowHotChains] = useState(false);
   const [, forceTick] = useState(0);
   const rngRef = useRef(new Rng(Math.floor(Math.random() * 2 ** 30)));
   const stateRef = useRef<SamplerState>(freshState());
@@ -144,12 +145,14 @@ export function PT() {
             trail: st.singleTrail,
           },
         ]
-      : st.ptChains.map((p, k) => ({
-          x: p.x,
-          y: p.y,
-          color: RUNG_COLORS[k],
-          trail: st.ptTrails[k],
-        }));
+      : st.ptChains
+          .map((p, k) => ({
+            x: p.x,
+            y: p.y,
+            color: RUNG_COLORS[k],
+            trail: st.ptTrails[k],
+          }))
+          .filter((_, k) => k === 0 || showHotChains);
 
   const leftFrac =
     st.totalSteps > 0 ? st.leftCount / (st.leftCount + st.rightCount) : 0;
@@ -186,7 +189,7 @@ export function PT() {
       <h2>Parallel tempering</h2>
       <p>
         If you got upset when I said earlier that Metropolis will sample the Boltzmann distribution "given infinite time", good instincts.
-        The random walk can get stuck in a specific basin for longer than the duration of a finite simulation.
+        The random walk through the energy landscape can get stuck in a specific basin for longer than the duration of a finite simulation.
         You can see this in action by running the simulation below.
       </p>
       <p>
@@ -211,8 +214,8 @@ export function PT() {
             className={"lab-t-btn" + (mode === "single" ? " is-selected" : "")}
             onClick={() => setMode("single")}
           >
-            <span className="lab-t-btn-label">Single</span>
-            <span className="lab-t-btn-hint">cold chain only</span>
+            <span className="lab-t-btn-label">Metropolis</span>
+            <span className="lab-t-btn-hint">single chain</span>
           </button>
           <button
             type="button"
@@ -231,14 +234,26 @@ export function PT() {
         <button type="button" onClick={reset}>
           Reset
         </button>
+        {mode === "pt" && (
+          <label className="lab-science-checkbox-label">
+            <input
+              type="checkbox"
+              checked={showHotChains}
+              onChange={(e) => setShowHotChains(e.target.checked)}
+            />
+            show hot chains
+          </label>
+        )}
       </div>
       <div className="lab-science-row">
         <figure>
           <Landscape3D width={500} height={340} walkers={walkers} />
           <figcaption>
             {mode === "single"
-              ? "Single cold-T walker. Watch it stay in one well."
-              : "PT walkers: blue = cold (T = 0.25), gold = mid (T = 0.8), red = hot (T = 2.5). The cold walker hitches rides across the ridge via swaps."}
+              ? "Single T=0.25 walker. Watch it struggle to escape its well."
+              : showHotChains
+                ? "PT walkers: blue = cold (T = 0.25), gold = mid (T = 0.8), red = hot (T = 2.5). The cold walker hitches rides across the ridge via swaps."
+                : "PT cold walker (T = 0.25). The walker should now explore both landscapes, frequently switching without needing to explore high-energy areas. (Enable \"show hot chains\" to see the full ladder.)"}
           </figcaption>
         </figure>
         <div className="lab-science-pt-readout">
@@ -270,11 +285,6 @@ export function PT() {
               )}
             </tbody>
           </table>
-          <p className="lab-science-note">
-            The two wells are exactly symmetric, so the random walker should spend 50% of the time in the left cell.
-            The single-chain will only rarely change basins, 
-            and the estimate will likely not converge in any reasonable amount of time. PT should converge to 50% relatively quickly.
-          </p>
         </div>
       </div>
     </section>

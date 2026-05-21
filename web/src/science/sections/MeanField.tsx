@@ -24,10 +24,8 @@ interface Preset {
 }
 
 const PRESETS: Preset[] = [
-  { key: "nw", label: "NW", start: { x: -2.1, y: -1.9 } },
-  { key: "ne", label: "NE", start: { x: 2.1, y: -1.9 } },
-  { key: "s", label: "S", start: { x: -0.15, y: 2.1 } },
-  { key: "saddle", label: "near ridge", start: { x: -0.05, y: 1.6 } },
+  { key: "nw", label: "Start NW", start: { x: -2.1, y: -1.9 } },
+  { key: "ne", label: "Start NE", start: { x: 2.1, y: -1.9 } },
 ];
 
 interface DescentState {
@@ -53,7 +51,7 @@ function gradNorm(p: Point): number {
 
 export function MeanField() {
   const [presetKey, setPresetKey] = useState<string>(PRESETS[0].key);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useState(false);
   const [, forceTick] = useState(0);
   const stateRef = useRef<DescentState>(
     freshState(PRESETS[0].start),
@@ -143,7 +141,7 @@ export function MeanField() {
               onClick={() => setPresetKey(p.key)}
             >
               <span className="lab-t-btn-label">{p.label}</span>
-              <span className="lab-t-btn-hint">start</span>
+              <span className="lab-t-btn-hint"></span>
             </button>
           ))}
         </div>
@@ -184,13 +182,6 @@ export function MeanField() {
               </tr>
             </tbody>
           </table>
-          <p className="lab-science-note">
-            Try each preset. The "NW" and "near ridge" starts both converge to
-            the left well; "NE" to the right; the symmetric ridge means
-            initialization decides everything. Compare with PT above, where the
-            cold-chain visits <em>both</em> wells in proportion to their
-            Boltzmann weight.
-          </p>
         </div>
       </div>
     </section>

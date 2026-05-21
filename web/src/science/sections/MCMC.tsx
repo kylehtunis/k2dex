@@ -53,8 +53,9 @@ export function MCMC() {
     createLattice(SIZE, SIZE, new Rng(initSeedRef.current)),
   );
   const [T, setT] = useState(2.3);
+  const TRef = useRef(T);
+  TRef.current = T;
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
-  const [running, setRunning] = useState(false);
 
   const propose = useCallback(() => {
     const i = rngRef.current.integers(SIZE);
@@ -67,7 +68,8 @@ export function MCMC() {
 
   const evaluate = useCallback(() => {
     if (phase.kind !== "pending") return;
-    const { i, j, dE, pAccept } = phase;
+    const { i, j, dE } = phase;
+    const pAccept = dE <= 0 ? 1 : Math.exp(-dE / Math.max(TRef.current, 1e-9));
     const accept = dE <= 0 || rngRef.current.random() < pAccept;
     if (accept) {
       setLattice((prev) => {
@@ -90,12 +92,12 @@ export function MCMC() {
     (batch = 5) => {
       setLattice((prev) => {
         const next = prev.map((r) => r.slice()) as Lattice;
-        sweepLattice(next, T, rngRef.current, batch);
+        sweepLattice(next, TRef.current, rngRef.current, batch);
         return next;
       });
       setPhase({ kind: "idle" });
     },
-    [T],
+    [],
   );
 
   const reset = useCallback(() => {
@@ -104,23 +106,7 @@ export function MCMC() {
     rngRef.current = new Rng(randSeed());
     setLattice(createLattice(SIZE, SIZE, new Rng(newSeed)));
     setPhase({ kind: "idle" });
-    setRunning(false);
   }, []);
-
-  useEffect(() => {
-    if (!running) return;
-    let raf = 0;
-    let last = performance.now();
-    const loop = (now: number) => {
-      if (now - last >= RUN_INTERVAL_MS) {
-        last = now;
-        runSweeps(RUN_SWEEP_BATCH);
-      }
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [running, runSweeps]);
 
   const highlight =
     phase.kind === "idle" ? null : { i: phase.i, j: phase.j };
@@ -160,22 +146,11 @@ export function MCMC() {
             onChange={(e) => setT(Number(e.target.value))}
           />
         </label>
-        <button type="button" onClick={() => setRunning((r) => !r)}>
-          {running ? "Pause" : "Play"}
-        </button>
         <button
           type="button"
           onClick={stepAction}
-          disabled={running}
         >
           {stepLabel}
-        </button>
-        <button
-          type="button"
-          onClick={() => runSweeps(5)}
-          disabled={running}
-        >
-          Run 5 sweeps
         </button>
         <button type="button" onClick={reset}>
           Reset
@@ -208,7 +183,7 @@ export function MCMC() {
                 </tr>
                 <tr>
                   <th>p(accept)</th>
-                  <td>{phase.pAccept.toFixed(3)}</td>
+                  <td>{(phase.dE <= 0 ? 1 : Math.exp(-phase.dE / Math.max(T, 1e-9))).toFixed(3)}</td>
                 </tr>
                 <tr>
                   <th>status</th>
