@@ -92,6 +92,14 @@ class TournamentTeams:
 
 _MEGA_FORME_SUFFIXES = (" X", " Y", " Z")
 
+# Species whose Limitless API name appears inconsistently and must be
+# collapsed to a single canonical form before entering the corpus vocab.
+_SPECIES_ALIASES: dict[str, str] = {
+    # The base Floette form is unobtainable; the Eternal Flower variant is the
+    # only one that sees tournament play. Both names appear in the raw API.
+    "Floette": "Eternal Flower Floette",
+}
+
 
 def strip_mega_prefix(species: str) -> str:
     """Collapse 'Mega <Base>' / 'Mega <Base> X/Y/Z' species names down to
@@ -238,6 +246,7 @@ def extract_teams(standings: list[dict]) -> list[frozenset[tuple[str, str | None
             if not name:
                 continue
             name = strip_mega_prefix(name)
+            name = _SPECIES_ALIASES.get(name, name)
             item = normalize_name(mon.get("item"))
             members.append((name, item))
         if len(members) != TEAM_SIZE:

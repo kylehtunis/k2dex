@@ -52,6 +52,14 @@ _HYPHEN_BASE_SPECIES = frozenset({
     "nidoran-m",
 })
 
+# Species whose canonical corpus name doesn't follow normal slug rules.
+# Keys are the lowercased canonical name; values are the Showdown slug.
+_SLUG_OVERRIDES: dict[str, str] = {
+    # "Eternal Flower Floette" collapses to "floette" — the Eternal Flower
+    # forme has no separate Showdown sprite; the base sprite is used.
+    "eternal flower floette": "floette",
+}
+
 # Limitless stores regional formes as "Adjective Species" (e.g. "Alolan Ninetales").
 # Maps the adjective → the Showdown regional suffix.
 _REGIONAL_ADJECTIVE: dict[str, str] = {
@@ -133,6 +141,9 @@ def species_to_slug(name: str) -> str:
 
     Misses still fall through to the ``onerror`` fallback in :func:`sprite_img`.
     """
+    override = _SLUG_OVERRIDES.get(name.lower())
+    if override is not None:
+        return override
     # Keep only alphanumerics, hyphens, and spaces; lowercase.
     cleaned = re.sub(r"[^a-z0-9\s\-]+", "", name.lower()).strip()
     words = cleaned.split()

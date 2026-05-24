@@ -26,6 +26,14 @@ const HYPHEN_BASE_SPECIES = new Set([
   "nidoran-m",
 ]);
 
+/** Species whose canonical corpus name doesn't follow normal slug rules.
+ * Keys are the lowercased canonical name; values are the Showdown slug. */
+const SLUG_OVERRIDES: Record<string, string> = {
+  // "Eternal Flower Floette" collapses to "floette" — the Eternal Flower
+  // forme has no separate Showdown sprite; the base sprite is used.
+  "eternal flower floette": "floette",
+};
+
 // Limitless stores regional formes as "Adjective Species" (e.g. "Alolan Ninetales").
 const REGIONAL_ADJECTIVE: Record<string, string> = {
   alolan: "alola",
@@ -49,6 +57,8 @@ const ROTOM_FORME_NAMES = new Set(["wash", "heat", "frost", "mow", "fan"]);
  *     hyphens are collapsed.
  */
 export function speciesToSlug(name: string): string {
+  const override = SLUG_OVERRIDES[name.toLowerCase()];
+  if (override !== undefined) return override;
   // Keep alphanumerics, hyphens, and whitespace. Drop everything else.
   const cleaned = name.toLowerCase().replace(/[^a-z0-9\s-]+/g, "").trim();
   const words = cleaned.split(/\s+/).filter(Boolean);

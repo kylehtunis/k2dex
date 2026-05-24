@@ -319,6 +319,7 @@ const slugCases: Array<{ input: string; expected: string }> = [
   "Nidoran-F",
   "Tapu Koko",
   "Necrozma-Dawn-Wings",
+  "Eternal Flower Floette",
 ].map((input) => ({ input, expected: speciesToSlug(input) }));
 
 const corpusCases: CorpusCase[] = [];
