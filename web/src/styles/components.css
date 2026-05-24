@@ -515,14 +515,14 @@
   background: var(--lab-paper-warm, #f1efe9);
 }
 .lab-scotus-pin.is-pinned-1 {
-  background: #1f4e8c;
-  color: #fff;
-  border-color: #1f4e8c;
-}
-.lab-scotus-pin.is-pinned-0 {
   background: #9c2a2a;
   color: #fff;
   border-color: #9c2a2a;
+}
+.lab-scotus-pin.is-pinned-0 {
+  background: #1f4e8c;
+  color: #fff;
+  border-color: #1f4e8c;
 }
 .lab-scotus-pin-clear {
   border-style: dashed;
@@ -538,10 +538,10 @@
   border: 1px solid rgba(0, 0, 0, 0.15);
 }
 .lab-scotus-swatch-1 {
-  background: #1f4e8c;
+  background: #9c2a2a;
 }
 .lab-scotus-swatch-0 {
-  background: #9c2a2a;
+  background: #1f4e8c;
 }
 .lab-scotus-ranks {
   display: flex;
@@ -560,14 +560,14 @@
 }
 .lab-scotus-rank-bar {
   height: 12px;
-  background: #9c2a2a;
+  background: #1f4e8c;
   border: 1px solid var(--lab-rule);
   border-radius: 2px;
   overflow: hidden;
 }
 .lab-scotus-rank-fill {
   height: 100%;
-  background: #1f4e8c;
+  background: #9c2a2a;
   transition: width 120ms ease-out;
 }
 .lab-scotus-rank-pct {
@@ -639,10 +639,10 @@
   border: 1px solid rgba(0, 0, 0, 0.2);
 }
 .lab-scotus-slot-c {
-  background: #1f4e8c;
+  background: #9c2a2a;
 }
 .lab-scotus-slot-l {
-  background: #9c2a2a;
+  background: #1f4e8c;
 }
 .lab-scotus-slot.is-pinned {
   outline: 2px solid #1a1a1a;

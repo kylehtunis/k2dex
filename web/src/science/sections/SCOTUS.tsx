@@ -362,7 +362,7 @@ export function SCOTUS() {
           )}
         </div>
         <p className="lab-science-note">
-          Blue fill = P(votes conservative); red remainder = P(votes liberal).
+          Red fill = P(votes conservative); blue remainder = P(votes liberal).
           Pin Scalia conservative and the other conservatives (Rehnquist, Thomas)
           jump near 100%. Pin Ginsburg liberal and Stevens / Breyer drop sharply.
           Pin one of each — Scalia conservative, Ginsburg liberal — and the
