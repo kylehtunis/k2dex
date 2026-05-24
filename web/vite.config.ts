@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// GH Pages serves under /k2dex-science/. Dev / local-preview default to /.
+// GH Pages serves under /k2dex/. Dev / local-preview default to /.
 // Override with VITE_BASE_PATH for non-standard deploys.
 export default defineConfig({
   plugins: [react()],

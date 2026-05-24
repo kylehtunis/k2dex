@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://kylehtunis.github.io/k2dex-science/sitemap.xml
+Sitemap: https://kylehtunis.github.io/k2dex/sitemap.xml

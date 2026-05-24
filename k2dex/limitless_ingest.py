@@ -150,7 +150,7 @@ def normalize_name(s: str | None) -> str | None:
 
 def _http_get_json(url: str) -> object:
     """Fetch a URL and parse the response body as JSON."""
-    req = urllib.request.Request(url, headers={"User-Agent": "k2dex-science/0.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "k2dex/0.1"})
     with urllib.request.urlopen(req) as resp:
         return json.load(resp)
 

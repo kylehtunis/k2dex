@@ -1,15 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://kylehtunis.github.io/k2dex-science/completer</loc>
+    <loc>https://kylehtunis.github.io/k2dex</loc>
   </url>
   <url>
-    <loc>https://kylehtunis.github.io/k2dex-science/analysis</loc>
+    <loc>https://kylehtunis.github.io/k2dex/completer</loc>
   </url>
   <url>
-    <loc>https://kylehtunis.github.io/k2dex-science/meta</loc>
+    <loc>https://kylehtunis.github.io/k2dex/analysis</loc>
   </url>
   <url>
-    <loc>https://kylehtunis.github.io/k2dex-science/science</loc>
+    <loc>https://kylehtunis.github.io/k2dex/meta</loc>
+  </url>
+  <url>
+    <loc>https://kylehtunis.github.io/k2dex/science</loc>
   </url>
 </urlset>

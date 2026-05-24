@@ -1,4 +1,4 @@
-"""Visual-language design tokens for the k2dex science webapp.
+"""Visual-language design tokens for the k2dex webapp.
 
 Injects Google Fonts (Source Serif 4 / Inter / IBM Plex Mono), defines the
 ``--lab-*`` CSS custom properties for the palette, and applies base

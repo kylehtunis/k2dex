@@ -1,4 +1,4 @@
-"""Shared numeric constants for the k2dex-science project.
+"""Shared numeric constants for the k2dex project.
 
 Centralizes values that previously drifted between app.py, limitless_ingest.py,
 and the notebooks. Anything that's a meaningful knob (corpus size, vocab
