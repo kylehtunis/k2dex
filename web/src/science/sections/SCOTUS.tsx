@@ -255,7 +255,7 @@ export function SCOTUS() {
       <p>
         Once we have <em>J</em> and <em>h</em>, predicting unobserved spins
         conditional on observed ones is just another marginal computation —{" "}
-        <em>exactly</em> what <em>/completer</em> does with Pokémon teams.
+        <em>exactly</em> what the Team Completer does with Pokémon teams.
         Click any justice to pin them: once for <span className="lab-scotus-swatch lab-scotus-swatch-1" />{" "}
         <em>conservative</em>, again for <span className="lab-scotus-swatch lab-scotus-swatch-0" />{" "}
         <em>liberal</em>, again to clear. With only nine spins we can enumerate
