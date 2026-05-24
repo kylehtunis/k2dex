@@ -69,8 +69,6 @@ export function Layout() {
         <a href="https://github.com/kylehtunis/k2dex-science" target="_blank" rel="noopener noreferrer">
           Source
         </a>
-        <span className="lab-footer-sep">·</span>
-        <span>GPL-3.0</span>
       </footer>
     </div>
   );
