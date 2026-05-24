@@ -5,15 +5,18 @@
 //   §01        — Starting roster (slot strip)
 //   §02        — Excluded row (when non-empty)
 //   §03        — Constraints (pin + exclude multiselects)
-//   §04        — Sampler (sliders + full-sampler toggle + run button)
+//   §04        — Sampler (greedy toggle + sliders + run button)
 //   §05        — Observables (post-run)
 //   §06        — Suggested completion table (post-run)
 //
-// Fast path (default): MF marginals → uniqueness-respecting greedy
-// fill → greedy descent. Returns one team. Wired in this task.
+// Full statistical sampler (default): PT MCMC in a Web Worker. Returns a
+// distribution of completions; PT options (temperature + advanced) are
+// shown.
 //
-// Full statistical sampler (toggle on): PT MCMC in a Web Worker. Wired
-// in Task 21.
+// Greedy sampling (toggle on): MF marginals → uniqueness-respecting
+// greedy fill → greedy descent. Returns one team, fast, but can descend
+// into incoherent basins at low Bias Adjustment with few pins — so
+// checking it bumps Bias Adjustment to 0.8 and hides the PT options.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -346,7 +349,7 @@ export function CompleterPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: usePT ? "1fr 1fr" : "1fr",
           gap: 24,
           marginBottom: 12,
         }}
@@ -372,37 +375,43 @@ export function CompleterPage() {
             }
           />
         </div>
-        <div>
-          <label className="lab-form-label">
-            Temperature · {temperature}
-          </label>
-          <div className="lab-form-caption">
-            Cold-chain target temperature for the statistical sampler.
-            Lower = sharper Boltzmann distribution (fewer, more probable
-            completions). Ignored when the full sampler is off. Hot chain
-            is fixed at T={PT_HOT_T}.
+        {usePT && (
+          <div>
+            <label className="lab-form-label">
+              Temperature · {temperature}
+            </label>
+            <div className="lab-form-caption">
+              Cold-chain target temperature for the statistical sampler.
+              Lower = sharper Boltzmann distribution (fewer, more probable
+              completions). Hot chain is fixed at T={PT_HOT_T}.
+            </div>
+            <input
+              type="range"
+              className="lab-slider"
+              min={0}
+              max={TEMPERATURE_OPTIONS.length - 1}
+              step={1}
+              value={TEMPERATURE_OPTIONS.indexOf(temperature as 0.5)}
+              onChange={(e) =>
+                setCompleter({ temperature: TEMPERATURE_OPTIONS[Number(e.target.value)] })
+              }
+            />
           </div>
-          <input
-            type="range"
-            className="lab-slider"
-            min={0}
-            max={TEMPERATURE_OPTIONS.length - 1}
-            step={1}
-            value={TEMPERATURE_OPTIONS.indexOf(temperature as 0.5)}
-            onChange={(e) =>
-              setCompleter({ temperature: TEMPERATURE_OPTIONS[Number(e.target.value)] })
-            }
-            disabled={!usePT}
-          />
-        </div>
+        )}
       </div>
       <label className="lab-checkbox-row" style={{ marginBottom: 12 }}>
         <input
           type="checkbox"
-          checked={usePT}
-          onChange={(e) => setCompleter({ usePT: e.target.checked })}
+          checked={!usePT}
+          onChange={(e) => {
+            const greedy = e.target.checked;
+            // Greedy descends into incoherent basins at low Bias Adjustment
+            // with few pins, so seed it high (0.8); the full sampler is fine
+            // at the discrimination-optimal 0.3 (energy_discrimination.ipynb).
+            setCompleter({ usePT: !greedy, fieldWeight: greedy ? 0.8 : 0.3 });
+          }}
         />
-        Full statistical sampler (slow)
+        Greedy sampling (faster, only one result per query)
       </label>
       {usePT && (
         <details className="lab-expander" style={{ marginBottom: 12 }}>

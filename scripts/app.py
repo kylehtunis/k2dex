@@ -416,7 +416,7 @@ def _render_completer(phase_key: str, model: PhaseModel) -> None:
         field_weight = st.select_slider(
             "field_weight (h scale)",
             options=FIELD_WEIGHT_OPTIONS,
-            value=0.5,
+            value=0.3,
             key=f"completer_fw_{phase_key}",
             help=(
                 "Scales h before sampling. 1.0 = data-calibrated posterior "
@@ -846,7 +846,7 @@ def _render_analysis(phase_key: str, model: PhaseModel) -> None:
     field_weight = st.select_slider(
         "field_weight (for E_adj and greedy critique)",
         options=FIELD_WEIGHT_OPTIONS,
-        value=0.5,
+        value=0.3,
         key=f"analysis_fw_{phase_key}",
         help=(
             "Rescales h before computing E_adj and choosing greedy swaps. "

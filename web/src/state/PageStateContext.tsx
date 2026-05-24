@@ -42,9 +42,9 @@ export interface AnalysisInputs {
 const COMPLETER_DEFAULTS: CompleterInputs = {
   fixedIdxs: [],
   excludedSpecies: [],
-  fieldWeight: 0.5,
+  fieldWeight: 0.3,
   temperature: 0.5,
-  usePT: false,
+  usePT: true,
   ptRuns: PT_RUNS,
   ptLadder: PT_LADDER_LEVELS,
   ptSweeps: PT_SWEEPS,
@@ -53,7 +53,7 @@ const COMPLETER_DEFAULTS: CompleterInputs = {
 
 const ANALYSIS_DEFAULTS: AnalysisInputs = {
   teamIdxs: [],
-  fieldWeight: 0.5,
+  fieldWeight: 0.3,
 };
 
 interface PageStateContextValue {
