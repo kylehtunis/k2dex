@@ -1,8 +1,8 @@
 // App shell: header (wordmark + model picker) + page tabs + routed
 // page content + status banner if the active model failed to load.
 //
-// Nav has two groups: left-aligned teambuilding tabs (Completer / Analysis /
-// Meta) and a right-aligned Science tab to signal it's a separate surface.
+// Nav has two groups: left-aligned teambuilding tabs (Team Completer / Team Analysis /
+// Meta Info) and a right-aligned Science tab to signal it's a separate surface.
 // Model picker is hidden on /science since that page is not model-selectable.
 
 import { NavLink, Outlet, useLocation } from "react-router-dom";
@@ -10,11 +10,11 @@ import { useModel } from "../state/ModelContext";
 import { ModelPicker } from "./ModelPicker";
 
 const PRIMARY_TABS = [
-  { path: "/completer", label: "Completer" },
-  { path: "/analysis", label: "Analysis" },
-  { path: "/meta", label: "Meta" },
+  { path: "/completer", label: "Team Completer" },
+  { path: "/analysis", label: "Team Analysis" },
+  { path: "/meta", label: "Meta Info" },
 ];
-const SCIENCE_TAB = { path: "/science", label: "Science" };
+const SCIENCE_TAB = { path: "/science", label: "The Science of k2dex" };
 
 export function Layout() {
   const { status, error } = useModel();
