@@ -148,15 +148,23 @@ web/
   index.html
   package.json              Vite + React 18 + TS + Vitest + react-select + react-router-dom
   tsconfig.json
-  vite.config.ts            base path from VITE_BASE_PATH (production: /k2dex-science/)
+  vite.config.ts            base path from VITE_BASE_PATH (production: /k2dex/)
   scripts/
     emit-parity-baseline.ts  Node script that emits tests/parity_baseline.json
+    prerender-routes.ts      Post-build: writes per-route dist/<route>/index.html
+                             (200 + unique title/canonical) + dist/sitemap.xml
+                             from src/siteMeta.ts. Run as last step of npm build.
   public/
     assets/missingno.svg     also copied into web/src/assets/ for ?url import
+    404.html                 GH Pages SPA fallback (humans only — see SEO note)
+    robots.txt               Allow all + Sitemap: line (sitemap itself generated)
     models/{species,species_item}/  ← precompute.py output, committed to git
     scotus/{votes,fits}.json ← scotus_precompute.py output, committed to git
   src/
     main.tsx, App.tsx        bootstrap + router (includes /science route)
+    siteMeta.ts              Single source of truth for per-route title/desc/
+                             canonical; consumed by usePageMeta + prerender script
+    usePageMeta.ts           Hook: syncs <head> (title/canonical/OG) on SPA nav
     constants.ts             mirrors a subset of constants.py
     assets/                  Vite-handled imports (missingno fallback)
     state/ModelContext.tsx   load + cache (J, h, m, team_counts) per model
@@ -204,6 +212,8 @@ web/
 2. Inspect `web/public/models/{species,species_item}/{meta.json,J.bin,...}` for sanity (vocab size, n_corpus_teams, file sizes).
 3. Commit the artifacts. CI is not allowed to regenerate them (the user wants manual eyeballing of every refresh).
 4. `npm run build` reads the artifacts as static files (Vite copies `public/` into `dist/`).
+
+**SEO / indexability (per-route static HTML).** The app is a client-routed SPA, so without help every non-root URL would (a) return GitHub Pages' HTTP 404 for direct/crawler hits — the `public/404.html` redirect only rescues *human* navigation, not crawlers, which honor the 404 status before running its JS — and (b) inherit the one `index.html`'s root-pointing `<link rel="canonical">`, telling Google every page is a duplicate of home. Both collapse the site to a single indexed URL. Fix: `scripts/prerender-routes.ts` runs as the **last step of `npm run build`** and writes a real `dist/<route>/index.html` per route (HTTP 200, unique `<title>`/description, self-referencing canonical) plus `dist/sitemap.xml`, all from `src/siteMeta.ts`. At runtime, `usePageMeta()` (called in `Layout`) reproduces the same `<head>` values on SPA navigation so they don't go stale after first load. **Adding a route means adding one entry to `src/siteMeta.ts`** — it feeds the prerendered HTML, the runtime head, and the sitemap together. `public/sitemap.xml` does **not** exist; it's generated (don't reintroduce a static one). Subfolder `index.html` files work because Vite emits absolute (base-path-prefixed) asset URLs.
 
 **Parallel-tempered sampler** runs inside a Web Worker (`web/src/completer/ptWorker.ts`) so the UI stays responsive during the 10–30s sample. Structured-clone passes the model (~2.5 MB J for Species @ Item) into the worker; not a performance issue at this scale.
 

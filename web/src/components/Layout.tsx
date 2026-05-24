@@ -8,6 +8,7 @@
 
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useModel } from "../state/ModelContext";
+import { usePageMeta } from "../usePageMeta";
 import { ModelPicker } from "./ModelPicker";
 
 const PRIMARY_TABS = [
@@ -18,6 +19,7 @@ const PRIMARY_TABS = [
 const SCIENCE_TAB = { path: "/science", label: "The Science of k2dex" };
 
 export function Layout() {
+  usePageMeta();
   const { status, error } = useModel();
   const location = useLocation();
   const isHome = location.pathname === "/";
