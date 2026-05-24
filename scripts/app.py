@@ -37,7 +37,8 @@ from k2dex import helpers, styles
 from k2dex.constants import (
     PHASE1_MIN_USAGE,
     PHASE1_RIDGE_EPS,
-    PHASE2_LR_C,
+    SPECIES_ITEM_LR_C,
+    SPECIES_LR_C,
     TEAM_SIZE,
 )
 from k2dex.loaders import (
@@ -1019,8 +1020,8 @@ def _render_meta(phase_key: str, model: PhaseModel) -> None:
     n_corpus_teams = sum(team_counts.values()) if team_counts is not None else None
     fit_label = {
         "phase1": f"Gaussian · ridge ε={PHASE1_RIDGE_EPS}",
-        "species": f"sklearn LogReg · L2 · C={PHASE2_LR_C}",
-        "species_item": f"sklearn LogReg · L2 · C={PHASE2_LR_C}",
+        "species": f"sklearn LogReg · L2 · C={SPECIES_LR_C}",
+        "species_item": f"sklearn LogReg · L2 · C={SPECIES_ITEM_LR_C}",
     }[phase_key]
     phase_label = {
         "phase1": "Phase 1", "species": "Phase 2", "species_item": "Phase 3",

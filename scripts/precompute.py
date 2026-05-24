@@ -39,9 +39,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from k2dex.constants import (
-    PHASE2_LR_C,
     PHASE2_MIN_TEAM_COUNT,
     PHASE2_MIN_TEAMS,
+    SPECIES_ITEM_LR_C,
+    SPECIES_LR_C,
     TEAM_SIZE,
 )
 from k2dex.loaders import build_species_item_model, build_species_model
@@ -52,6 +53,12 @@ DEFAULT_OUT_DIR = Path(__file__).resolve().parent.parent / "web" / "public" / "m
 MODEL_BUILDERS = {
     "species": build_species_model,
     "species_item": build_species_item_model,
+}
+
+# L2 inverse-strength used by each model's builder; recorded in meta.json.
+MODEL_LR_C = {
+    "species": SPECIES_LR_C,
+    "species_item": SPECIES_ITEM_LR_C,
 }
 
 
@@ -131,7 +138,7 @@ def write_model(
         "item_of": item_of,
         "fit": {
             "method": "pseudo_likelihood",
-            "C": PHASE2_LR_C,
+            "C": MODEL_LR_C[name],
             "min_team_count": PHASE2_MIN_TEAM_COUNT,
             "min_teams": PHASE2_MIN_TEAMS,
         },

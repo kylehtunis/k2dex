@@ -13,7 +13,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from . import limitless_ingest
-from .constants import PHASE2_LR_C, PHASE2_MIN_TEAM_COUNT, PHASE2_MIN_TEAMS
+from .constants import (
+    PHASE2_MIN_TEAM_COUNT,
+    PHASE2_MIN_TEAMS,
+    SPECIES_ITEM_LR_C,
+    SPECIES_LR_C,
+)
 from .models import fit_pl_ising
 
 
@@ -60,7 +65,7 @@ def build_species_model() -> SpeciesModel:
                 X[ti, j] = 1
     m = X.mean(axis=0)
 
-    J, h = fit_pl_ising(X, C=PHASE2_LR_C)
+    J, h = fit_pl_ising(X, C=SPECIES_LR_C)
     species_of = list(vocab)
     item_of: list[str | None] = [None] * len(vocab)
     return vocab, m, J, h, team_counts, species_of, item_of
@@ -98,5 +103,5 @@ def build_species_item_model() -> SpeciesModel:
         if all(pair in pair_to_idx for pair in team):
             team_counts[frozenset(format_pair(s, i) for s, i in team)] += 1
 
-    J, h = fit_pl_ising(X, C=PHASE2_LR_C)
+    J, h = fit_pl_ising(X, C=SPECIES_ITEM_LR_C)
     return vocab, m, J, h, team_counts, species_of, item_of

@@ -16,7 +16,8 @@ PHASE1_RIDGE_EPS = 0.01        # ridge for precision-matrix inversion
 # --- Phase 2 / 3 (PL inverse Ising on Limitless teams) ---
 PHASE2_MIN_TEAMS = 25000       # corpus size cutoff for ingest
 PHASE2_MIN_TEAM_COUNT = 5      # vocab cutoff: feature must appear in >=5 teams
-PHASE2_LR_C = 0.1              # L2 inverse-strength for the per-spin logreg
+SPECIES_LR_C = 0.1            # L2 inverse-strength for the species per-spin logreg
+SPECIES_ITEM_LR_C = 1.0      # L2 inverse-strength for the (species, item) per-spin logreg
 
 # --- Limitless ingest filter ---
 MIN_TEAMS_PER_TOURNAMENT = 64  # was 16; bump spreads corpus more temporally

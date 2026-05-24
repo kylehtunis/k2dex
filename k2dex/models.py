@@ -14,13 +14,11 @@ import numpy as np
 from numpy.typing import NDArray
 from sklearn.linear_model import LogisticRegression
 
-from .constants import PHASE2_LR_C
-
 
 def fit_pl_ising(
     X: NDArray[np.integer],
     *,
-    C: float = PHASE2_LR_C,
+    C: float = 0.1,
     max_iter: int = 1000,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Fit inverse Ising (J, h) via per-spin pseudo-likelihood on a binary

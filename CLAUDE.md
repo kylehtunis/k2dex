@@ -129,6 +129,7 @@ Post-v0.4 the app uses a "lab notebook" palette + type system delivered via CSS 
 Easy to get wrong if you only look at one file:
 
 - **Phase 1 vocab cutoff is `min_usage=0.002`** (~170 Pokémon at Reg M-A 1760). Phase 2/3 vocab cutoff is `PHASE2_MIN_TEAM_COUNT = 5` (feature must appear in ≥5 teams).
+- **Regularization is per-phase.** The species (Phase 2) fit uses `SPECIES_LR_C = 0.1`; the `(species, item)` (Phase 3) fit uses `SPECIES_ITEM_LR_C = 0.5` — the wider, sparser pair feature matrix wants weaker regularization. Each `loaders` builder passes its own constant; `fit_pl_ising`'s `C` default is a neutral literal (`0.1`), not a phase constant, since the function is generic over a single `C`. `precompute.py` records the per-model `C` in `meta.json` via `MODEL_LR_C`. `notebooks/regularization_sweep.ipynb` is the sweep harness behind these values.
 - **`MIN_TEAMS_PER_TOURNAMENT = 64`** filters out small/quirky tournaments at ingest time. Below this they tended to be majority-Bo1 or unusual local metas.
 - **`PHASE2_MIN_TEAMS = 10000`** is the current corpus-size cutoff for ingest. The ingestor walks newest-first until this many teams accumulate.
 - **PPMI is computed in probability space** (`p_ij / (p_i p_j)`) so absolute counts cancel. Smogon's `Teammates` values are **skill-weighted floats, not raw integer counts**; we treat them as proportional to team-appearances throughout.
