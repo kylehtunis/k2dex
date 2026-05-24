@@ -88,7 +88,8 @@ export function Lattice() {
       </p>
       <p>
         In basic terms, it means that the energy of the system is lower when more neighbors are aligned, and that lower energy states are more likely to occur, especially at low temperatures.
-        This 2d lattice Ising model has been well-studied, and many aspects of its behavior have been solved analytically (without needing to simulate it) (cite Onsager).
+        This 2d lattice Ising model has been well-studied, and many aspects of its behavior have been solved analytically (without needing to simulate it){" "}
+        (<a href="#ref-onsager">Onsager, 1944</a>).
         For example, the dotted red line in the plot below shows the expected magnetization 
         <InlineMath formula="\langle m \rangle = \frac{1}{N}\sum_i s_i" /> for any temperature below the critical temperature (~2.269), where the system transitions between ordered and disordered phases.
       </p>

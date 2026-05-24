@@ -10,6 +10,7 @@ import { ParallelTempering } from "../science/sections/ParallelTempering";
 import { MeanField } from "../science/sections/MeanField";
 import { SCOTUS } from "../science/sections/SCOTUS";
 import { Pokemon } from "../science/sections/Pokemon";
+import { References } from "../science/sections/References";
 
 export function SciencePage() {
   useEffect(() => {
@@ -35,6 +36,7 @@ export function SciencePage() {
       <h2 className="lab-science-act">The Inverse Problem</h2>
       <SCOTUS />
       <Pokemon />
+      <References />
     </div>
   );
 }

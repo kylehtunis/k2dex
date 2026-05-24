@@ -193,7 +193,8 @@ export function ParallelTempering() {
         You can see this in action by running the simulation below.
       </p>
       <p>
-        Parallel tempering runs <InlineMath formula="K" /> chains at temperatures{" "}
+        Parallel tempering (<a href="#ref-hukushima">Hukushima &amp; Nemoto, 1996</a>){" "}
+        runs <InlineMath formula="K" /> chains at temperatures{" "}
         <InlineMath formula="T_1 < T_2 < \dots < T_K" />. The hottest chain
         roams over the whole landscape; the coldest stays concentrated in
         whichever well it currently occupies. Periodically, the algorithm

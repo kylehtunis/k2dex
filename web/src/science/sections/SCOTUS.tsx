@@ -228,16 +228,17 @@ export function SCOTUS() {
         (and by now you should be getting a sense how this all might eventually tie back into Pokemon teams).
       </p>
       <p>
-        The standard tool for this is pseudo-likelihood estimation:
+        The standard tool for this is pseudo-likelihood estimation{" "}
+        (<a href="#ref-besag">Besag, 1975</a>):
         for each spin, fit a logistic regression predicting its state from all
         the others. The regression coefficients become that spin's row of{" "}
-        <em>J</em>. To see how it works, we'll look at a real-world example that's small enough that we
-        <i>can</i> observe a significant portion of the possible configurations: voting patterns of the nine justices of the United States Supreme Court.
+        <em>J</em>. To see how it works, we'll look at a real-world example that's small enough that we <i>can</i> observe
+         a significant portion of the possible configurations: voting patterns of the nine justices of the United States Supreme Court.
       </p>
       <h3>The Supreme Court</h3>
       <p>
-        This idea to fit Supreme Court votes to an Ising model comes from a 2015
-        paper (cite), and here I'm using the same method and data. Each vote is represented by a network of 9 spins. The fitted graph below shows positive
+        This idea to fit Supreme Court votes to an Ising model comes from <a href="#ref-lee">Lee, Broedersz &amp; Bialek, 2015</a>, and
+        here I'm using the same method and data. Each vote is represented by a network of 9 spins. The fitted graph below shows positive
         couplings (blue) between justices who vote together more than chance,
         and negative couplings (red) between those who tend to disagree.
       </p>

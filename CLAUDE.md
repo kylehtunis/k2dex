@@ -170,14 +170,16 @@ web/
                              isometric mesh + walker overlays)
       sections/              Magnets, Lattice, Graph, Metropolis,
                              ParallelTempering (with energy-landscape
-                             intermission), MeanField, SCOTUS, Pokemon.
+                             intermission), MeanField, SCOTUS, Pokemon,
+                             References (citations + data/asset acks footer).
                              Page order is the source of section identity —
                              files have descriptive names, not S1/S2
                              prefixes. SciencePage groups them under three
                              act headers (h2.lab-science-act): "The model"
                              (Magnets/Lattice/Graph), "Sampling" (Metropolis/
                              ParallelTempering/MeanField), "The inverse
-                             problem" (SCOTUS/Pokemon). Section titles are
+                             problem" (SCOTUS/Pokemon); References renders
+                             last under its own act header. Section titles are
                              h3; in-section subheads are h4.lab-science-subhead.
       data/scotusLayout.ts   Fixed 2D positions for the 9 justices
       __tests__/             vitest smoke tests for the toy primitives
@@ -213,6 +215,7 @@ Key design decisions and non-obvious facts:
 - **`GraphView` is sprite-capable.** Optional `sprite?: string` on each `GraphNode`; when set, renders `<image>` (with `onError` → bundled `missingno.svg` fallback in `widgets/GraphView.tsx`) instead of the default circle. Also takes `showLabels` (default true) and `spriteOpacity` (default 1) — the Pokemon figure sets `showLabels={false}` + `spriteOpacity={0.8}` to declutter. The Pokemon section uses this with `spriteUrl()` from `render/sprite-url.ts`; SCOTUS will once justice sprites land.
 - **Pokemon section figure.** A force-directed graph of the top ~32 species (one representative `(species, item)` node each — the highest-marginal build), drawn from the live Phase 3 `J` via `ModelContext`. A `|J|` threshold slider hides weaker couplings and **recomputes the spring layout** (`primitives/graph.ts:springLayout`) over only the still-connected nodes; a small `relaxOverlaps` pass declumps sprites afterward. No sampling/animation — pure layout. The prose's spin/parameter/team counts are read live from `model.V` / `model.nCorpusTeams`, not hardcoded.
 - **No code duplication with Python.** The page reuses the live model artifacts (`model.J`, `model.h`, `model.speciesOf`) via the existing `ModelContext`, but every section either uses toy primitives or operates directly on the loaded model. Nothing in `web/src/science/` needs to mirror a Python counterpart, so no parity-test obligation is added to `tests/test_parity.py`.
+- **Citations.** `sections/References.tsx` is the single source of truth for the page's bibliography (Ising 1925, Onsager 1944, Metropolis et al. 1953, Hukushima & Nemoto 1996, Besag 1975, Schneidman et al. 2006, Lee/Broedersz/Bialek 2015) plus data/asset acknowledgments (Limitless VGC, Pokémon Showdown). Each entry has an `id` (`ref-onsager`, `ref-lee`, …); inline `(Author, year)` citations in the section prose are plain `<a href="#ref-…">` anchor links. Add a new method's citation here and link to it inline where the method is introduced — don't scatter free-floating references.
 
 ## Code duplicated across Python and TypeScript
 

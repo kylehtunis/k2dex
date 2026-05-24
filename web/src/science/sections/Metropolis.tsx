@@ -111,7 +111,8 @@ export function Metropolis() {
       <h3>Metropolis</h3>
       <p>
         I've let you play with a few Ising simulations now, but I haven't actually explained how to go from mathematical equations to simulation.
-        The key is the Markov Chain Monte Carlo (MCMC) method. The most basic version of MCMC, called the Metropolis algorithm,
+        The key is the Markov Chain Monte Carlo (MCMC) method. The most basic version of MCMC, called the Metropolis algorithm{" "}
+        (<a href="#ref-metropolis">Metropolis et al., 1953</a>),
         just looks at one spin at a time and decides whether to flip it based on one rule:
       </p>
       <BlockMath formula="\text{accept proposal with } p = \min\bigl(1,\ e^{-\Delta E / T}\bigr)" />

@@ -407,6 +407,31 @@
   margin: 4px 0 12px;
   max-width: 64ch;
 }
+.lab-science-refs {
+  margin-top: 24px;
+}
+.lab-science-ref-list {
+  margin: 12px 0 24px;
+  padding-left: 28px;
+  max-width: 72ch;
+}
+.lab-science-ref-list li {
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+  color: var(--lab-ink);
+}
+.lab-science-ref-list li:target {
+  /* Subtle highlight when an inline citation jumps here. */
+  background: var(--lab-highlight, rgba(31, 78, 140, 0.08));
+  border-radius: 3px;
+  padding: 2px 6px;
+  margin-left: -6px;
+}
+.lab-science-ref-venue {
+  color: var(--lab-ink-muted);
+  font-style: italic;
+}
 .lab-t-picker {
   display: inline-flex;
   border: 1px solid var(--lab-rule);
