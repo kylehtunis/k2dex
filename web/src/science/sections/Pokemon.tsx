@@ -213,7 +213,7 @@ export function Pokemon() {
         one parameter per spin plus one per pair of spins (for the coupling), 
         that full model needs to fit about 200 million parameters (nearly a gigabyte), 
         all of which still has to run in the browser! So we keep only the spins
-        that appear in 5 or more teams brings the Species @ Item model down to
+        that appear in 5 or more teams, bringing the Species @ Item model down to
         {" "}<strong>{nSpins !== null ? nSpins.toLocaleString() : "—"} spins</strong>{" "}
         and about{" "}
         <strong>
