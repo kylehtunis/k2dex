@@ -1,5 +1,5 @@
 [project]
-name = "k2dex-science"
+name = "k2dex"
 version = "0.1.0"
 description = "Complexity-science methods on VGC team-composition data"
 requires-python = ">=3.12"
