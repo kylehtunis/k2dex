@@ -111,11 +111,6 @@ export function References() {
           , whose public tournament results make the Pokémon model possible.
         </li>
         <li>
-          Supreme Court voting records from the 2015 Lee, Broedersz &amp; Bialek
-          dataset (Rehnquist court, 1994–2005), used here under the same Ising
-          treatment.
-        </li>
-        <li>
           Pokémon sprites courtesy of{" "}
           <a
             href="https://play.pokemonshowdown.com/"

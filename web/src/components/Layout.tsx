@@ -27,7 +27,7 @@ export function Layout() {
     <div className="lab-container">
       <header className="lab-header">
         <Link to="/" className="lab-wordmark lab-wordmark-link">
-          k2dex<span className="lab-wordmark-mono">·science</span>
+          k2dex
         </Link>
         {!hideModelPicker && <ModelPicker />}
       </header>
@@ -60,7 +60,7 @@ export function Layout() {
       <Outlet />
       <footer className="lab-footer">
         <span>
-          k2dex·science by{" "}
+          k2dex by{" "}
           <a href="https://github.com/kylehtunis" target="_blank" rel="noopener noreferrer">
             Kyle Tunis
           </a>

@@ -50,7 +50,7 @@ export function MetaPage() {
   }
 
   const corpusCaption =
-    `Limitless 2026 Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`;
+    `Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`;
   const modelLabel = model.name === "species" ? "Species" : "Species @ Item";
   const modelSub = model.name === "species" ? "PL · species" : "PL · item-pair";
 

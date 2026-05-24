@@ -4,6 +4,7 @@
 // Pure presentation — caller provides numeric values already computed.
 
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { CompMonCell } from "../render/cells";
 import { CorpusCell } from "../render/atoms";
 import { ScoreChip } from "../render/atoms";
@@ -12,6 +13,8 @@ import type { IsingModel } from "../sampler/types";
 export interface CompletionRowProps {
   /** Order doesn't matter; row sorts them top-down by vocab order. */
   freeIdxs: readonly number[];
+  /** Full team (fixed + free), used for the "Analyze" link. */
+  fullTeam: readonly number[];
   scoreAdj: number;
   scoreRaw: number;
   coherence: number;
@@ -25,6 +28,7 @@ export interface CompletionRowProps {
 
 export function CompletionRow({
   freeIdxs,
+  fullTeam,
   scoreAdj,
   scoreRaw,
   coherence,
@@ -35,6 +39,7 @@ export function CompletionRow({
   model,
 }: CompletionRowProps) {
   const sortedFree = [...freeIdxs].sort((a, b) => a - b);
+  const analyzeUrl = `/analysis?team=${[...fullTeam].sort((a, b) => a - b).join(",")}`;
   return (
     <tr className={isTopRow ? "top-row" : undefined}>
       {rank !== undefined && <td className="rank">{rank}</td>}
@@ -44,6 +49,11 @@ export function CompletionRow({
             <CompMonCell key={i} name={model.vocab[i]} />
           ))}
         </div>
+      </td>
+      <td>
+        <Link to={analyzeUrl} className="lab-analyze-btn">
+          Send to Analysis
+        </Link>
       </td>
       {freqPct !== undefined && (
         <td className="num">
@@ -87,6 +97,7 @@ export function CompletionTable({
         <tr>
           {includeRank && <th>#</th>}
           <th>Completion</th>
+          <th></th>
           {includeFreq && <th className="num">Freq</th>}
           <th className="num">Score (adj)</th>
           <th className="num">Score (raw)</th>

@@ -229,10 +229,10 @@ export function ParallelTempering() {
             <span className="lab-t-btn-hint">3-rung ladder</span>
           </button>
         </div>
-        <button type="button" onClick={() => setRunning((r) => !r)}>
+        <button type="button" className="lab-science-btn" onClick={() => setRunning((r) => !r)}>
           {running ? "Pause" : "Play"}
         </button>
-        <button type="button" onClick={reset}>
+        <button type="button" className="lab-science-btn" onClick={reset}>
           Reset
         </button>
         {mode === "pt" && (

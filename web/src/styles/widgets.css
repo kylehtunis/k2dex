@@ -124,6 +124,32 @@
   padding: 18px 18px 18px;
 }
 
+/* Science section control button — outlined style that picks up the brand
+ * accent on hover. Used for Play/Pause/Step/Reset/New-graph controls. */
+.lab-science-btn {
+  appearance: none;
+  background: var(--lab-panel);
+  border: 1px solid var(--lab-rule);
+  border-radius: 3px;
+  padding: 6px 14px;
+  font-family: var(--lab-font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--lab-ink-soft);
+  cursor: pointer;
+  transition: border-color 80ms ease, color 80ms ease, background 80ms ease;
+}
+.lab-science-btn:hover:not(:disabled) {
+  border-color: var(--lab-accent);
+  color: var(--lab-accent);
+  background: color-mix(in oklch, var(--lab-accent) 4%, var(--lab-panel));
+}
+.lab-science-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* Inline error / warning text under a form group. */
 .lab-form-error {
   font-family: var(--lab-font-sans);

@@ -275,6 +275,7 @@ export function Pokemon() {
           Hide couplings below {thr.toFixed(2)}{" "}
           <input
             type="range"
+            className="lab-slider"
             min={0}
             max={sliderMax}
             step={0.05}
@@ -286,9 +287,9 @@ export function Pokemon() {
       </div>
       <figure>
         {!figReady ? (
-          <p style={{ color: "#888" }}>Loading the live model…</p>
+          <p style={{ color: "var(--lab-ink-muted)" }}>Loading the live model…</p>
         ) : nodes.length === 0 ? (
-          <p style={{ color: "#888" }}>
+          <p style={{ color: "var(--lab-ink-muted)" }}>
             No couplings above {thr.toFixed(2)}. Lower the slider to bring
             species back.
           </p>

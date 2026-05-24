@@ -126,6 +126,7 @@ export function Metropolis() {
           T = {T.toFixed(2)}{" "}
           <input
             type="range"
+            className="lab-slider"
             min={0.5}
             max={4}
             step={0.05}
@@ -135,11 +136,12 @@ export function Metropolis() {
         </label>
         <button
           type="button"
+          className="lab-science-btn"
           onClick={stepAction}
         >
           {stepLabel}
         </button>
-        <button type="button" onClick={reset}>
+        <button type="button" className="lab-science-btn" onClick={reset}>
           Reset
         </button>
       </div>
@@ -152,7 +154,7 @@ export function Metropolis() {
         </figure>
         <div>
           {phase.kind === "idle" ? (
-            <p style={{ color: "#888" }}>
+            <p style={{ color: "var(--lab-ink-muted)" }}>
               Click "Propose a flip" to set up a single Metropolis step.
             </p>
           ) : (

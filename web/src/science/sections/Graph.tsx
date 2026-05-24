@@ -121,6 +121,7 @@ export function Graph() {
           T = {T.toFixed(2)}{" "}
           <input
             type="range"
+            className="lab-slider"
             min={0.1}
             max={4}
             step={0.05}
@@ -128,16 +129,16 @@ export function Graph() {
             onChange={(e) => setT(Number(e.target.value))}
           />
         </label>
-        <button type="button" onClick={() => setRunning((r) => !r)}>
+        <button type="button" className="lab-science-btn" onClick={() => setRunning((r) => !r)}>
           {running ? "Pause" : "Play"}
         </button>
-        <button type="button" onClick={step} disabled={running}>
+        <button type="button" className="lab-science-btn" onClick={step} disabled={running}>
           Step {SWEEP_BATCH} sweeps
         </button>
-        <button type="button" onClick={reset}>
+        <button type="button" className="lab-science-btn" onClick={reset}>
           Reset
         </button>
-        <button type="button" onClick={() => setGraphSeed(randSeed())}>
+        <button type="button" className="lab-science-btn" onClick={() => setGraphSeed(randSeed())}>
           New graph
         </button>
       </div>

@@ -10,7 +10,8 @@
 //
 // All math is deterministic (no MCMC); recomputes inline when inputs change.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   FIELD_WEIGHT_OPTIONS,
   GREEDY_MAX_SWAPS,
@@ -18,6 +19,7 @@ import {
   TOP_SINGLE_SWAPS,
 } from "../constants";
 import { useModel } from "../state/ModelContext";
+import { usePageState } from "../state/PageStateContext";
 import { PageTitle, SectionLabel, StatStrip } from "../render/atoms";
 import { SlotStrip } from "../render/cells";
 import { VocabSelect, vocabOptions } from "../components/VocabSelect";
@@ -36,13 +38,22 @@ import { ChainTable } from "../analysis/ChainTable";
 
 export function AnalysisPage() {
   const { model, teamCounts, status } = useModel();
-  const phaseKey = model?.name ?? "—";
-  const [teamIdxs, setTeamIdxs] = useState<number[]>([]);
-  const [fieldWeight, setFieldWeight] = useState(0.5);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { analysis, setAnalysis } = usePageState();
+  const { teamIdxs, fieldWeight } = analysis;
 
+  // Pre-populate from ?team= query param (set by the completer's "Analyze" button).
   useEffect(() => {
-    setTeamIdxs([]);
-  }, [phaseKey]);
+    if (status !== "ready" || !model) return;
+    const teamParam = searchParams.get("team");
+    if (!teamParam) return;
+    const idxs = teamParam
+      .split(",")
+      .map(Number)
+      .filter((i) => !isNaN(i) && i >= 0 && i < model.V);
+    if (idxs.length > 0) setAnalysis({ teamIdxs: idxs.slice(0, TEAM_SIZE) });
+    setSearchParams({}, { replace: true });
+  }, [status, model, searchParams, setSearchParams, setAnalysis]);
 
   const vocabOpts = useMemo(
     () => (model ? vocabOptions(model) : []),
@@ -112,7 +123,7 @@ export function AnalysisPage() {
   }
 
   const corpusCaption =
-    `Limitless 2026 Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`;
+    `Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`;
   const teamNames = teamIdxs.map((i) => model.vocab[i]);
 
   return (
@@ -133,7 +144,7 @@ export function AnalysisPage() {
         <VocabSelect
           options={vocabOpts}
           value={teamIdxs}
-          onChange={setTeamIdxs}
+          onChange={(v) => setAnalysis({ teamIdxs: v })}
           maxSelections={TEAM_SIZE}
           placeholder={`Choose your team of ${TEAM_SIZE}`}
         />
@@ -166,7 +177,7 @@ export function AnalysisPage() {
               step={1}
               value={FIELD_WEIGHT_OPTIONS.indexOf(fieldWeight as 0)}
               onChange={(e) =>
-                setFieldWeight(FIELD_WEIGHT_OPTIONS[Number(e.target.value)])
+                setAnalysis({ fieldWeight: FIELD_WEIGHT_OPTIONS[Number(e.target.value)] })
               }
             />
           </div>

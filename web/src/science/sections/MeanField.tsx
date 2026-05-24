@@ -145,10 +145,10 @@ export function MeanField() {
             </button>
           ))}
         </div>
-        <button type="button" onClick={() => setRunning((r) => !r)}>
+        <button type="button" className="lab-science-btn" onClick={() => setRunning((r) => !r)}>
           {running ? "Pause" : "Play"}
         </button>
-        <button type="button" onClick={() => reset(presetKey)}>
+        <button type="button" className="lab-science-btn" onClick={() => reset(presetKey)}>
           Reset
         </button>
       </div>

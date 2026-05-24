@@ -22,15 +22,12 @@ import {
   GREEDY_MAX_SWAPS,
   PT_BURN_IN,
   PT_HOT_T,
-  PT_LADDER_LEVELS,
-  PT_RUNS,
-  PT_SWAP_INTERVAL,
-  PT_SWEEPS,
   TEAM_SIZE,
   TEMPERATURE_OPTIONS,
   TOP_COMPLETIONS,
 } from "../constants";
 import { useModel } from "../state/ModelContext";
+import { usePageState } from "../state/PageStateContext";
 import { PageTitle, SectionLabel, StatStrip } from "../render/atoms";
 import { ExcludedRow, SlotStrip } from "../render/cells";
 import {
@@ -87,19 +84,21 @@ type RunState =
 export function CompleterPage() {
   const { model, teamCounts, status } = useModel();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { completer, setCompleter } = usePageState();
 
-  // Form state. Reset pins/excludes when the model phase changes; the
-  // vocab is different and stale indices would refer to wrong mons.
+  const {
+    fixedIdxs, excludedSpecies, fieldWeight, temperature,
+    usePT, ptRuns, ptLadder, ptSweeps, ptSwapInterval,
+  } = completer;
+  const setFixedIdxs = (v: number[]) => setCompleter({ fixedIdxs: v });
+
   const phaseKey = model?.name ?? "—";
-  const [fixedIdxs, setFixedIdxs] = useState<number[]>([]);
 
   // Pre-pin a species from the ?pinned= query param (set by the /science page).
-  // Resolved once when the model becomes ready; cleared from the URL afterwards.
   useEffect(() => {
     if (status !== "ready" || !model) return;
     const pinned = searchParams.get("pinned");
     if (!pinned) return;
-    // Find the highest-marginal vocab entry for this species.
     let bestIdx = -1;
     let bestM = -1;
     for (let i = 0; i < model.V; i++) {
@@ -108,47 +107,21 @@ export function CompleterPage() {
         bestIdx = i;
       }
     }
-    if (bestIdx !== -1) setFixedIdxs([bestIdx]);
+    if (bestIdx !== -1) setCompleter({ fixedIdxs: [bestIdx] });
     setSearchParams({}, { replace: true });
-  }, [status, model, searchParams, setSearchParams]);
-  const [excludedSpecies, setExcludedSpecies] = useState<string[]>([]);
-  const [fieldWeight, setFieldWeight] = useState(0.5);
-  const [temperature, setTemperature] = useState(0.5);
-  const [usePT, setUsePT] = useState(false);
-  // PT knobs — mirror app.py's "Sampler parameters" expander. Defaults
-  // match the locked constants; the expander lets power-users tune.
-  //
-  // Burn-in is locked at PT_BURN_IN (3,000) — it's a fixed equilibration
-  // cost driven by ladder structure, not a user-meaningful knob. The
-  // worker runs ptSweeps + PT_BURN_IN sweeps total and discards the
-  // burn-in, so what's labelled "Samples per run" is what users actually
-  // keep.
-  const [ptRuns, setPtRuns] = useState(PT_RUNS);
-  const [ptLadder, setPtLadder] = useState(PT_LADDER_LEVELS);
-  const [ptSweeps, setPtSweeps] = useState(PT_SWEEPS);
-  const [ptSwapInterval, setPtSwapInterval] = useState(PT_SWAP_INTERVAL);
-  // Monotonically incrementing seed so "Re-run" gives a fresh draw from
-  // the same target distribution. Increments before each PT submit.
+  }, [status, model, searchParams, setSearchParams, setCompleter]);
+
+  // Ephemeral state — not persisted across tab switches.
   const [seedCounter, setSeedCounter] = useState(1);
   const [running, setRunning] = useState(false);
   const [runState, setRunState] = useState<RunState | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  /** Wall-clock elapsed for the active run (PT mode). Updated every
-   * 250ms so the user sees a ticking number during the long sample. */
   const [elapsedMs, setElapsedMs] = useState(0);
   const elapsedTimer = useRef<number | null>(null);
 
   useEffect(() => {
-    setFixedIdxs([]);
-    setExcludedSpecies([]);
     setRunState(null);
     setErrorMsg(null);
-    // Snap PT knobs back to defaults so a power-user's overrides
-    // don't silently carry across phase switches.
-    setPtRuns(PT_RUNS);
-    setPtLadder(PT_LADDER_LEVELS);
-    setPtSweeps(PT_SWEEPS);
-    setPtSwapInterval(PT_SWAP_INTERVAL);
     setSeedCounter(1);
   }, [phaseKey]);
 
@@ -179,7 +152,7 @@ export function CompleterPage() {
   }
 
   const corpusCaption =
-    `Limitless 2026 Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`;
+    `Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`;
 
   const fixedNames = fixedIdxs.map((i) => model.vocab[i]);
   const fixedSpeciesSet = new Set(fixedIdxs.map((i) => model.speciesOf[i]));
@@ -363,7 +336,7 @@ export function CompleterPage() {
           <SpeciesSelect
             options={speciesOpts}
             value={excludedSpecies}
-            onChange={setExcludedSpecies}
+            onChange={(v) => setCompleter({ excludedSpecies: v })}
             placeholder="Choose species to exclude"
           />
         </div>
@@ -395,7 +368,7 @@ export function CompleterPage() {
             step={1}
             value={FIELD_WEIGHT_OPTIONS.indexOf(fieldWeight as 0)}
             onChange={(e) =>
-              setFieldWeight(FIELD_WEIGHT_OPTIONS[Number(e.target.value)])
+              setCompleter({ fieldWeight: FIELD_WEIGHT_OPTIONS[Number(e.target.value)] })
             }
           />
         </div>
@@ -417,7 +390,7 @@ export function CompleterPage() {
             step={1}
             value={TEMPERATURE_OPTIONS.indexOf(temperature as 0.5)}
             onChange={(e) =>
-              setTemperature(TEMPERATURE_OPTIONS[Number(e.target.value)])
+              setCompleter({ temperature: TEMPERATURE_OPTIONS[Number(e.target.value)] })
             }
             disabled={!usePT}
           />
@@ -427,7 +400,7 @@ export function CompleterPage() {
         <input
           type="checkbox"
           checked={usePT}
-          onChange={(e) => setUsePT(e.target.checked)}
+          onChange={(e) => setCompleter({ usePT: e.target.checked })}
         />
         Full statistical sampler (slow)
       </label>
@@ -454,7 +427,7 @@ export function CompleterPage() {
                 max={10}
                 step={1}
                 value={ptRuns}
-                onChange={(e) => setPtRuns(Number(e.target.value))}
+                onChange={(e) => setCompleter({ ptRuns: Number(e.target.value) })}
               />
             </div>
             <div>
@@ -473,7 +446,7 @@ export function CompleterPage() {
                 max={15}
                 step={1}
                 value={ptLadder}
-                onChange={(e) => setPtLadder(Number(e.target.value))}
+                onChange={(e) => setCompleter({ ptLadder: Number(e.target.value) })}
               />
             </div>
             <div>
@@ -494,7 +467,7 @@ export function CompleterPage() {
                 max={50000}
                 step={1000}
                 value={ptSweeps}
-                onChange={(e) => setPtSweeps(Number(e.target.value))}
+                onChange={(e) => setCompleter({ ptSweeps: Number(e.target.value) })}
               />
             </div>
             <div>
@@ -516,7 +489,7 @@ export function CompleterPage() {
                 step={1}
                 value={ptSwapInterval}
                 onChange={(e) =>
-                  setPtSwapInterval(Number(e.target.value))
+                  setCompleter({ ptSwapInterval: Number(e.target.value) })
                 }
               />
             </div>
@@ -597,6 +570,7 @@ function FastResults({
       <CompletionTable>
         <CompletionRow
           freeIdxs={freeFinal}
+          fullTeam={result.finalTeam}
           scoreAdj={obs.scoreAdj}
           scoreRaw={obs.scoreRaw}
           coherence={obs.coherence}
@@ -695,6 +669,7 @@ function PTResults({
               key={entry.team.join("-")}
               rank={idx + 1}
               freeIdxs={freeIdxs}
+              fullTeam={entry.team}
               scoreAdj={obs.scoreAdj}
               scoreRaw={obs.scoreRaw}
               coherence={obs.coherence}
