@@ -1,4 +1,4 @@
-# k2dex · science
+# k2dex
 
 Interactive tools and explainers applying complexity-science methods to competitive Pokémon (VGC) team composition data.
 
