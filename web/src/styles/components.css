@@ -340,12 +340,27 @@
   font-size: 15px;
   margin-bottom: 32px;
 }
+.lab-science-act {
+  font-family: var(--lab-font-serif, "Source Serif 4", Georgia, serif);
+  font-size: 28px;
+  margin: 72px 0 28px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--lab-ink);
+}
+.lab-science-act:first-of-type {
+  margin-top: 32px;
+}
 .lab-science-section {
   margin-bottom: 56px;
 }
-.lab-science-section h2 {
+.lab-science-section h3 {
   font-family: var(--lab-font-serif, "Source Serif 4", Georgia, serif);
-  margin-bottom: 12px;
+  font-size: 21px;
+  margin: 0 0 12px;
+}
+/* Sections with more than one concept (PT, SCOTUS) need air between them. */
+.lab-science-section h3 ~ h3 {
+  margin-top: 40px;
 }
 .lab-science-row {
   display: flex;
@@ -440,14 +455,6 @@
 }
 .lab-t-btn.is-selected .lab-t-btn-hint {
   color: var(--lab-paper-warm, #d8d4c8);
-}
-.lab-pokemon-species-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.lab-pokemon-species-select {
-  min-width: 260px;
 }
 .lab-science-subhead {
   margin: 24px 0 8px;

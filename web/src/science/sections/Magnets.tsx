@@ -37,7 +37,7 @@ export function Magnets() {
         exactly what each equation is doing and how everything fits together.
       </p>
 
-    <h2>Magnets and the Curie point</h2>
+    <h3>Magnets and the Curie point</h3>
       <p>
         A any sort of magnet can be thought of as composed of individual tiny magnets, each with it's own magnetic field, called a "spin".
         These spins can point either up or down, also called +1 and -1.

@@ -2,16 +2,14 @@
 // step-by-step. Two-stage UI: Propose (compute ΔE and p) → Evaluate (roll the
 // RNG, accept or reject). Mass-update via sweeps is a separate button.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { BlockMath, InlineMath } from "../widgets/Math";
 import { SpinGrid } from "../widgets/SpinGrid";
-import { createLattice, sweepLattice } from "../primitives/lattice";
+import { createLattice } from "../primitives/lattice";
 import type { Lattice, Spin } from "../primitives/lattice";
 import { Rng } from "../../sampler/rng";
 
 const SIZE = 12;
-const RUN_INTERVAL_MS = 100;
-const RUN_SWEEP_BATCH = 2;
 
 type Phase =
   | { kind: "idle" }
@@ -46,7 +44,7 @@ function randSeed() {
   return Math.floor(Math.random() * 2 ** 30);
 }
 
-export function MCMC() {
+export function Metropolis() {
   const initSeedRef = useRef(randSeed());
   const rngRef = useRef(new Rng(randSeed()));
   const [lattice, setLattice] = useState<Lattice>(() =>
@@ -88,18 +86,6 @@ export function MCMC() {
     });
   }, [phase]);
 
-  const runSweeps = useCallback(
-    (batch = 5) => {
-      setLattice((prev) => {
-        const next = prev.map((r) => r.slice()) as Lattice;
-        sweepLattice(next, TRef.current, rngRef.current, batch);
-        return next;
-      });
-      setPhase({ kind: "idle" });
-    },
-    [],
-  );
-
   const reset = useCallback(() => {
     const newSeed = randSeed();
     initSeedRef.current = newSeed;
@@ -122,7 +108,7 @@ export function MCMC() {
 
   return (
     <section id="mcmc" className="lab-science-section">
-      <h2>Sampling: Metropolis MCMC</h2>
+      <h3>Metropolis</h3>
       <p>
         I've let you play with a few Ising simulations now, but I haven't actually explained how to go from mathematical equations to simulation.
         The key is the Markov Chain Monte Carlo (MCMC) method. The most basic version of MCMC, called the Metropolis algorithm,

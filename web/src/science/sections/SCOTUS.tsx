@@ -151,9 +151,7 @@ export function SCOTUS() {
     const edges: { i: number; j: number; weight: number }[] = [];
     for (let i = 0; i < votes.justices.length; i++) {
       for (let j = i + 1; j < votes.justices.length; j++) {
-        if (Math.abs(fit.J[i][j]) > 0.05) {
-          edges.push({ i, j, weight: fit.J[i][j] });
-        }
+        edges.push({ i, j, weight: fit.J[i][j] });
       }
     }
     return { nodes, edges };
@@ -172,7 +170,7 @@ export function SCOTUS() {
   if (!fits || !votes || !fit) {
     return (
       <section id="scotus" className="lab-science-section">
-        <h2>Inverse Ising: the Supreme Court</h2>
+        <h3>Fitting a model to data</h3>
         <p>Loading SCOTUS data…</p>
       </section>
     );
@@ -216,7 +214,7 @@ export function SCOTUS() {
 
   return (
     <section id="scotus" className="lab-science-section">
-      <h2>Flipping the problem: inverse Ising</h2>
+      <h3>Fitting a model to data</h3>
       <p>
         In all the examples so far, we've talked about what the model is <i>doing</i>, but where does it come <i>from</i>?
         Well, suppose you have a system that you want to model using an Ising simulation.
@@ -236,7 +234,7 @@ export function SCOTUS() {
         <em>J</em>. To see how it works, we'll look at a real-world example that's small enough that we
         <i>can</i> observe a significant portion of the possible configurations: voting patterns of the nine justices of the United States Supreme Court.
       </p>
-      <h2>SCOTUS votes as an Ising model</h2>
+      <h3>The Supreme Court</h3>
       <p>
         This idea to fit Supreme Court votes to an Ising model comes from a 2015
         paper (cite), and here I'm using the same method and data. Each vote is represented by a network of 9 spins. The fitted graph below shows positive
@@ -251,12 +249,8 @@ export function SCOTUS() {
           height={420}
           nodeRadius={26}
         />
-        <figcaption>
-          Fitted J on all {fit.n_used} non-unanimous votes. Edges with |J| &gt;
-          0.05 shown.
-        </figcaption>
       </figure>
-      <h3 className="lab-science-subhead">Same machinery: completing a vote</h3>
+      <h4 className="lab-science-subhead">Completing a vote</h4>
       <p>
         Once we have <em>J</em> and <em>h</em>, predicting unobserved spins
         conditional on observed ones is just another marginal computation —{" "}

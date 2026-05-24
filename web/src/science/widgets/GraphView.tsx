@@ -10,9 +10,10 @@ interface SpriteImageProps {
   x: number;
   y: number;
   size: number;
+  opacity?: number;
 }
 
-function SpriteImage({ href, x, y, size }: SpriteImageProps) {
+function SpriteImage({ href, x, y, size, opacity = 1 }: SpriteImageProps) {
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     setFailed(false);
@@ -24,6 +25,7 @@ function SpriteImage({ href, x, y, size }: SpriteImageProps) {
       y={y}
       width={size}
       height={size}
+      opacity={opacity}
       preserveAspectRatio="xMidYMid meet"
       onError={() => setFailed(true)}
     />
@@ -55,6 +57,10 @@ export interface GraphViewProps {
   height: number;
   nodeRadius?: number;
   maxStrokeWidth?: number;
+  /** Render the per-node text label. Defaults to true. */
+  showLabels?: boolean;
+  /** Opacity applied to sprite nodes (not default circle nodes). */
+  spriteOpacity?: number;
 }
 
 export function GraphView({
@@ -64,6 +70,8 @@ export function GraphView({
   height,
   nodeRadius = 18,
   maxStrokeWidth = 5,
+  showLabels = true,
+  spriteOpacity = 1,
 }: GraphViewProps) {
   const maxAbs = edges.reduce((m, e) => Math.max(m, Math.abs(e.weight)), 1e-9);
   const byId = new Map(nodes.map((n) => [n.id, n] as const));
@@ -99,17 +107,20 @@ export function GraphView({
                 x={n.x - size / 2}
                 y={n.y - size / 2}
                 size={size}
+                opacity={spriteOpacity}
               />
-              <text
-                x={n.x}
-                y={n.y + size / 2 + 12}
-                textAnchor="middle"
-                fontSize="11"
-                fill={n.active ? "#1a1a1a" : "#333"}
-                fontWeight={n.active ? 600 : 400}
-              >
-                {n.label}
-              </text>
+              {showLabels && (
+                <text
+                  x={n.x}
+                  y={n.y + size / 2 + 12}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fill={n.active ? "#1a1a1a" : "#333"}
+                  fontWeight={n.active ? 600 : 400}
+                >
+                  {n.label}
+                </text>
+              )}
             </g>
           );
         }

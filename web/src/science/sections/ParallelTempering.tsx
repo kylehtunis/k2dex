@@ -57,7 +57,7 @@ function pushTrail(trail: Point[], p: Point) {
   if (trail.length > TRAIL_LIMIT) trail.shift();
 }
 
-export function PT() {
+export function ParallelTempering() {
   const [mode, setMode] = useState<Mode>("single");
   const [running, setRunning] = useState(false);
   const [showHotChains, setShowHotChains] = useState(false);
@@ -159,7 +159,7 @@ export function PT() {
 
   return (
     <section id="pt" className="lab-science-section">
-      <h2>Intermission: Energy Landscapes</h2>
+      <h3>Energy landscapes</h3>
       <p>
         Before we go further, it's important to understand the concept of an energy landscape.
         If you're already comfortable with the concept of energy landscapes then skip right on ahead to the next section.
@@ -186,7 +186,7 @@ export function PT() {
         When I use terms like "valley", "ridge", or "basin" in the next few sections, I'm referring to features of the energy landscape.
         There are some simulations below that will make this all make a lot more sense.
       </p>
-      <h2>Parallel tempering</h2>
+      <h3>Parallel tempering</h3>
       <p>
         If you got upset when I said earlier that Metropolis will sample the Boltzmann distribution "given infinite time", good instincts.
         The random walk through the energy landscape can get stuck in a specific basin for longer than the duration of a finite simulation.

@@ -73,7 +73,7 @@ export function Lattice() {
 
   return (
     <section id="lattice" className="lab-science-section">
-      <h2>The Ising model on a 2D lattice</h2>
+      <h3>The Ising model on a 2D lattice</h3>
       <p>
         The Ising model is a way to describe that same behavior mathematically.
         We create a grid of cells, called a lattice, with each cell containing a "spin" that can point either up or down.

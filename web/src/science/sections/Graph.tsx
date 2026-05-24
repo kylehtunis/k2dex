@@ -94,7 +94,7 @@ export function Graph() {
 
   return (
     <section id="graph" className="lab-science-section">
-      <h2>Beyond the lattice</h2>
+      <h3>From lattices to graphs</h3>
       <p>
         The 2d lattice model works well for explaining magnets, but we can also think of it as a special case of a more general model.
         The spins don't need to be in a grid, so we can represent any topology we want as a network of nodes (spins) and edges (couplings).

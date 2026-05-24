@@ -168,11 +168,17 @@ web/
       widgets/               Math (KaTeX), LinePlot, SpinGrid, GraphView (now
                              sprite-capable), ChainStrip, Landscape3D (SVG
                              isometric mesh + walker overlays)
-      sections/              Magnets, Lattice, Graph, MCMC, PT (with energy-
-                             landscape intermission), MeanField, SCOTUS,
-                             Pokemon. Page order is the source of section
-                             identity — files have descriptive names, not
-                             S1/S2 prefixes.
+      sections/              Magnets, Lattice, Graph, Metropolis,
+                             ParallelTempering (with energy-landscape
+                             intermission), MeanField, SCOTUS, Pokemon.
+                             Page order is the source of section identity —
+                             files have descriptive names, not S1/S2
+                             prefixes. SciencePage groups them under three
+                             act headers (h2.lab-science-act): "The model"
+                             (Magnets/Lattice/Graph), "Sampling" (Metropolis/
+                             ParallelTempering/MeanField), "The inverse
+                             problem" (SCOTUS/Pokemon). Section titles are
+                             h3; in-section subheads are h4.lab-science-subhead.
       data/scotusLayout.ts   Fixed 2D positions for the 9 justices
       __tests__/             vitest smoke tests for the toy primitives
     styles/                  tokens.css, layout.css, components.css, widgets.css
@@ -193,7 +199,7 @@ web/
 
 ## /science page
 
-An interactive explainer for the math behind the project. Lives under `web/src/science/`; rendered at `/science`. The narrative arc is **Magnets → Lattice → Graph → MCMC → PT (with energy-landscape intermission) → MeanField → SCOTUS → Pokemon**, each section a self-contained interactive widget plus prose.
+An interactive explainer for the math behind the project. Lives under `web/src/science/`; rendered at `/science`. The narrative arc is **Magnets → Lattice → Graph → Metropolis → Parallel Tempering (with energy-landscape intermission) → MeanField → SCOTUS → Pokemon**, each section a self-contained interactive widget plus prose. `SciencePage` groups the sections under three act headers — **The model** (Magnets/Lattice/Graph), **Sampling** (Metropolis/ParallelTempering/MeanField), **The inverse problem** (SCOTUS/Pokemon). The act headers are `h2.lab-science-act`; section titles are `h3`; in-section subheads are `h4.lab-science-subhead`. (Section *files* `Metropolis.tsx` / `ParallelTempering.tsx` were formerly `MCMC.tsx` / `PT.tsx`; the toy primitives `primitives/mcmc.ts` / `primitives/pt.ts` kept their abbreviated names.)
 
 Key design decisions and non-obvious facts:
 
@@ -201,10 +207,11 @@ Key design decisions and non-obvious facts:
 - **PT swap-acceptance sign** (subtle): the correct exponent under detailed balance is `(β_cold − β_hot)(H_cold − H_hot)`. The toy `primitives/pt.ts` and the section's inline loop both had the inverted form during initial development; that was caught during the doc-review pass and fixed. `sampling.py:parallel_tempered_mcmc` was always correct. If you touch either of these files, double-check the sign — the simulation appears to "work" visually under the wrong sign because of two-well symmetry.
 - **Two spin conventions on one page.** The Magnets and Lattice sections use ±1 (physical magnet convention). Graph and everything downstream use {0, 1} (the convention `models.fit_pl_ising` and the Pokemon completer use). The Graph section's prose explicitly calls out the switch. The math is equivalent up to relabeling, but the energy formulas look different — `H = -Σ s_i s_j` vs. `H = -Σ h_i s_i - Σ_{i<j} J_ij s_i s_j` on the {0,1} side.
 - **Synthetic 2D energy landscape** (`primitives/landscape.ts`): a two-well surface, `E(x, y) = -3·exp(-((x±1)² + y²)/0.6) + 0.25·(x² + y²)`, rendered as an SVG isometric mesh by `widgets/Landscape3D.tsx`. Drives both the PT section (animated Metropolis walkers) and the MeanField section (deterministic gradient descent via the analytic `gradAt`). This is a caricature — not a projection of any actual Ising graph — but the basin-trapping/escape story it tells is the load-bearing intuition for both methods.
-- **Animation rates.** All animated sections use `requestAnimationFrame` with a `STEPS_PER_FRAME` constant; vsync (~60fps) caps the rate. PT runs 6 steps/frame, MF 1 step/frame, the Ising sections (Lattice/Graph/MCMC) run one sweep batch every 100 ms. The Ising sections also expose a manual Step button. Tune the per-section constants if the page feels too fast/slow.
+- **Animation rates.** All animated sections use `requestAnimationFrame` with a `STEPS_PER_FRAME` constant; vsync (~60fps) caps the rate. PT runs 6 steps/frame, MF 1 step/frame, the Ising sections (Lattice/Graph/Metropolis) run one sweep batch every 100 ms. The Ising sections also expose a manual Step button. Tune the per-section constants if the page feels too fast/slow.
 - **Random RNG seeds by default.** This is a playground page, not a determinism showcase — every reset / "New graph" pull from `Math.random()`. The toy `randomGraph()` still accepts a seed for tests and the Graph section's "New graph" button.
 - **SCOTUS section** is a mini team-completer: 3-state pin chips (unset → conservative → liberal → unset), top-N configurations panel by energy with corpus observation counts, and per-justice conditional marginal bars. Exact enumeration over 2^(9 − |pinned|) ≤ 512 configurations — no MF or PT needed at V=9. The color convention is **conservative = blue, liberal = red** across all components (pin chips, slot tiles, marginal bars, prose swatches). `JUSTICE_SPRITES: (string | null)[]` is the drop-in slot for justice sprite URLs; null falls back to the two-letter abbreviation.
-- **`GraphView` is sprite-capable.** Optional `sprite?: string` on each `GraphNode`; when set, renders `<image>` (with `onError` → bundled `missingno.svg` fallback in `widgets/GraphView.tsx`) instead of the default circle. The Pokemon section uses this with `spriteUrl()` from `render/sprite-url.ts`; SCOTUS will once justice sprites land.
+- **`GraphView` is sprite-capable.** Optional `sprite?: string` on each `GraphNode`; when set, renders `<image>` (with `onError` → bundled `missingno.svg` fallback in `widgets/GraphView.tsx`) instead of the default circle. Also takes `showLabels` (default true) and `spriteOpacity` (default 1) — the Pokemon figure sets `showLabels={false}` + `spriteOpacity={0.8}` to declutter. The Pokemon section uses this with `spriteUrl()` from `render/sprite-url.ts`; SCOTUS will once justice sprites land.
+- **Pokemon section figure.** A force-directed graph of the top ~32 species (one representative `(species, item)` node each — the highest-marginal build), drawn from the live Phase 3 `J` via `ModelContext`. A `|J|` threshold slider hides weaker couplings and **recomputes the spring layout** (`primitives/graph.ts:springLayout`) over only the still-connected nodes; a small `relaxOverlaps` pass declumps sprites afterward. No sampling/animation — pure layout. The prose's spin/parameter/team counts are read live from `model.V` / `model.nCorpusTeams`, not hardcoded.
 - **No code duplication with Python.** The page reuses the live model artifacts (`model.J`, `model.h`, `model.speciesOf`) via the existing `ModelContext`, but every section either uses toy primitives or operates directly on the loaded model. Nothing in `web/src/science/` needs to mirror a Python counterpart, so no parity-test obligation is added to `tests/test_parity.py`.
 
 ## Code duplicated across Python and TypeScript

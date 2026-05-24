@@ -105,7 +105,7 @@ export function MeanField() {
 
   return (
     <section id="mean-field" className="lab-science-section">
-      <h2>Mean field: the cheap proxy</h2>
+      <h3>Mean field</h3>
       <p>
         Parallel tempering gives reliable results but it's computationally expensive, requiring thousands of sweeps across multiple chains. 
         Mean field theory gives us an alternative which is much simpler to compute, at the cost of being only an approximation.

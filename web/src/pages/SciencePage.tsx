@@ -5,8 +5,8 @@ import { useEffect } from "react";
 import { Magnets } from "../science/sections/Magnets";
 import { Lattice } from "../science/sections/Lattice";
 import { Graph } from "../science/sections/Graph";
-import { MCMC } from "../science/sections/MCMC";
-import { PT } from "../science/sections/PT";
+import { Metropolis } from "../science/sections/Metropolis";
+import { ParallelTempering } from "../science/sections/ParallelTempering";
 import { MeanField } from "../science/sections/MeanField";
 import { SCOTUS } from "../science/sections/SCOTUS";
 import { Pokemon } from "../science/sections/Pokemon";
@@ -24,12 +24,15 @@ export function SciencePage() {
           This page uses interactive examples to explain what that model is and how it works.
         </p>
       </header>
+      <h2 className="lab-science-act">The Ising Model</h2>
       <Magnets />
       <Lattice />
       <Graph />
-      <MCMC />
-      <PT />
+      <h2 className="lab-science-act">MCMC Sampling</h2>
+      <Metropolis />
+      <ParallelTempering />
       <MeanField />
+      <h2 className="lab-science-act">The Inverse Problem</h2>
       <SCOTUS />
       <Pokemon />
     </div>
