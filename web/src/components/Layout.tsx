@@ -3,9 +3,10 @@
 //
 // Nav has two groups: left-aligned teambuilding tabs (Team Completer / Team Analysis /
 // Meta Info) and a right-aligned Science tab to signal it's a separate surface.
-// Model picker is hidden on /science since that page is not model-selectable.
+// Model picker is hidden on /science and / since those pages handle selection
+// themselves (/ has a dedicated corpus picker section).
 
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useModel } from "../state/ModelContext";
 import { ModelPicker } from "./ModelPicker";
 
@@ -19,14 +20,16 @@ const SCIENCE_TAB = { path: "/science", label: "The Science of k2dex" };
 export function Layout() {
   const { status, error } = useModel();
   const location = useLocation();
+  const isHome = location.pathname === "/";
   const isScience = location.pathname.startsWith("/science");
+  const hideModelPicker = isHome || isScience;
   return (
     <div className="lab-container">
       <header className="lab-header">
-        <div className="lab-wordmark">
+        <Link to="/" className="lab-wordmark lab-wordmark-link">
           k2dex<span className="lab-wordmark-mono">·science</span>
-        </div>
-        {!isScience && <ModelPicker />}
+        </Link>
+        {!hideModelPicker && <ModelPicker />}
       </header>
       <nav className="lab-tabs lab-tabs-split">
         <div className="lab-tabs-group">

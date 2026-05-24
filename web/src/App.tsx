@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ModelProvider } from "./state/ModelContext";
 import { Layout } from "./components/Layout";
+import { HomePage } from "./pages/HomePage";
 import { CompleterPage } from "./pages/CompleterPage";
 import { AnalysisPage } from "./pages/AnalysisPage";
 import { MetaPage } from "./pages/MetaPage";
@@ -12,12 +13,12 @@ export default function App() {
       <ModelProvider>
         <Routes>
           <Route path="/" element={<Layout />}>
-            <Route index element={<Navigate to="/completer" replace />} />
+            <Route index element={<HomePage />} />
             <Route path="completer" element={<CompleterPage />} />
             <Route path="analysis" element={<AnalysisPage />} />
             <Route path="meta" element={<MetaPage />} />
             <Route path="science" element={<SciencePage />} />
-            <Route path="*" element={<Navigate to="/completer" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
       </ModelProvider>
