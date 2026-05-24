@@ -112,23 +112,36 @@ export function Pokemon() {
 
   return (
     <section id="pokemon" className="lab-science-section">
-      <h2>Same machinery, real Pokémon</h2>
+      <h2>Same machinery, but Pokemon</h2>
       <p>
-        The Pokémon completer uses the same pseudo-likelihood fit we just applied to SCOTUS,
-        but on a binary indicator matrix where each column is a (species, held item) pair
-        and each row is one team roster from the live tournament corpus. The fitted{" "}
-        <em>J</em> has the same meaning: positive entries between features that appear
-        together more than chance, negative entries between features that exclude each other.
+        Alright, now it's finally time to actually talk about Pokemon.
+        By now you should have a good understanding of the methods I'm using, so all that's left is to connect the dots.
+        Starting from the data: thanks to the amazing people over at Limitless VGC, we have a huge dataset of actual competitive teams that have been brought to real tournaments.
+        Limiting to the current regulation, doubles tournaments, and only tournaments with &gt=64 participants, we get about 14,000 total teams.
+        These become the obersvations that our model tries to fit. 
       </p>
       <p>
-        One adjustment: teams have a hard size constraint (six Pokémon, no duplicates), and
-        flipping a single spin breaks it. The production sampler uses{" "}
-        <strong>swap moves</strong> — turn one slot off, turn another on, in one atomic step.
-        The acceptance rule is identical; only the proposal distribution changes:
+        In the SCOTUS example, there were 9 spins we had to fit (one per justice).
+        In the current VGC regulation as of the time of writing this, Pokemon Champions Regulation M-A, there are about 200 different species and formes and aboutn 100 held items.
+        If we model all of them, that would be 200 spins that would need to be fit for the Species corpus and 20,000 for the Species @ Item corpus. 
+        The model requires us to fit one parameter per spin and one parameter per combination of spins, so a model with all species-item pairs would have on the order of 400 million parameters (~1.6 GB) <i>and</i> still need to run in the browser!
+        To reduce that number, we'll consider only spins that appear 5 or more times in the tournament data, which gets us down to xxx spins and xxx parameters for the Species @ Item model.
+        Much nicer.
       </p>
-      <BlockMath formula="\Delta H = h_{i_\text{out}} - h_{i_\text{in}} + (J_{i_\text{out}} - J_{i_\text{in}}) \cdot s + J_{i_\text{in},\, i_\text{out}}" />
       <p>
-        Pick a species below to see its top ±10 couplings from the live Phase 3 model.
+        The largest difference between the Pokemon and SCOTUS/Ising case is that for those earlier examples, all spin combinations were valid.
+        Each individual spin could possibly be up or down regardless of the others, and any justice could vote liberal or conservative regardless of the others.
+        In Pokemon, that's not the case: only six Pokemon can be on a team at once, and duplicate species or items are forbidden.
+        These states aren't just unlikley, they are literally impossible.
+        To enforce these constraints, we make a small modification to the sampling algorithm that still results in the proper Boltzmann distribution over <i>valid</i> states.
+        Instead of considering one spin at a time and proposing to flip it, we start with six spins On and consider two spins at a time, one On and one Off.
+        The proposal is to <i>swap</i> their states, maintaining exactly six On at all times.
+        If the proposed swap would violate the species or item constraints, it is automatically rejected 
+        (without this rule, such states would be quite unlikely to show up in results since the model would assign them very high energy, but it's still good to enforce it explicitly).
+      </p>
+      <p>
+        The widget below shows how the couplings in the fitted model connect the top species together. 
+        Use the slider to hide weaker couplings to see the structure of the strongest relationships start to emerge.
       </p>
       <div className="lab-science-controls">
         <label className="lab-pokemon-species-label">
@@ -149,7 +162,7 @@ export function Pokemon() {
               placeholder="Pick a species…"
               menuPortalTarget={document.body}
               styles={{ menuPortal: (base) => ({ ...base, zIndex: 9999 }) }}
-            />
+              />
           </div>
         </label>
       </div>
@@ -164,11 +177,11 @@ export function Pokemon() {
           </p>
         ) : (
           <GraphView
-            nodes={graphNodes as any}
-            edges={graphEdges as any}
-            width={540}
-            height={540}
-            nodeRadius={26}
+          nodes={graphNodes as any}
+          edges={graphEdges as any}
+          width={540}
+          height={540}
+          nodeRadius={26}
           />
         )}
         <figcaption>
@@ -176,6 +189,10 @@ export function Pokemon() {
           <em>J</em>. Blue = positive (co-occurs), red = negative (excludes).
         </figcaption>
       </figure>
+      <p>
+        And that's it! Hopefully this page has given you a good understanding of how k2dex is able to build and analyze teams using statistical physics.
+        Building this system and this page has been a ton of fun for me, and I hope you find it both useful as a player and interesting as an application of scientific theory to competitive Pokemon.
+      </p>
     </section>
   );
 }
