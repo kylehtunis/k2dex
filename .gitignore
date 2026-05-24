@@ -8,4 +8,4 @@ tournaments_cache/
 .claude/
 *.md
 docs/
-
+.vscode/
