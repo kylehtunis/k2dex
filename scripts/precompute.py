@@ -33,19 +33,21 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import numpy as np
 from numpy.typing import NDArray
 
-from constants import (
+from k2dex.constants import (
     PHASE2_LR_C,
     PHASE2_MIN_TEAM_COUNT,
     PHASE2_MIN_TEAMS,
     TEAM_SIZE,
 )
-from loaders import build_species_item_model, build_species_model
+from k2dex.loaders import build_species_item_model, build_species_model
 
 
-DEFAULT_OUT_DIR = Path(__file__).parent / "web" / "public" / "models"
+DEFAULT_OUT_DIR = Path(__file__).resolve().parent.parent / "web" / "public" / "models"
 
 MODEL_BUILDERS = {
     "species": build_species_model,

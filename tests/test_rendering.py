@@ -3,7 +3,7 @@ from collections import Counter
 
 import numpy as np
 
-from rendering import (
+from k2dex.rendering import (
     intra_team_sum_j,
     min_swaps_to_observed,
     pairwise_j_rows,

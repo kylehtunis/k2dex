@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from models import fit_pl_ising
+from k2dex.models import fit_pl_ising
 
 
 class TestFitPLIsing(unittest.TestCase):

@@ -50,7 +50,7 @@ from pathlib import Path
 
 logger = logging.getLogger("limitless_ingest")
 
-from constants import (
+from .constants import (
     MIN_TEAMS_PER_TOURNAMENT,
     PHASE2_MIN_TEAMS as DEFAULT_MIN_TEAMS,
     TEAM_SIZE,

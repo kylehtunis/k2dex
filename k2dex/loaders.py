@@ -12,9 +12,9 @@ from collections import Counter
 import numpy as np
 from numpy.typing import NDArray
 
-import limitless_ingest
-from constants import PHASE2_LR_C, PHASE2_MIN_TEAM_COUNT, PHASE2_MIN_TEAMS
-from models import fit_pl_ising
+from . import limitless_ingest
+from .constants import PHASE2_LR_C, PHASE2_MIN_TEAM_COUNT, PHASE2_MIN_TEAMS
+from .models import fit_pl_ising
 
 
 SpeciesModel = tuple[

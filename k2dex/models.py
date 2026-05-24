@@ -14,7 +14,7 @@ import numpy as np
 from numpy.typing import NDArray
 from sklearn.linear_model import LogisticRegression
 
-from constants import PHASE2_LR_C
+from .constants import PHASE2_LR_C
 
 
 def fit_pl_ising(

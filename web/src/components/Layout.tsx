@@ -55,6 +55,20 @@ export function Layout() {
         </div>
       )}
       <Outlet />
+      <footer className="lab-footer">
+        <span>
+          k2dex·science by{" "}
+          <a href="https://github.com/kylehtunis" target="_blank" rel="noopener noreferrer">
+            Kyle Tunis
+          </a>
+        </span>
+        <span className="lab-footer-sep">·</span>
+        <a href="https://github.com/kylehtunis/k2dex-science" target="_blank" rel="noopener noreferrer">
+          Source
+        </a>
+        <span className="lab-footer-sep">·</span>
+        <span>GPL-3.0</span>
+      </footer>
     </div>
   );
 }

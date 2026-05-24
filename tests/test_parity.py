@@ -25,15 +25,15 @@ from pathlib import Path
 
 import numpy as np
 
-from sampling import (
+from k2dex.sampling import (
     greedy_optimize,
     meanfield_marginals,
     rank_single_swaps,
 )
 from collections import Counter
 
-from rendering import intra_team_sum_j, nearest_observed, pairwise_j_rows
-from rendering_html import species_to_slug
+from k2dex.rendering import intra_team_sum_j, nearest_observed, pairwise_j_rows
+from k2dex.rendering_html import species_to_slug
 
 
 BASELINE_PATH = Path(__file__).parent / "parity_baseline.json"

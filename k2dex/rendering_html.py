@@ -25,7 +25,7 @@ import re
 from html import escape
 from pathlib import Path
 
-from styles import LAB_NEG, LAB_POS
+from .styles import LAB_NEG, LAB_POS
 
 # Showdown's home-format sprite CDN. Forme variants live under
 # ``<species>-<forme>.png`` (e.g. ``calyrex-shadow``, ``blastoise-mega``,

@@ -22,33 +22,35 @@ Run with:
 from __future__ import annotations
 
 import json
+import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
 
-import helpers
-import styles
-from constants import (
+from k2dex import helpers, styles
+from k2dex.constants import (
     PHASE1_MIN_USAGE,
     PHASE1_RIDGE_EPS,
     PHASE2_LR_C,
     TEAM_SIZE,
 )
-from loaders import (
+from k2dex.loaders import (
     build_species_item_model,
     build_species_model,
 )
-from rendering import (
+from k2dex.rendering import (
     intra_team_sum_j,
     nearest_observed,
     pairwise_j_rows,
     render_pairwise_j_table,
 )
-from sampling import (
+from k2dex.sampling import (
     anneal_mcmc,
     greedy_optimize,
     meanfield_marginals,

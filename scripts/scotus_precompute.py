@@ -15,13 +15,15 @@ Run locally; inspect; commit. Not invoked from CI.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
 
 import numpy as np
 
-from models import fit_pl_ising
-
-REPO = Path(__file__).parent
+from k2dex.models import fit_pl_ising
 INPUT = REPO / "scotus_votes.txt"
 OUT_DIR = REPO / "web" / "public" / "scotus"
 CHECKPOINTS: list[int | str] = [10, 50, 100, 500, "all"]

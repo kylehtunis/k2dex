@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from sampling import (
+from k2dex.sampling import (
     anneal_mcmc,
     build_constraint_sets,
     greedy_optimize,

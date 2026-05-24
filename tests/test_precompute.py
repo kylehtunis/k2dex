@@ -18,7 +18,7 @@ from unittest import mock
 
 import numpy as np
 
-import precompute
+from scripts import precompute
 
 
 class TestPackLowerTriangle(unittest.TestCase):

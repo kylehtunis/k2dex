@@ -22,7 +22,7 @@ class TestScotusPrecompute(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         subprocess.run(
-            [sys.executable, str(REPO / "scotus_precompute.py")],
+            [sys.executable, str(REPO / "scripts" / "scotus_precompute.py")],
             check=True,
             cwd=REPO,
         )
