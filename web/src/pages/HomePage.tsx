@@ -30,19 +30,19 @@ const MODEL_OPTIONS: Array<{
 
 const TOOLS = [
   {
-    path: "/completer",
+    path: "/completer/",
     num: "§01",
     label: "Team Completer",
     desc: "Give a partial roster and let the model suggest optimal completions. Supports fast greedy fill and full parallel-tempered sampling.",
   },
   {
-    path: "/analysis",
+    path: "/analysis/",
     num: "§02",
     label: "Team Analysis",
     desc: "Detailed analysis of a full team of six, including enery, coupling, and suggested improvements.",
   },
   {
-    path: "/meta",
+    path: "/meta/",
     num: "§03",
     label: "Meta Info",
     desc: "Format-wide bias rankings, strongest coupling pairs, and a species-level view of the current metagame.",
@@ -143,7 +143,7 @@ export function HomePage() {
           <span className="lab-section-num">§</span>
           <span className="lab-section-title">The science</span>
         </div>
-        <Link to="/science" className="lab-home-science-card">
+        <Link to="/science/" className="lab-home-science-card">
           <div className="lab-home-science-inner">
             <div>
               <div className="lab-home-science-label">The Science of k2dex</div>

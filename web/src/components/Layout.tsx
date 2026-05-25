@@ -12,11 +12,11 @@ import { usePageMeta } from "../usePageMeta";
 import { ModelPicker } from "./ModelPicker";
 
 const PRIMARY_TABS = [
-  { path: "/completer", label: "Team Completer" },
-  { path: "/analysis", label: "Team Analysis" },
-  { path: "/meta", label: "Meta Info" },
+  { path: "/completer/", label: "Team Completer" },
+  { path: "/analysis/", label: "Team Analysis" },
+  { path: "/meta/", label: "Meta Info" },
 ];
-const SCIENCE_TAB = { path: "/science", label: "The Science of k2dex" };
+const SCIENCE_TAB = { path: "/science/", label: "The Science of k2dex" };
 
 export function Layout() {
   usePageMeta();
