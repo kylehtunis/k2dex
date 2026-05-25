@@ -342,6 +342,9 @@
   background: var(--lab-accent);
   color: #fff;
 }
+.lab-copy-paste-btn {
+  cursor: pointer;
+}
 
 /* ----- /science page ----- */
 

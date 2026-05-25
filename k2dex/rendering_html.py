@@ -55,9 +55,10 @@ _HYPHEN_BASE_SPECIES = frozenset({
 # Species whose canonical corpus name doesn't follow normal slug rules.
 # Keys are the lowercased canonical name; values are the Showdown slug.
 _SLUG_OVERRIDES: dict[str, str] = {
-    # "Eternal Flower Floette" collapses to "floette" — the Eternal Flower
-    # forme has no separate Showdown sprite; the base sprite is used.
     "eternal flower floette": "floette",
+    "paldean tauros aqua breed": "tauros-paldeaaqua",
+    "paldean tauros blaze breed": "tauros-paldeablaze",
+    "paldean tauros combat breed": "tauros-paldeacombat",
 }
 
 # Limitless stores regional formes as "Adjective Species" (e.g. "Alolan Ninetales").

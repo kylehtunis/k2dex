@@ -3,12 +3,14 @@
 //
 // Pure presentation — caller provides numeric values already computed.
 
-import type { ReactNode } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 import { CompMonCell } from "../render/cells";
 import { CorpusCell } from "../render/atoms";
 import { ScoreChip } from "../render/atoms";
 import type { IsingModel } from "../sampler/types";
+import { speciesToSlug } from "../render/sprite-url";
+import { extractSpecies, extractItem } from "../render/format";
 
 export interface CompletionRowProps {
   /** Order doesn't matter; row sorts them top-down by vocab order. */
@@ -26,6 +28,21 @@ export interface CompletionRowProps {
   model: IsingModel;
 }
 
+/** Build a partial pokepaste: one line per mon (species slug, or slug @ Item),
+ * blank-line separated. Uses canonical Smogon slugs for species names. */
+function buildPartialPaste(team: readonly number[], model: IsingModel): string {
+  const sorted = [...team].sort((a, b) => a - b);
+  return sorted
+    .map((idx) => {
+      const vocabEntry = model.vocab[idx];
+      const species = extractSpecies(vocabEntry);
+      const item = extractItem(vocabEntry);
+      const slug = speciesToSlug(species);
+      return item !== null ? `${slug} @ ${item}` : slug;
+    })
+    .join("\n\n");
+}
+
 export function CompletionRow({
   freeIdxs,
   fullTeam,
@@ -40,6 +57,16 @@ export function CompletionRow({
 }: CompletionRowProps) {
   const sortedFree = [...freeIdxs].sort((a, b) => a - b);
   const analyzeUrl = `/analysis?team=${[...fullTeam].sort((a, b) => a - b).join(",")}`;
+
+  const [copied, setCopied] = useState(false);
+  const handleCopyPaste = useCallback(() => {
+    const paste = buildPartialPaste(fullTeam, model);
+    navigator.clipboard.writeText(paste).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [fullTeam, model]);
+
   return (
     <tr className={isTopRow ? "top-row" : undefined}>
       {rank !== undefined && <td className="rank">{rank}</td>}
@@ -51,9 +78,18 @@ export function CompletionRow({
         </div>
       </td>
       <td>
-        <Link to={analyzeUrl} className="lab-analyze-btn">
-          Send to Analysis
-        </Link>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "start", gap: 4 }}>
+          <Link to={analyzeUrl} className="lab-analyze-btn">
+            Send to Analysis
+          </Link>
+          <button
+            type="button"
+            className="lab-analyze-btn lab-copy-paste-btn"
+            onClick={handleCopyPaste}
+          >
+            {copied ? "Copied!" : "Copy pokepaste"}
+          </button>
+        </div>
       </td>
       {freqPct !== undefined && (
         <td className="num">
