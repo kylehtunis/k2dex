@@ -5,8 +5,8 @@
 import { useModel, type PhaseKey } from "../state/ModelContext";
 
 const OPTIONS: Array<{ key: PhaseKey; label: string }> = [
-  { key: "species", label: "Species" },
   { key: "species_item", label: "Species @ Item" },
+  { key: "species", label: "Species" },
 ];
 
 export function ModelPicker() {

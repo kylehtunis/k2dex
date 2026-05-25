@@ -15,16 +15,16 @@ const MODEL_OPTIONS: Array<{
   desc: string;
 }> = [
   {
-    key: "species",
-    label: "Species",
-    tag: "Pokémon only",
-    desc: "Teams are represented only at the species level. Captures which Pokémon tend to appear together, independent of held items. Faster to load; good for team archetype analysis.",
-  },
-  {
     key: "species_item",
     label: "Species @ Item",
     tag: "With held items",
     desc: "Represents teams as Pokémon with their held items. Captures deeper relationships than the species-only model. This is the default.",
+  },
+  {
+    key: "species",
+    label: "Species",
+    tag: "Pokémon only",
+    desc: "Teams are represented only at the species level. Captures which Pokémon tend to appear together, independent of held items. Faster to load; good for team archetype analysis.",
   },
 ];
 
@@ -63,10 +63,10 @@ export function HomePage() {
           physics.
         </h1>
         <p className="lab-home-lede">
-          k2dex fits a pairwise maximum-entropy statistical physics model to competitive VGC tournament
-          rosters, understanding which Pokémon attract and repel each other in
-          the teambuilding process. Use it to complete rosters, diagnose team synergy,
-          and explore format-wide patterns.
+          k2dex learns teambuilding patterns from thousands of real tournament
+          teams by fitting a statistical physics Maximum Entropy model that captures which Pokémon
+          attract and repel each other in the teambuilding process. Use it to complete rosters, diagnose
+          team synergy, and explore format-wide patterns.
         </p>
       </section>
 
@@ -77,7 +77,8 @@ export function HomePage() {
           <span className="lab-section-title">Choose a corpus</span>
         </div>
         <p className="lab-home-section-note">
-          Both models are fit on the same Limitless tournament data.
+          Both models are fit on real team rosters from recent
+          VGC tournaments (64+ players).
           The <em>Species&nbsp;@&nbsp;Item</em> model is
           higher-resolution and the default.
         </p>
@@ -148,9 +149,8 @@ export function HomePage() {
             <div>
               <div className="lab-home-science-label">The Science of k2dex</div>
               <p className="lab-home-science-desc">
-                An interactive explainer — from ferromagnets and lattice models
-                to the inverse Ising problem, illustrated with Pokémon and
-                the Supreme Court.
+                An interactive explainer that will take you from ferromagnets and lattice models
+                to the inverse Ising problem, explaining exactly how k2dex works under the hood.
               </p>
             </div>
             <span className="lab-home-science-arrow">→</span>
