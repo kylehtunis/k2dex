@@ -10,7 +10,7 @@
 //
 // All math is deterministic (no MCMC); recomputes inline when inputs change.
 
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   FIELD_WEIGHT_OPTIONS,
@@ -31,7 +31,8 @@ import {
 import { nearestObserved } from "../render/corpus";
 import { rankSingleSwaps } from "../sampler/rank";
 import { greedyOptimize } from "../sampler/greedy";
-import { formatSigned } from "../render/format";
+import { buildPartialPaste, formatSigned } from "../render/format";
+import { speciesToSlug } from "../render/sprite-url";
 import { PairwiseJTable } from "../analysis/PairwiseJTable";
 import { SwapsTable } from "../analysis/SwapsTable";
 import { ChainTable } from "../analysis/ChainTable";
@@ -89,6 +90,16 @@ export function AnalysisPage() {
   }, [model, teamIdxs]);
 
   const teamComplete = teamIdxs.length === TEAM_SIZE;
+
+  const [copied, setCopied] = useState(false);
+  const handleCopyPaste = useCallback(() => {
+    if (!model || teamIdxs.length === 0) return;
+    const paste = buildPartialPaste(teamIdxs, model.vocab, speciesToSlug);
+    navigator.clipboard.writeText(paste).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [model, teamIdxs]);
 
   // Heavy diagnostics — only compute when the team is valid + complete.
   const diagnostics = useMemo(() => {
@@ -149,6 +160,17 @@ export function AnalysisPage() {
           placeholder={`Choose your team of ${TEAM_SIZE}`}
         />
       </div>
+      {teamIdxs.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <button
+            type="button"
+            className="lab-analyze-btn lab-copy-paste-btn"
+            onClick={handleCopyPaste}
+          >
+            {copied ? "Copied!" : "Copy pokepaste"}
+          </button>
+        </div>
+      )}
 
       {uniquenessError && (
         <div className="lab-form-error">{uniquenessError}</div>

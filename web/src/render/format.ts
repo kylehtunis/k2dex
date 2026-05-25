@@ -31,3 +31,22 @@ export function extractItem(feature: string): string | null {
 export function formatPair(species: string, item: string | null): string {
   return item === null ? species : `${species} @ ${item}`;
 }
+
+/** Partial pokepaste: one line per mon (species slug, or slug @ Item),
+ * blank-line separated. Uses canonical Smogon slugs for species names. */
+export function buildPartialPaste(
+  teamIdxs: readonly number[],
+  vocab: readonly string[],
+  slugFn: (species: string) => string,
+): string {
+  const sorted = [...teamIdxs].sort((a, b) => a - b);
+  return sorted
+    .map((idx) => {
+      const entry = vocab[idx];
+      const species = extractSpecies(entry);
+      const item = extractItem(entry);
+      const slug = slugFn(species);
+      return item !== null ? `${slug} @ ${item}` : slug;
+    })
+    .join("\n\n");
+}

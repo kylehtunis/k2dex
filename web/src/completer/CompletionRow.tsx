@@ -10,7 +10,7 @@ import { CorpusCell } from "../render/atoms";
 import { ScoreChip } from "../render/atoms";
 import type { IsingModel } from "../sampler/types";
 import { speciesToSlug } from "../render/sprite-url";
-import { extractSpecies, extractItem } from "../render/format";
+import { buildPartialPaste } from "../render/format";
 
 export interface CompletionRowProps {
   /** Order doesn't matter; row sorts them top-down by vocab order. */
@@ -26,21 +26,6 @@ export interface CompletionRowProps {
   isTopRow?: boolean;
   rank?: number;
   model: IsingModel;
-}
-
-/** Build a partial pokepaste: one line per mon (species slug, or slug @ Item),
- * blank-line separated. Uses canonical Smogon slugs for species names. */
-function buildPartialPaste(team: readonly number[], model: IsingModel): string {
-  const sorted = [...team].sort((a, b) => a - b);
-  return sorted
-    .map((idx) => {
-      const vocabEntry = model.vocab[idx];
-      const species = extractSpecies(vocabEntry);
-      const item = extractItem(vocabEntry);
-      const slug = speciesToSlug(species);
-      return item !== null ? `${slug} @ ${item}` : slug;
-    })
-    .join("\n\n");
 }
 
 export function CompletionRow({
@@ -60,12 +45,12 @@ export function CompletionRow({
 
   const [copied, setCopied] = useState(false);
   const handleCopyPaste = useCallback(() => {
-    const paste = buildPartialPaste(fullTeam, model);
+    const paste = buildPartialPaste(fullTeam, model.vocab, speciesToSlug);
     navigator.clipboard.writeText(paste).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
-  }, [fullTeam, model]);
+  }, [fullTeam, model.vocab]);
 
   return (
     <tr className={isTopRow ? "top-row" : undefined}>
