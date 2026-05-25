@@ -361,7 +361,8 @@ export function CompleterPage() {
           <div className="lab-form-caption">
             Scales the Bias before sampling. 1.0 = popularity bias at
             full strength. 0.0 = pure coherence,
-            popularity disregarded. Useful operating range 0.2–0.8.
+            popularity disregarded. Useful operating range 0.2–0.8. The higher this 
+            value, the more the model will prioritize the most commonly used Pokémon.
           </div>
           <input
             type="range"
@@ -381,9 +382,9 @@ export function CompleterPage() {
               Temperature · {temperature}
             </label>
             <div className="lab-form-caption">
-              Cold-chain target temperature for the statistical sampler.
-              Lower = sharper Boltzmann distribution (fewer, more probable
-              completions). Hot chain is fixed at T={PT_HOT_T}.
+              Controls the tradeoff between exploring more teams (higher) and concentrating
+              on the most likely teams (lower). The range 0.3-0.7 is generally reasonable. Raise if you
+              aren't getting enough unique teams and lower if the top 5 mass drops below ~5-10%.
             </div>
             <input
               type="range"
