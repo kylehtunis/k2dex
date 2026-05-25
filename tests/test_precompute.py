@@ -103,7 +103,8 @@ class TestWriteModelRoundTrip(unittest.TestCase):
         ))
 
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.dict(precompute.MODEL_BUILDERS, {"synthetic": fake_builder}):
+            with mock.patch.dict(precompute.MODEL_BUILDERS, {"synthetic": fake_builder}), \
+                 mock.patch.dict(precompute.MODEL_LR_C, {"synthetic": 0.1}):
                 with contextlib.redirect_stdout(io.StringIO()):
                     precompute.write_model("synthetic", Path(tmp))
 

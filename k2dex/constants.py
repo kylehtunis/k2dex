@@ -24,5 +24,8 @@ MIN_TEAMS_PER_TOURNAMENT = 64  # was 16; bump spreads corpus more temporally
                                # and indirectly filters small-tournament quirks
 
 # --- Validation ---
-VALIDATION_TEAM_FRAC_TEST = 0.10   # 10% of teams (not tournaments) -> test
+VALIDATION_TEAM_FRAC_TEST = 0.10   # chronological: newest ~10% of teams -> test
 VALIDATION_SEED = 42
+
+# --- Temporal drift ---
+DRIFT_TRAIN_FRAC = 0.25            # oldest 25% of teams -> train; 75% -> windowed test

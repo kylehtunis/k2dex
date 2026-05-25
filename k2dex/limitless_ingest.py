@@ -412,6 +412,31 @@ def all_teams(tournaments: list[TournamentTeams]) -> list[frozenset[tuple[str, s
     return [team for t in tournaments for team in t.teams]
 
 
+def chronological_split(
+    tournaments: list[TournamentTeams],
+    train_frac: float,
+) -> tuple[list[TournamentTeams], list[TournamentTeams]]:
+    """Split tournaments chronologically: oldest *train_frac* of teams → train.
+
+    Tournaments are sorted oldest-first by date. The split boundary falls at
+    the tournament edge nearest to *train_frac* of total teams.  Returns
+    ``(train_tournaments, test_tournaments)`` both in oldest-first order.
+    """
+    chrono = sorted(tournaments, key=lambda t: t.meta.date)
+    total_teams = sum(len(t.teams) for t in chrono)
+    target = int(round(total_teams * train_frac))
+
+    cumulative = 0
+    split_idx = len(chrono)
+    for i, t in enumerate(chrono):
+        cumulative += len(t.teams)
+        if cumulative >= target:
+            split_idx = i + 1
+            break
+
+    return chrono[:split_idx], chrono[split_idx:]
+
+
 def species_only_teams(
     teams: list[frozenset[tuple[str, str | None]]],
 ) -> list[frozenset[str]]:
