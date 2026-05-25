@@ -66,10 +66,11 @@ export function normalizePath(pathname: string): string {
   return pathname.replace(/^\/+/, "").replace(/\/+$/, "");
 }
 
-/** Canonical URL for a route path. Home ("") keeps the trailing slash; every
- *  other route is slash-free, matching what prerender-routes.ts writes. */
+/** Canonical URL for a route path. Every URL gets a trailing slash — GitHub
+ *  Pages serves directory index.html files at the trailing-slash URL and 301s
+ *  the bare path, so canonicals must match the final served URL. */
 export function canonicalUrl(path: string): string {
-  return path ? `${SITE_URL}/${path}` : `${SITE_URL}/`;
+  return path ? `${SITE_URL}/${path}/` : `${SITE_URL}/`;
 }
 
 /** RouteMeta for a normalized path, falling back to home for unknown paths
