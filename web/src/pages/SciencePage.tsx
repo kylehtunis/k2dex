@@ -21,8 +21,10 @@ export function SciencePage() {
       <header className="lab-science-header">
         <h1>The science behind k2dex</h1>
         <p className="lab-science-lede">
-          The completer, analysis, and meta tools all rest on a single statistical model.
-          This page uses interactive examples to explain what that model is and how it works.
+          Fitting a pairwise binary Markov Random Field via L2-regularized pseudolikelihood
+          and sampling the resulting Boltzmann distribution with parallel-tempered Markov
+          Chain Monte Carlo
+          <span className="lab-science-lede-punch">(to get better at Pokémon)</span>
         </p>
       </header>
       <h2 className="lab-science-act">The Ising Model</h2>

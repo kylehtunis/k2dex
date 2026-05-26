@@ -358,9 +358,21 @@
   margin-bottom: 8px;
 }
 .lab-science-lede {
+  font-family: var(--lab-font-serif, "Source Serif 4", Georgia, serif);
+  font-style: italic;
+  font-size: 19px;
+  line-height: 1.5;
+  margin: 12px 0 40px;
+  padding-left: 16px;
+  border-left: 2px solid var(--lab-accent);
+}
+.lab-science-lede-punch {
+  display: block;
+  margin-top: 6px;
+  font-style: normal;
+  font-family: var(--lab-font-sans, "Inter", system-ui, sans-serif);
   color: var(--lab-ink-muted);
   font-size: 15px;
-  margin-bottom: 32px;
 }
 .lab-science-act {
   font-family: var(--lab-font-serif, "Source Serif 4", Georgia, serif);
