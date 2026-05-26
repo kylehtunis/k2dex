@@ -362,7 +362,7 @@
   font-style: italic;
   font-size: 19px;
   line-height: 1.5;
-  margin: 12px 0 40px;
+  margin: 24px 0 16px;
   padding-left: 16px;
   border-left: 2px solid var(--lab-accent);
 }

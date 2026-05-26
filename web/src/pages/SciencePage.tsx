@@ -19,13 +19,13 @@ export function SciencePage() {
   return (
     <div className="lab-science">
       <header className="lab-science-header">
-        <h1>The science behind k2dex</h1>
         <p className="lab-science-lede">
           Fitting a pairwise binary Markov random field via L2-regularized pseudolikelihood
           and sampling the resulting Boltzmann distribution with parallel-tempered Markov
           chain Monte Carlo
           <span className="lab-science-lede-punch">(to get better at Pokémon)</span>
         </p>
+        <h1>The science behind k2dex</h1>
       </header>
       <h2 className="lab-science-act">The Ising Model</h2>
       <Magnets />
