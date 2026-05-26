@@ -21,9 +21,9 @@ export function SciencePage() {
       <header className="lab-science-header">
         <h1>The science behind k2dex</h1>
         <p className="lab-science-lede">
-          Fitting a pairwise binary Markov Random Field via L2-regularized pseudolikelihood
+          Fitting a pairwise binary Markov random field via L2-regularized pseudolikelihood
           and sampling the resulting Boltzmann distribution with parallel-tempered Markov
-          Chain Monte Carlo
+          chain Monte Carlo
           <span className="lab-science-lede-punch">(to get better at Pokémon)</span>
         </p>
       </header>
