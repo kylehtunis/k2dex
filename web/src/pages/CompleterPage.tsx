@@ -150,15 +150,12 @@ export function CompleterPage() {
     };
   }, [phaseKey]);
 
-  if (status === "loading" || model === null) {
-    return <p style={{ color: "var(--lab-ink-muted)" }}>Loading model…</p>;
-  }
+  const corpusCaption = model
+    ? `Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`
+    : undefined;
 
-  const corpusCaption =
-    `Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`;
-
-  const fixedNames = fixedIdxs.map((i) => model.vocab[i]);
-  const fixedSpeciesSet = new Set(fixedIdxs.map((i) => model.speciesOf[i]));
+  const fixedNames = model ? fixedIdxs.map((i) => model.vocab[i]) : [];
+  const fixedSpeciesSet = model ? new Set(fixedIdxs.map((i) => model.speciesOf[i])) : new Set<string>();
   const overlap = excludedSpecies.filter((s) => fixedSpeciesSet.has(s));
   const overlapError =
     overlap.length > 0
@@ -307,6 +304,10 @@ export function CompleterPage() {
         h1="Team completer"
         rightCaption={corpusCaption}
       />
+
+      {status === "loading" || model === null ? (
+        <p style={{ color: "var(--lab-ink-muted)" }}>Loading model…</p>
+      ) : <>
 
       <SectionLabel
         num="01"
@@ -532,6 +533,7 @@ export function CompleterPage() {
       {runState?.mode === "pt" && (
         <PTResults runState={runState} model={model} teamCounts={teamCounts} />
       )}
+      </>}
     </>
   );
 }

@@ -129,13 +129,10 @@ export function AnalysisPage() {
       ? nearestObserved(teamSorted, teamCounts)
       : null;
 
-  if (status === "loading" || model === null) {
-    return <p style={{ color: "var(--lab-ink-muted)" }}>Loading model…</p>;
-  }
-
-  const corpusCaption =
-    `Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`;
-  const teamNames = teamIdxs.map((i) => model.vocab[i]);
+  const corpusCaption = model
+    ? `Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`
+    : undefined;
+  const teamNames = model ? teamIdxs.map((i) => model.vocab[i]) : [];
 
   return (
     <>
@@ -144,6 +141,10 @@ export function AnalysisPage() {
         h1="Team analysis"
         rightCaption={corpusCaption}
       />
+
+      {status === "loading" || model === null ? (
+        <p style={{ color: "var(--lab-ink-muted)" }}>Loading model…</p>
+      ) : <>
 
       <SectionLabel
         num="01"
@@ -334,6 +335,7 @@ export function AnalysisPage() {
           )}
         </>
       )}
+      </>}
     </>
   );
 }

@@ -45,14 +45,9 @@ export function MetaPage() {
     return { orderDesc, orderAsc, posSorted, negSorted, maxJ, maxM };
   }, [model]);
 
-  if (status === "loading" || model === null || sorted === null) {
-    return <p style={{ color: "var(--lab-ink-muted)" }}>Loading model…</p>;
-  }
-
-  const corpusCaption =
-    `Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`;
-  const modelLabel = model.name === "species" ? "Species" : "Species @ Item";
-  const modelSub = model.name === "species" ? "PL · species" : "PL · item-pair";
+  const corpusCaption = model
+    ? `Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`
+    : undefined;
 
   return (
     <>
@@ -62,10 +57,14 @@ export function MetaPage() {
         rightCaption={corpusCaption}
       />
 
+      {status === "loading" || model === null || sorted === null ? (
+        <p style={{ color: "var(--lab-ink-muted)" }}>Loading model…</p>
+      ) : <>
+
       <SectionLabel num="01" title="Fitted model" />
       <StatStrip
         cells={[
-          { label: "Model", value: modelLabel, sub: modelSub },
+          { label: "Model", value: model.name === "species" ? "Species" : "Species @ Item", sub: model.name === "species" ? "PL · species" : "PL · item-pair" },
           {
             label: "Vocab",
             value: model.V.toLocaleString(),
@@ -148,6 +147,7 @@ export function MetaPage() {
           />
         </div>
       </div>
+      </>}
     </>
   );
 }
