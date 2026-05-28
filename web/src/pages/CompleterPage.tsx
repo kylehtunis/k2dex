@@ -303,7 +303,7 @@ export function CompleterPage() {
   return (
     <>
       <PageTitle
-        eyebrow="notebook · /completer"
+        eyebrow="VGC Tool"
         h1="Team completer"
         rightCaption={corpusCaption}
       />

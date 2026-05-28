@@ -140,7 +140,7 @@ export function AnalysisPage() {
   return (
     <>
       <PageTitle
-        eyebrow="notebook · /analysis"
+        eyebrow="VGC TOOL"
         h1="Team analysis"
         rightCaption={corpusCaption}
       />

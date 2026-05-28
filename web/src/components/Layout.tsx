@@ -2,7 +2,7 @@
 // page content + status banner if the active model failed to load.
 //
 // Nav has two groups: left-aligned teambuilding tabs (Team Completer / Team Analysis /
-// Meta Info) and a right-aligned Science tab to signal it's a separate surface.
+// Metagame Model) and a right-aligned Science tab to signal it's a separate surface.
 // Model picker is hidden on /science and / since those pages handle selection
 // themselves (/ has a dedicated corpus picker section).
 
@@ -14,7 +14,7 @@ import { ModelPicker } from "./ModelPicker";
 const PRIMARY_TABS = [
   { path: "/completer/", label: "Team Completer" },
   { path: "/analysis/", label: "Team Analysis" },
-  { path: "/meta/", label: "Meta Info" },
+  { path: "/meta/", label: "Metagame Model" },
 ];
 const SCIENCE_TAB = { path: "/science/", label: "The Science of k2dex" };
 

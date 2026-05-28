@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import missingnoUrl from "../../assets/missingno.svg?url";
+import { SpriteImg } from "../../render/Sprite";
 
 interface SpriteImageProps {
   href: string;
@@ -40,8 +41,16 @@ export interface GraphNode {
   fill?: string;
   active?: boolean;
   /** Optional sprite URL. When set, the node renders as an image with a small
-   * label below instead of the default circle + centered text. */
+   * label below instead of the default circle + centered text. Used for
+   * non-Pokemon sprites (e.g. SCOTUS justices). For Pokemon vocab features,
+   * prefer `feature` — it routes through the shared SpriteImg and inherits
+   * the species + item-overlay rendering automatically. */
   sprite?: string;
+  /** Pokemon vocab feature name ("Species" or "Species @ Item"). When set,
+   * the node renders the species sprite plus an item-icon overlay (if any)
+   * via the shared SpriteImg, wrapped in <foreignObject>. Takes precedence
+   * over `sprite`. */
+  feature?: string;
 }
 
 export interface GraphEdge {
@@ -98,17 +107,32 @@ export function GraphView({
         );
       })}
       {nodes.map((n) => {
-        if (n.sprite) {
+        if (n.feature || n.sprite) {
           const size = nodeRadius * 2.2;
+          // The item-icon overlay extends past the sprite's bottom-right
+          // corner; reserve extra room in the foreignObject so it isn't clipped.
+          const pad = Math.round(size * 0.18);
           return (
             <g key={n.id}>
-              <SpriteImage
-                href={n.sprite}
-                x={n.x - size / 2}
-                y={n.y - size / 2}
-                size={size}
-                opacity={spriteOpacity}
-              />
+              {n.feature ? (
+                <foreignObject
+                  x={n.x - size / 2}
+                  y={n.y - size / 2}
+                  width={size + pad}
+                  height={size + pad}
+                  style={{ overflow: "visible", opacity: spriteOpacity }}
+                >
+                  <SpriteImg name={n.feature} size={size} />
+                </foreignObject>
+              ) : (
+                <SpriteImage
+                  href={n.sprite!}
+                  x={n.x - size / 2}
+                  y={n.y - size / 2}
+                  size={size}
+                  opacity={spriteOpacity}
+                />
+              )}
               {showLabels && (
                 <text
                   x={n.x}

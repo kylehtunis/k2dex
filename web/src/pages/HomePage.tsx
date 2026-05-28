@@ -39,13 +39,13 @@ const TOOLS = [
     path: "/analysis/",
     num: "§02",
     label: "Team Analysis",
-    desc: "Detailed analysis of a full team of six, including enery, coupling, and suggested improvements.",
+    desc: "Detailed analysis of a full team of six, including energy, coupling, and suggested improvements.",
   },
   {
     path: "/meta/",
     num: "§03",
-    label: "Meta Info",
-    desc: "Format-wide bias rankings, strongest coupling pairs, and a species-level view of the current metagame.",
+    label: "Metagame Model",
+    desc: "Format-wide bias rankings, strongest/weakest coupling pairs, and a species-level view of the current metagame.",
   },
 ];
 

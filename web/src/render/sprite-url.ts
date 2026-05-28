@@ -7,6 +7,13 @@
 import { extractSpecies } from "./format";
 
 const SPRITE_CDN = "https://play.pokemonshowdown.com/sprites/home";
+// PokeAPI's sprite repo has individual item PNGs at predictable slugs
+// (focus-sash, bright-powder, charizardite-x, sitrus-berry). Showdown's
+// itemicons is a sprite sheet with hand-indexed offsets — unusable without
+// bundling the offset table. jsdelivr serves the same content via CDN
+// rather than hitting raw.githubusercontent.com directly.
+const ITEM_CDN =
+  "https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/items";
 
 /** Species whose canonical name *contains* a hyphen as part of the
  * base (not as a forme separator). All hyphens are stripped for these
@@ -88,4 +95,20 @@ export function speciesToSlug(name: string): string {
 /** Showdown home-sprite URL for a vocab string (species or "Species @ Item"). */
 export function spriteUrl(name: string): string {
   return `${SPRITE_CDN}/${speciesToSlug(extractSpecies(name))}.png`;
+}
+
+/** PokeAPI item-sprite slug: lowercase, non-alphanumeric runs collapse to a
+ * single hyphen, leading/trailing hyphens trimmed. "Focus Sash" → "focus-sash",
+ * "Bright Powder" → "bright-powder", "Charizardite X" → "charizardite-x". */
+export function itemToSlug(item: string): string {
+  return item
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/** PokeAPI item-sprite URL, or null if item is null/empty. */
+export function itemSpriteUrl(item: string | null | undefined): string | null {
+  if (!item) return null;
+  return `${ITEM_CDN}/${itemToSlug(item)}.png`;
 }

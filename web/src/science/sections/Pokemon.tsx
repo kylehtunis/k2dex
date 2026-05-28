@@ -5,70 +5,19 @@
 // structure emerges as you raise it. Not animated — just layout. The prose's
 // spin/parameter counts read from the Species @ Item (Phase 3) model via the
 // shared context; the figure loads the species model independently.
+//
+// The graph itself (reps, layout, render) is shared with the Metagame Model
+// page — see web/src/components/CouplingGraph.tsx. This section owns its own
+// filter UI (mode picker + single |J| threshold).
 
-import { useEffect, useMemo, useState } from "react";
-import { GraphView } from "../widgets/GraphView";
+import { useCallback, useEffect, useState } from "react";
 import { useModel } from "../../state/ModelContext";
 import { loadModel } from "../../sampler/model";
 import type { IsingModel } from "../../sampler/types";
-import { spriteUrl } from "../../render/sprite-url";
-import { makeGraph, springLayout } from "../primitives/graph";
-import { Rng } from "../../sampler/rng";
+import { CouplingGraph, type CouplingEdge } from "../../components/CouplingGraph";
 
-// Candidate nodes: the N most-used species (by their best build's marginal).
 const TOP_SPECIES = 32;
-const LAYOUT_SEED = 0x5eed;
-const LAYOUT_ITERS = 320;
 const VIEW_SIZE = 600;
-const VIEW_RADIUS = 200;
-const NODE_RADIUS = 18;
-const SPRITE_SIZE = NODE_RADIUS * 2.2; // must match GraphView's sprite sizing
-const SPRITE_OPACITY = 1.0;
-
-// One representative vocab index per species (its highest-marginal build),
-// since the figure is species-level but the model is (species, item).
-interface SpeciesRep {
-  species: string;
-  vocabIdx: number;
-  m: number;
-}
-
-// Push apart any sprites closer than `minSep` pixels. A few relaxation passes
-// after the spring layout: dense coupling cores otherwise collapse on top of
-// each other, and sprites (unlike dots) can't usefully overlap.
-function relaxOverlaps(
-  pts: { x: number; y: number }[],
-  minSep: number,
-  iters: number,
-  size: number,
-  pad: number,
-) {
-  for (let it = 0; it < iters; it++) {
-    for (let a = 0; a < pts.length; a++) {
-      for (let b = a + 1; b < pts.length; b++) {
-        let dx = pts[b].x - pts[a].x;
-        let dy = pts[b].y - pts[a].y;
-        let d = Math.hypot(dx, dy);
-        if (d < 1e-6) {
-          dx = a - b || 1;
-          dy = 1;
-          d = Math.hypot(dx, dy);
-        }
-        if (d < minSep) {
-          const push = (minSep - d) / 2;
-          pts[a].x -= (dx / d) * push;
-          pts[a].y -= (dy / d) * push;
-          pts[b].x += (dx / d) * push;
-          pts[b].y += (dy / d) * push;
-        }
-      }
-    }
-    for (const p of pts) {
-      p.x = Math.min(size - pad, Math.max(pad, p.x));
-      p.y = Math.min(size - pad, Math.max(pad, p.y));
-    }
-  }
-}
 
 export function Pokemon() {
   const { model, phaseKey, setPhaseKey, status } = useModel();
@@ -102,48 +51,9 @@ export function Pokemon() {
   const nParams = nSpins !== null ? nSpins + (nSpins * (nSpins - 1)) / 2 : null;
   const nTeams = ready ? model!.nCorpusTeams : null;
 
-  // Top species by their dominant build's marginal.
-  const reps = useMemo<SpeciesRep[]>(() => {
-    if (!figReady) return [];
-    const best = new Map<string, SpeciesRep>();
-    for (let i = 0; i < figModel!.V; i++) {
-      const sp = figModel!.speciesOf[i];
-      const cur = best.get(sp);
-      if (!cur || figModel!.m[i] > cur.m) {
-        best.set(sp, { species: sp, vocabIdx: i, m: figModel!.m[i] });
-      }
-    }
-    return [...best.values()]
-      .sort((a, b) => b.m - a.m)
-      .slice(0, Math.min(TOP_SPECIES, best.size));
-  }, [figReady, figModel]);
-
-  // All species–species couplings among the top set, by |J| descending.
-  // a, b are local indices into `reps`.
-  const candidateEdges = useMemo(() => {
-    if (!figReady || reps.length === 0) return [];
-    const V = figModel!.V;
-    const out: { a: number; b: number; J: number }[] = [];
-    for (let x = 0; x < reps.length; x++) {
-      for (let y = x + 1; y < reps.length; y++) {
-        const w = figModel!.J[reps[x].vocabIdx * V + reps[y].vocabIdx];
-        if (w !== 0) out.push({ a: x, b: y, J: w });
-      }
-    }
-    out.sort((p, q) => Math.abs(q.J) - Math.abs(p.J));
-    return out;
-  }, [figReady, figModel, reps]);
-
   // "all" shows both signs (faithful to the model, but negative couplings
   // dominate); "positive" drops exclusions for the cleaner "works together" view.
   const [mode, setMode] = useState<"all" | "positive">("all");
-  const shownCandidates = useMemo(
-    () =>
-      mode === "positive"
-        ? candidateEdges.filter((e) => e.J > 0)
-        : candidateEdges,
-    [candidateEdges, mode],
-  );
 
   // Threshold on |J|, in fixed units. Default 0 (show everything); the slider
   // range is hardcoded per mode (positive couplings top out lower than the
@@ -153,41 +63,15 @@ export function Pokemon() {
     setThreshold(0);
   }, [mode]);
 
-  const thr = threshold;
   const sliderMax = mode === "positive" ? 1 : 3;
 
-  // Visible edges + the nodes they touch, laid out fresh each threshold.
-  const { nodes, edges } = useMemo(() => {
-    if (reps.length === 0) return { nodes: [], edges: []};
-    const visible = shownCandidates.filter((e) => Math.abs(e.J) >= thr);
-    const used = [...new Set(visible.flatMap((e) => [e.a, e.b]))].sort(
-      (a, b) => a - b,
-    );
-    const compact = new Map(used.map((local, k) => [local, k]));
-    const layoutEdges = visible.map(
-      (e) => [compact.get(e.a)!, compact.get(e.b)!, e.J] as const,
-    );
-    const g = makeGraph(
-      used.length,
-      layoutEdges,
-      new Array(used.length).fill(0),
-    );
-    const pos = springLayout(g, new Rng(LAYOUT_SEED), LAYOUT_ITERS);
-    const pts = pos.map((p) => ({
-      x: VIEW_SIZE / 2 + VIEW_RADIUS * p.x,
-      y: VIEW_SIZE / 2 + VIEW_RADIUS * p.y,
-    }));
-    relaxOverlaps(pts, SPRITE_SIZE * 0.9, 120, VIEW_SIZE, SPRITE_SIZE / 2);
-    const nodes = used.map((local, k) => ({
-      id: local,
-      label: "",
-      x: pts[k].x,
-      y: pts[k].y,
-      sprite: spriteUrl(figModel!.vocab[reps[local].vocabIdx]),
-    }));
-    const edges = visible.map((e) => ({ i: e.a, j: e.b, weight: e.J }));
-    return { nodes, edges, hiddenCount: reps.length - used.length };
-  }, [shownCandidates, thr, reps, figModel]);
+  const filterEdge = useCallback(
+    (e: CouplingEdge) => {
+      if (mode === "positive" && e.J <= 0) return false;
+      return Math.abs(e.J) >= threshold;
+    },
+    [mode, threshold],
+  );
 
   return (
     <section id="pokemon" className="lab-science-section">
@@ -210,8 +94,8 @@ export function Pokemon() {
         current VGC regulation, Pokémon Champions Regulation M-A, has roughly
         200 species and formes and about 100 held items. Modeling species alone
         is around 200 spins; every Species @ Item combination is closer to 20,000. With
-        one parameter per spin plus one per pair of spins (for the coupling), 
-        that full model needs to fit about 200 million parameters (nearly a gigabyte), 
+        one parameter per spin plus one per pair of spins (for the coupling),
+        that full model needs to fit about 200 million parameters (nearly a gigabyte),
         all of which still has to run in the browser! So we keep only the spins
         that appear in 5 or more teams, bringing the Species @ Item model down to
         {" "}<strong>{nSpins !== null ? nSpins.toLocaleString() : "—"} spins</strong>{" "}
@@ -272,49 +156,37 @@ export function Pokemon() {
           </button>
         </div>
         <label>
-          Hide couplings below {thr.toFixed(2)}{" "}
+          Hide couplings below {threshold.toFixed(2)}{" "}
           <input
             type="range"
             className="lab-slider"
             min={0}
             max={sliderMax}
             step={0.05}
-            value={thr}
+            value={threshold}
             onChange={(e) => setThreshold(Number(e.target.value))}
             disabled={!figReady}
           />
         </label>
       </div>
-      <figure>
-        {!figReady ? (
-          <p style={{ color: "var(--lab-ink-muted)" }}>Loading the live model…</p>
-        ) : nodes.length === 0 ? (
-          <p style={{ color: "var(--lab-ink-muted)" }}>
-            No couplings above {thr.toFixed(2)}. Lower the slider to bring
-            species back.
-          </p>
-        ) : (
-          <GraphView
-            nodes={nodes}
-            edges={edges}
-            width={VIEW_SIZE}
-            height={VIEW_SIZE}
-            nodeRadius={NODE_RADIUS}
-            maxStrokeWidth={6}
-            showLabels={false}
-            spriteOpacity={SPRITE_OPACITY}
-          />
-        )}
-        {figReady && nodes.length > 0 && (
-          <figcaption>
-            The {reps.length} most-used species, connected by their pairwise
-            coupling strengths from the fitted Species model <em>J</em>.{" "}
-            {nodes.length} shown at this threshold
-            . Blue = positive (co-occurs), red = negative (excludes); thickness
-            ∝ strength.
-          </figcaption>
-        )}
-      </figure>
+      {!figReady ? (
+        <p style={{ color: "var(--lab-ink-muted)" }}>Loading the live model…</p>
+      ) : (
+        <CouplingGraph
+          model={figModel!}
+          filterEdge={filterEdge}
+          topSpecies={TOP_SPECIES}
+          viewSize={VIEW_SIZE}
+          renderCaption={({ reps, visibleNodes }) => (
+            <>
+              The {reps.length} most-used species, connected by their pairwise
+              coupling strengths from the fitted Species model <em>J</em>.{" "}
+              {visibleNodes} shown at this threshold. Blue = positive
+              (co-occurs), red = negative (excludes); thickness ∝ strength.
+            </>
+          )}
+        />
+      )}
       <p>
         And that's it! Hopefully this page has given you a feel for how k2dex
         builds and analyzes teams using statistical physics. Building this system

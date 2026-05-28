@@ -57,8 +57,8 @@ export function MetaPage() {
   return (
     <>
       <PageTitle
-        eyebrow="notebook · /meta"
-        h1="Meta data"
+        eyebrow="VGC Tool"
+        h1="Metagame Model"
         rightCaption={corpusCaption}
       />
 
@@ -69,12 +69,12 @@ export function MetaPage() {
           {
             label: "Vocab",
             value: model.V.toLocaleString(),
-            sub: "features ≥ cutoff",
+            sub: "unique entries",
           },
           {
             label: "Corpus",
             value: model.nCorpusTeams.toLocaleString(),
-            sub: "teams",
+            sub: "teams observed",
           },
         ]}
       />
@@ -94,7 +94,7 @@ export function MetaPage() {
       >
         <div>
           <div className="lab-subheading lab-subheading-pos">
-            Top +Bias · most popular
+            Top Positive Bias · most popular
           </div>
           <FeatureBiasTable
             order={sorted.orderDesc.slice(0, META_TOP_FEATURES)}
@@ -104,7 +104,7 @@ export function MetaPage() {
         </div>
         <div>
           <div className="lab-subheading lab-subheading-neg">
-            Top −Bias · most unlikely
+            Top Negative Bias · most unlikely
           </div>
           <FeatureBiasTable
             order={sorted.orderAsc.slice(0, META_TOP_FEATURES)}
@@ -129,7 +129,7 @@ export function MetaPage() {
       >
         <div>
           <div className="lab-subheading lab-subheading-pos">
-            Top +Coupling · synergies
+            Top Positive Coupling · synergies
           </div>
           <ExtremeCouplingsTable
             rows={sorted.posSorted.slice(0, META_TOP_PAIRS)}
@@ -139,7 +139,7 @@ export function MetaPage() {
         </div>
         <div>
           <div className="lab-subheading lab-subheading-neg">
-            Top −Coupling · exclusions
+            Top Negative Coupling · antisynergies
           </div>
           <ExtremeCouplingsTable
             rows={sorted.negSorted.slice(0, META_TOP_PAIRS)}
@@ -148,7 +148,6 @@ export function MetaPage() {
           />
         </div>
       </div>
-
     </>
   );
 }
