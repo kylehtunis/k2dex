@@ -3,11 +3,11 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ModelProvider } from "./state/ModelContext";
 import { PageStateProvider } from "./state/PageStateContext";
 import { Layout } from "./components/Layout";
+import { HomePage } from "./pages/HomePage";
+import { CompleterPage } from "./pages/CompleterPage";
+import { AnalysisPage } from "./pages/AnalysisPage";
+import { MetaPage } from "./pages/MetaPage";
 
-const HomePage = lazy(() => import("./pages/HomePage"));
-const CompleterPage = lazy(() => import("./pages/CompleterPage"));
-const AnalysisPage = lazy(() => import("./pages/AnalysisPage"));
-const MetaPage = lazy(() => import("./pages/MetaPage"));
 const SciencePage = lazy(() => import("./pages/SciencePage"));
 
 export default function App() {
