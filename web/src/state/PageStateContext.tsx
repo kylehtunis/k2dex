@@ -42,7 +42,7 @@ export interface AnalysisInputs {
 const COMPLETER_DEFAULTS: CompleterInputs = {
   fixedIdxs: [],
   excludedSpecies: [],
-  fieldWeight: 0.3,
+  fieldWeight: 0.5,
   temperature: 0.5,
   usePT: true,
   ptRuns: PT_RUNS,

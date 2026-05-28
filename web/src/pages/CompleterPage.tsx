@@ -434,7 +434,7 @@ export function CompleterPage() {
                 type="range"
                 className="lab-slider"
                 min={1}
-                max={10}
+                max={25}
                 step={1}
                 value={ptRuns}
                 onChange={(e) => setCompleter({ ptRuns: Number(e.target.value) })}

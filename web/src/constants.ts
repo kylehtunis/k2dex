@@ -22,9 +22,9 @@ export const META_TOP_PAIRS = 25;
 
 export const PT_HOT_T = 3.0;
 export const PT_LADDER_LEVELS = 7;
-export const PT_RUNS = 3;
-export const PT_SWEEPS = 10000;
-export const PT_BURN_IN = 3000;
+export const PT_RUNS = 10;
+export const PT_SWEEPS = 20000;
+export const PT_BURN_IN = 5000;
 export const PT_SWAP_INTERVAL = 10;
 
 export const MF_MAX_ITERS = 200;
