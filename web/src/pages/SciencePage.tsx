@@ -42,3 +42,4 @@ export function SciencePage() {
     </div>
   );
 }
+export default SciencePage;

@@ -694,3 +694,4 @@ function PTResults({
     </>
   );
 }
+export default CompleterPage;

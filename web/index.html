@@ -21,6 +21,19 @@
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
+    <!-- Google Fonts: preconnect + non-blocking stylesheet -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" /></noscript>
+
+    <!-- Preload default model (species_item) so fetch starts during JS parse -->
+    <link rel="preload" href="/models/species_item/meta.json" as="fetch" crossorigin />
+    <link rel="preload" href="/models/species_item/J.bin" as="fetch" crossorigin />
+    <link rel="preload" href="/models/species_item/h.bin" as="fetch" crossorigin />
+    <link rel="preload" href="/models/species_item/m.bin" as="fetch" crossorigin />
+    <link rel="preload" href="/models/species_item/team_counts.json" as="fetch" crossorigin />
+
     <!-- Google Analytics -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-9MJWLXNKST"></script>
     <script>

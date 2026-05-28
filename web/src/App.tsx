@@ -1,28 +1,32 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ModelProvider } from "./state/ModelContext";
 import { PageStateProvider } from "./state/PageStateContext";
 import { Layout } from "./components/Layout";
-import { HomePage } from "./pages/HomePage";
-import { CompleterPage } from "./pages/CompleterPage";
-import { AnalysisPage } from "./pages/AnalysisPage";
-import { MetaPage } from "./pages/MetaPage";
-import { SciencePage } from "./pages/SciencePage";
+
+const HomePage = lazy(() => import("./pages/HomePage"));
+const CompleterPage = lazy(() => import("./pages/CompleterPage"));
+const AnalysisPage = lazy(() => import("./pages/AnalysisPage"));
+const MetaPage = lazy(() => import("./pages/MetaPage"));
+const SciencePage = lazy(() => import("./pages/SciencePage"));
 
 export default function App() {
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
       <ModelProvider>
         <PageStateProvider>
-          <Routes>
-            <Route path="/" element={<Layout />}>
-              <Route index element={<HomePage />} />
-              <Route path="completer" element={<CompleterPage />} />
-              <Route path="analysis" element={<AnalysisPage />} />
-              <Route path="meta" element={<MetaPage />} />
-              <Route path="science" element={<SciencePage />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          </Routes>
+          <Suspense fallback={null}>
+            <Routes>
+              <Route path="/" element={<Layout />}>
+                <Route index element={<HomePage />} />
+                <Route path="completer" element={<CompleterPage />} />
+                <Route path="analysis" element={<AnalysisPage />} />
+                <Route path="meta" element={<MetaPage />} />
+                <Route path="science" element={<SciencePage />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Route>
+            </Routes>
+          </Suspense>
         </PageStateProvider>
       </ModelProvider>
     </BrowserRouter>

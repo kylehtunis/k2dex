@@ -151,3 +151,4 @@ export function MetaPage() {
     </>
   );
 }
+export default MetaPage;
