@@ -115,7 +115,7 @@ export interface InlineMonProps {
   size?: number;
 }
 
-export function InlineMon({ name, size = 28 }: InlineMonProps) {
+export function InlineMon({ name, size = 32 }: InlineMonProps) {
   const species = extractSpecies(name);
   const item = extractItem(name);
   return (
