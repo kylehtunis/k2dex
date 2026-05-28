@@ -159,6 +159,7 @@ export function AnalysisPage() {
           onChange={(v) => setAnalysis({ teamIdxs: v })}
           maxSelections={TEAM_SIZE}
           placeholder={`Choose your team of ${TEAM_SIZE}`}
+          ariaLabel="Your team"
         />
       </div>
       {teamIdxs.length > 0 && (
@@ -195,6 +196,7 @@ export function AnalysisPage() {
             <input
               type="range"
               className="lab-slider"
+              aria-label="Bias Adjustment"
               min={0}
               max={FIELD_WEIGHT_OPTIONS.length - 1}
               step={1}

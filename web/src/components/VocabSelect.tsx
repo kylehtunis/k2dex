@@ -21,6 +21,8 @@ interface VocabSelectProps {
   /** Disable selecting more than N (TEAM_SIZE for pinned). */
   maxSelections?: number;
   placeholder?: string;
+  /** Accessible label for screen readers. */
+  ariaLabel?: string;
 }
 
 export function VocabSelect({
@@ -29,6 +31,7 @@ export function VocabSelect({
   onChange,
   maxSelections,
   placeholder,
+  ariaLabel,
 }: VocabSelectProps) {
   const valueOptions = value
     .map((i) => options.find((o) => o.value === i))
@@ -44,6 +47,7 @@ export function VocabSelect({
         onChange(sel.map((o) => o.value))
       }
       placeholder={placeholder}
+      aria-label={ariaLabel}
       noOptionsMessage={() =>
         atLimit ? `Max ${maxSelections} selected` : "No matches"
       }
@@ -62,6 +66,7 @@ interface SpeciesSelectProps {
   value: readonly string[];
   onChange: (next: string[]) => void;
   placeholder?: string;
+  ariaLabel?: string;
 }
 
 export function SpeciesSelect({
@@ -69,6 +74,7 @@ export function SpeciesSelect({
   value,
   onChange,
   placeholder,
+  ariaLabel,
 }: SpeciesSelectProps) {
   const valueOptions = value
     .map((s) => options.find((o) => o.value === s))
@@ -81,6 +87,7 @@ export function SpeciesSelect({
       value={valueOptions}
       onChange={(sel) => onChange((sel as MultiValue<{ value: string }>).map((o) => o.value))}
       placeholder={placeholder}
+      aria-label={ariaLabel}
       menuPortalTarget={document.body}
       styles={{
         menuPortal: (base) => ({ ...base, zIndex: 9999 }),

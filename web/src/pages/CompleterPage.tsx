@@ -333,6 +333,7 @@ export function CompleterPage() {
             onChange={setFixedIdxs}
             maxSelections={TEAM_SIZE}
             placeholder="Choose Pokemon to include"
+            ariaLabel="Starting roster"
           />
         </div>
         <div>
@@ -342,6 +343,7 @@ export function CompleterPage() {
             value={excludedSpecies}
             onChange={(v) => setCompleter({ excludedSpecies: v })}
             placeholder="Choose species to exclude"
+            ariaLabel="Exclude species"
           />
         </div>
       </div>
@@ -368,6 +370,7 @@ export function CompleterPage() {
           <input
             type="range"
             className="lab-slider"
+            aria-label="Bias Adjustment"
             min={0}
             max={FIELD_WEIGHT_OPTIONS.length - 1}
             step={1}
@@ -390,6 +393,7 @@ export function CompleterPage() {
             <input
               type="range"
               className="lab-slider"
+              aria-label="Temperature"
               min={0}
               max={TEMPERATURE_OPTIONS.length - 1}
               step={1}
