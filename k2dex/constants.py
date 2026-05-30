@@ -20,7 +20,7 @@ SPECIES_LR_C = 0.1            # L2 inverse-strength for the species per-spin log
 SPECIES_ITEM_LR_C = 1.0      # L2 inverse-strength for the (species, item) per-spin logreg
 
 # --- Limitless ingest filter ---
-MIN_TEAMS_PER_TOURNAMENT = 64  # was 16; bump spreads corpus more temporally
+MIN_TEAMS_PER_TOURNAMENT = 32  # was 16; bump spreads corpus more temporally
                                # and indirectly filters small-tournament quirks
 
 # --- Validation ---

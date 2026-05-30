@@ -18,8 +18,10 @@ Singles filter (two-stage, cheap-first):
    without depending on the tournament name convention.
 
 Cache strategy: per-tournament parsed team list only -- abilities, moves,
-tera, player names, records, and drops are discarded at parse time. Each
-team member is preserved as a `(species, item)` tuple; items are kept
+tera, player names, and drops are discarded at parse time. Each team's
+final `placing` and swiss/bracket `record` (wins/losses/ties) ARE kept, to
+support outcome validation (does coupling coherence predict placement?).
+Each team member is preserved as a `(species, item)` tuple; items are kept
 because they (a) re-introduce held-item forme distinctions invisible in the
 species-only namespace, and (b) enable the Phase 3 item-pair Ising fit in
 `app.py:load_model_phase3`. Tournaments are immutable once finished, so the
@@ -62,7 +64,8 @@ DEFAULT_GAME = "VGC"
 DEFAULT_CACHE_DIR = Path("tournaments_cache")
 MIN_PROTECT_PER_PLAYER = 1.0
 POLITE_SLEEP_SEC = 2.0
-CACHE_VERSION = 1  # bumped when team payload schema changes; see module docstring
+CACHE_VERSION = 2  # bumped when team payload schema changes; see module docstring
+                   # v2: each team carries placing + win/loss/tie record
 
 
 @dataclass(frozen=True)
@@ -77,17 +80,33 @@ class TournamentMeta:
 
 
 @dataclass(frozen=True)
-class TournamentTeams:
-    """A tournament's parsed team rosters and minimal identifying metadata.
+class Team:
+    """A single player's roster plus tournament outcome.
 
-    Each team is a frozenset of `(species, item)` tuples. `item` is None for
-    itemless mons (rare but legal in some formats). The frozenset enforces
-    that no two members share the exact same (species, item) pair -- though
-    the upstream Limitless data should never produce that anyway, since a
-    team with literally identical (species, item) entries would be illegal."""
+    `members` is the model feature: a frozenset of `(species, item)` tuples
+    (`item` is None for itemless mons). The frozenset enforces that no two
+    members share the exact same (species, item) pair -- which the upstream
+    data should never produce anyway, since such a team would be illegal.
+
+    `placing` is the final standing (1 = winner) when the API reports it,
+    else None -- some events report it for top cut only, or not at all.
+    `wins`/`losses`/`ties` are the swiss/bracket record, present for every
+    standings entry observed, so they are the robust outcome signal to fall
+    back on when `placing` is missing."""
+
+    members: frozenset[tuple[str, str | None]]
+    placing: int | None
+    wins: int
+    losses: int
+    ties: int
+
+
+@dataclass(frozen=True)
+class TournamentTeams:
+    """A tournament's parsed teams (rosters + outcomes) and identifying metadata."""
 
     meta: TournamentMeta
-    teams: list[frozenset[tuple[str, str | None]]]
+    teams: list[Team]
 
 
 _MEGA_FORME_SUFFIXES = (" X", " Y", " Z")
@@ -225,8 +244,8 @@ def passes_doubles_protect_check(
     return protect_count / len(standings) >= min_ratio
 
 
-def extract_teams(standings: list[dict]) -> list[frozenset[tuple[str, str | None]]]:
-    """Parse standings into a list of teams (frozensets of `(species, item)` tuples).
+def extract_teams(standings: list[dict]) -> list[Team]:
+    """Parse standings into a list of `Team` records (roster + outcome).
 
     Drops players whose decklist isn't exactly TEAM_SIZE entries with distinct
     species (incomplete submissions, drops before lock-in, or the game's
@@ -236,8 +255,12 @@ def extract_teams(standings: list[dict]) -> list[frozenset[tuple[str, str | None
     so case/whitespace variants of the same name collapse to one vocab entry
     -- the Limitless API has been observed to return e.g. 'Sitrus Berry',
     'Sitrus berry', and 'sitrus berry' for the same item across tournaments.
+
+    `placing` and the win/loss/tie `record` are read straight from the
+    standings entry; placing is None when the API doesn't report it, and a
+    missing record defaults to 0-0-0 (no signal, filterable downstream).
     """
-    teams: list[frozenset[tuple[str, str | None]]] = []
+    teams: list[Team] = []
     for entry in standings:
         decklist = entry.get("decklist") or []
         members: list[tuple[str, str | None]] = []
@@ -254,7 +277,15 @@ def extract_teams(standings: list[dict]) -> list[frozenset[tuple[str, str | None
         # Reject teams with duplicate species (game rule)
         if len({species for species, _ in members}) != TEAM_SIZE:
             continue
-        teams.append(frozenset(members))
+        placing = entry.get("placing")
+        record = entry.get("record") or {}
+        teams.append(Team(
+            members=frozenset(members),
+            placing=placing if isinstance(placing, int) else None,
+            wins=int(record.get("wins", 0)),
+            losses=int(record.get("losses", 0)),
+            ties=int(record.get("ties", 0)),
+        ))
     return teams
 
 
@@ -273,10 +304,17 @@ def _save_tournament(cache_dir: Path, t: TournamentTeams) -> None:
             "regulation": t.meta.regulation,
             "players": t.meta.players,
         },
-        # Each team: list of [species, item_or_null], sorted by species for
-        # reproducible diffs across re-saves.
+        # Each team: members (list of [species, item_or_null], sorted by
+        # species for reproducible diffs across re-saves) plus outcome.
         "teams": [
-            [list(member) for member in sorted(team, key=lambda m: m[0])]
+            {
+                "members": [
+                    list(member)
+                    for member in sorted(team.members, key=lambda m: m[0])
+                ],
+                "placing": team.placing,
+                "record": [team.wins, team.losses, team.ties],
+            }
             for team in t.teams
         ],
     }
@@ -287,9 +325,9 @@ def _save_tournament(cache_dir: Path, t: TournamentTeams) -> None:
 def _load_tournament(cache_dir: Path, tournament_id: str) -> TournamentTeams | None:
     """Load a cached tournament, or return None if missing / outdated schema.
 
-    Returning None signals the caller to re-fetch from the API. Old (v1)
-    cached files lacked items and are incompatible with the current schema,
-    so we treat them as cache misses.
+    Returning None signals the caller to re-fetch from the API. Older cached
+    files (v1: no placing/record; pre-v1: no items) are incompatible with the
+    current schema, so we treat them as cache misses.
     """
     p = _cache_path(cache_dir, tournament_id)
     if not p.exists():
@@ -300,7 +338,13 @@ def _load_tournament(cache_dir: Path, tournament_id: str) -> TournamentTeams | N
         return None  # outdated schema; force re-fetch
     meta = TournamentMeta(**payload["meta"])
     teams = [
-        frozenset((member[0], member[1]) for member in team)
+        Team(
+            members=frozenset((m[0], m[1]) for m in team["members"]),
+            placing=team["placing"],
+            wins=team["record"][0],
+            losses=team["record"][1],
+            ties=team["record"][2],
+        )
         for team in payload["teams"]
     ]
     return TournamentTeams(meta=meta, teams=teams)
@@ -408,7 +452,22 @@ def ingest(
 
 
 def all_teams(tournaments: list[TournamentTeams]) -> list[frozenset[tuple[str, str | None]]]:
-    """Flatten ingested tournaments into a single team list."""
+    """Flatten ingested tournaments into a single list of roster frozensets.
+
+    Projects away the outcome (placing/record); this is the model-feature view
+    consumed by the fitting path. Use `all_teams_with_outcomes` when you need
+    placement for outcome validation.
+    """
+    return [team.members for t in tournaments for team in t.teams]
+
+
+def all_teams_with_outcomes(tournaments: list[TournamentTeams]) -> list[Team]:
+    """Flatten ingested tournaments into a single list of `Team` records.
+
+    Same flattening as `all_teams`, but keeps each team's placing and
+    win/loss/tie record alongside its roster -- the input for outcome
+    validation (coherence/Score vs. placement).
+    """
     return [team for t in tournaments for team in t.teams]
 
 

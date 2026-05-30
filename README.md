@@ -129,6 +129,7 @@ The notebooks form a dependency chain. Explore in order, or jump into any standa
 | 7 | `temporal_drift.ipynb` | Standalone: how quickly model accuracy degrades as the meta evolves (25/75 split) |
 | 8 | `energy_discrimination.ipynb` | Standalone: real-vs-null scoring, Bias Adjustment sweep, AUC analysis |
 | 9 | `regularization_sweep.ipynb` | Standalone: L2 regularization sweep behind the per-phase C values |
+| 10 | `outcome_validation.ipynb` | Standalone: does Score/coherence predict tournament placement? (confirms the model captures meta typicality, not team quality) |
 
 ## Key concepts
 
