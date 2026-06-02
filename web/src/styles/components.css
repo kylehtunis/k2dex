@@ -5,6 +5,54 @@
  * web/src/render/. Renaming one means renaming both. See the Phase F
  * duplication register in STATIC_DEPLOY_PLAN.md. */
 
+/* ----- Announcement banner ----- */
+
+.lab-announcement {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--lab-accent);
+  color: #fff;
+  font-family: var(--lab-font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 10px 40px 10px 16px;
+  margin-bottom: 12px;
+  position: relative;
+  text-align: center;
+}
+.lab-announcement a {
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.lab-announcement a:hover {
+  opacity: 0.85;
+}
+.lab-announcement-text {
+  flex: 1;
+}
+.lab-announcement-close {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  opacity: 0.8;
+  transition: opacity 80ms ease;
+}
+.lab-announcement-close:hover {
+  opacity: 1;
+}
+
 /* ----- Stat cell + strip ----- */
 
 .lab-stat-strip {

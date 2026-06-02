@@ -9,6 +9,7 @@
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useModel } from "../state/ModelContext";
 import { usePageMeta } from "../usePageMeta";
+import { AnnouncementBanner } from "./AnnouncementBanner";
 import { ModelPicker } from "./ModelPicker";
 
 const PRIMARY_TABS = [
@@ -27,6 +28,7 @@ export function Layout() {
   const hideModelPicker = isHome || isScience;
   return (
     <div className="lab-container">
+      <AnnouncementBanner />
       <header className="lab-header">
         <Link to="/" className="lab-wordmark lab-wordmark-link">
           k2dex
@@ -68,8 +70,12 @@ export function Layout() {
           </a>
         </span>
         <span className="lab-footer-sep">·</span>
+        <a href="https://discord.gg/8xNjyn9yVP" target="_blank" rel="noopener noreferrer">
+          Discord
+        </a>
+        <span className="lab-footer-sep">·</span>
         <a href="https://github.com/kylehtunis/k2dex/" target="_blank" rel="noopener noreferrer">
-          Source
+          Source Code
         </a>
       </footer>
     </div>
