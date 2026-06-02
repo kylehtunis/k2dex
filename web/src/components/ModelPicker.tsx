@@ -2,6 +2,7 @@
 // header in the app shell. Persists selection in localStorage via the
 // ModelContext.
 
+import { useLocation } from "react-router-dom";
 import { useModel, type PhaseKey } from "../state/ModelContext";
 
 const OPTIONS: Array<{ key: PhaseKey; label: string }> = [
@@ -11,6 +12,7 @@ const OPTIONS: Array<{ key: PhaseKey; label: string }> = [
 
 export function ModelPicker() {
   const { phaseKey, setPhaseKey } = useModel();
+  const { pathname } = useLocation();
   return (
     <div className="lab-segmented" role="radiogroup" aria-label="Model">
       {OPTIONS.map((o) => (
@@ -20,7 +22,11 @@ export function ModelPicker() {
           role="radio"
           aria-checked={phaseKey === o.key}
           className={`lab-segmented-option${phaseKey === o.key ? " active" : ""}`}
-          onClick={() => setPhaseKey(o.key)}
+          onClick={() => {
+            if (o.key === phaseKey) return;
+            setPhaseKey(o.key);
+            window.location.replace(pathname);
+          }}
         >
           {o.label}
         </button>
