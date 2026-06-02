@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .DS_Store
 tournaments_cache/
+tournament_json/**/*.json
 .ipynb_checkpoints/
 .streamlit/secrets.toml
 .venv/

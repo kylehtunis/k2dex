@@ -23,7 +23,9 @@ The static webapp is the primary public surface. The Streamlit app remains as a 
 streamlit run scripts/app.py        # Streamlit webapp
 jupyter lab                          # notebooks (in notebooks/)
 python -m unittest discover tests    # regression gate (includes parity tests)
-python -m k2dex.limitless_ingest     # ingest tournaments (manual; cache is in tournaments_cache/)
+python -m k2dex.tournament_ingest     # fetch from Limitless API + import in-person data into cache
+python -m k2dex.tournament_ingest --limitless-only   # Limitless API only
+python -m k2dex.tournament_ingest --in-person-only   # import tournament_json/ only
 python scripts/precompute.py         # rebuild web/public/models/ artifacts (manual; inspect before commit)
 python scripts/scotus_precompute.py  # rebuild web/public/scotus/ artifacts for the /science SCOTUS section (manual)
 
@@ -60,7 +62,10 @@ k2dex/                  Python package — core model library
                         primary button, multiselect chips)
   assets/               Static assets bundled into the page as data URIs
                         (currently just missingno.svg, the sprite fallback)
-  limitless_ingest.py   Limitless API ingest with normalize_name + strip_mega_prefix
+  tournament_ingest.py   Tournament data ingest and cache; see "Data pipeline" below
+tournament_json/        In-person tournament raw JSON source (committed dir, JSON gitignored)
+  M-A/                  Reg M-A format; files named [id]_[YYYY-MM-DD].json or [id]_[YYYY_MM_DD].json
+tournaments_cache/      Unified cache (gitignored); both Limitless + in-person entries
 scripts/                CLI entry points (not part of the k2dex package)
   app.py                Streamlit webapp (rendering only; samplers imported)
   precompute.py         Offline pipeline: fits both models via k2dex.loaders and
@@ -103,13 +108,13 @@ All modules below live under `k2dex/` and use relative imports within the packag
 
 - **`constants.py`** — vocab cutoffs, corpus size, regularization strength, validation seed / fraction, ingest filters. Change any knob here, not in the notebook or app. (Static webapp mirrors a subset of these in `web/src/constants.ts` — see duplication register below.)
 - **`helpers.py`** — Gaussian model only (Smogon chaos path): `load_chaos`, `build_vocab`, `build_cooccurrence`, `build_ppmi`, `binary_moments`, `binary_correlation`, `ising_gaussian`. Frozen-dataclass return types throughout.
-- **`loaders.py`** — pure `build_species_model()` / `build_species_item_model()` that fit `(J, h, m, vocab, team_counts, species_of, item_of)` end-to-end. No Streamlit. `scripts/app.py` wraps them in `@st.cache_resource`; `scripts/precompute.py` calls them directly. Also exports `format_pair(species, item)`.
+- **`loaders.py`** — pure `build_species_model()` / `build_species_item_model()` that fit `(J, h, m, vocab, team_counts, species_of, item_of)` end-to-end from the cached corpus (via `load_cached_tournaments`). No Streamlit, no API calls. `scripts/app.py` wraps them in `@st.cache_resource`; `scripts/precompute.py` calls them directly. Also exports `format_pair(species, item)`.
 - **`models.py`** — `fit_pl_ising(X, *, C, max_iter)` runs V per-spin L2 logistic regressions, skips degenerate spins, symmetrizes via `J = 0.5 * (J_asym + J_asym.T)`, zeros diagonal. Used by notebooks 5/6 and `loaders.py` (which in turn feeds `scripts/app.py:load_model_{species,species_item}` and `scripts/precompute.py`).
 - **`sampling.py`** — `swap_mcmc` / `anneal_mcmc` / `parallel_tempered_mcmc` / `meanfield_marginals` / `greedy_optimize` / `rank_single_swaps`. All accept keyword-only `species_of` / `item_of` for species+item uniqueness constraints (no-duplicate-species, no-duplicate-item). Shared inner loop in `_local_swap_step` so the three MCMC variants stay in sync. **Mirrored 1:1 in `web/src/sampler/`** — every public symbol has a TypeScript counterpart gated by `tests/test_parity.py`.
 - **`rendering.py`** — pure-function helpers: `team_obs_count`, `min_swaps_to_observed`, `nearest_observed`, `intra_team_sum_j`, `pairwise_j_rows`, `render_pairwise_j_table`. No Streamlit imports.
 - **`rendering_html.py`** — HTML-string builders for the lab-notebook visual language. Atoms (`section_label`, `stat_strip`, `score_chip`, `signed_bar`, etc.), sprite primitives (`sprite_img` via `<object>` fallback, see Webapp visual language gotchas), vocab parsing (`extract_species`/`extract_item`), and composed cells (`slot_card`, `comp_mon_cell`, `pair_cell`, `swap_cell`, `team_mini_strip`, etc.). Class names are paired with `styles.py`.
 - **`styles.py`** — design tokens (LAB.* CSS vars, Google Fonts) and Streamlit widget overrides. `inject()` called once at top of `main()`. Forces light-mode palette to override OS dark-mode detection.
-- **`limitless_ingest.py`** — fetches VGC Reg M-A tournaments from Limitless API, caches one JSON per tournament under `tournaments_cache/`. A `Team` record holds the roster frozenset (`members`) plus outcome (`placing`, `record`). Key exports: `all_teams` (roster frozensets for fitting), `all_teams_with_outcomes` (full records for outcome validation), `chronological_split(tournaments, train_frac)` (date-sorted split at tournament boundary). Cache schema is versioned (`CACHE_VERSION`); bump when parsing logic changes. See Conventions for corpus-size cap, vocab normalization, and tournament filters.
+- **`tournament_ingest.py`** — tournament data ingest and unified cache. Two data sources feed `tournaments_cache/`: the Limitless API (`fetch_limitless_tournaments`) and in-person tournament exports (`import_in_person_tournaments` from `tournament_json/[format]/[id]_[date].json`). Downstream consumers call only `load_cached_tournaments()`, which is a pure offline cache reader. Each cache entry carries a `"type"` field (`"limitless"` or `"in-person"`) for provenance. A `Team` record holds the roster frozenset (`members`) plus outcome (`placing`, `record`). Other key exports: `all_teams`, `all_teams_with_outcomes`, `chronological_split`, `species_only_teams`. Cache schema is versioned (`CACHE_VERSION`); bump when parsing logic changes.
 
 Scripts (under `scripts/`):
 
@@ -134,12 +139,12 @@ Easy to get wrong if you only look at one file:
 - **Gaussian model vocab cutoff is `min_usage=0.002`** (~170 Pokémon at Reg M-A 1760). PL model vocab cutoff is `PHASE2_MIN_TEAM_COUNT = 5` (feature must appear in ≥5 teams).
 - **Regularization differs by model.** `SPECIES_LR_C = 0.1`; `SPECIES_ITEM_LR_C = 1.0` (sparser pair matrix wants weaker regularization). Each `loaders` builder passes its own constant. `precompute.py` records the per-model `C` in `meta.json`. `notebooks/regularization_sweep.ipynb` is the sweep harness behind these values.
 - **`MIN_TEAMS_PER_TOURNAMENT = 64`** filters out small/quirky tournaments at ingest time. Below this they tended to be majority-Bo1 or unusual local metas.
-- **`PHASE2_MIN_TEAMS = 25000`** is the target corpus size (aspirational; the walk currently exhausts available tournaments before reaching it).
+- **`PHASE2_MIN_TEAMS = 25000`** is the Limitless API fetch limit (stop walking the API after this many teams). It does not cap the model corpus; model fitting uses all cached data from both Limitless and in-person sources.
 - **Smogon's `Teammates` values are skill-weighted floats, not raw integer counts**; we treat them as proportional to team-appearances. PPMI is computed in probability space so absolute counts cancel.
 - **Field h**: the Gaussian model derives it from mean-field self-consistency; the PL models give h directly as the per-spin logreg intercept.
 - **Energy formulas**: raw `H(s) = -h·s - 0.5 s'Js`. Adjusted `H_adj(s) = -(field_weight·h)·s - 0.5 s'Js`. At `field_weight=0` only the pairwise term remains, dropping the popularity prior — this is the knob for surfacing archetype-coherent completions when standard sampling is too meta-biased.
 - **Completer mode + Bias Adjustment defaults.** PT sampler defaults to Bias Adjustment `0.3`; Greedy flips to `0.8` (greedy wanders into incoherent basins at low weight with few pins). Toggling the checkbox sets bias in *both* directions. Defaults live in `web/src/state/PageStateContext.tsx` (web) and the `st.select_slider`s in `scripts/app.py` (Streamlit, both `0.3`).
-- **Clipboard import + shareable URLs (static webapp only).** Both `/completer` and `/analysis` parse pokepastes via `render/vocab-match.ts` (slug-based matching bridges Showdown forme names to corpus names, with mega-normalization mirroring `limitless_ingest.strip_mega_prefix` and a small `IMPORT_SPECIES_ALIASES` map for edge cases). OOV species/items surface as `.lab-form-note` warnings. Both pages **live-sync state into the URL** (`render/shareLink.ts`), encoded by slug (not index) so links survive vocab reorders. The completer token carries the RNG seed so shared links reproduce exact PT results. Legacy query params still decode for old links. No Python twin, so no parity rows.
+- **Clipboard import + shareable URLs (static webapp only).** Both `/completer` and `/analysis` parse pokepastes via `render/vocab-match.ts` (slug-based matching bridges Showdown forme names to corpus names, with mega-normalization mirroring `tournament_ingest.strip_mega_prefix` and a small `IMPORT_SPECIES_ALIASES` map for edge cases). OOV species/items surface as `.lab-form-note` warnings. Both pages **live-sync state into the URL** (`render/shareLink.ts`), encoded by slug (not index) so links survive vocab reorders. The completer token carries the RNG seed so shared links reproduce exact PT results. Legacy query params still decode for old links. No Python twin, so no parity rows.
 - **Swap-move MH** for fixed team size: simultaneously turn one currently-on mon off and one currently-off mon on (single-spin flips break the size constraint). Energy diff `ΔH = h_eff[i_out] − h_eff[i_in] + (J[i_out] − J[i_in]) · s + J[i_in, i_out]`. The last term corrects for the swapped pair's mutual coupling — easy to forget.
 - **Validation split is chronological 90/10** (`VALIDATION_TEAM_FRAC_TEST = 0.10`), out-of-time (fit on past, test on future). Vocab is built from train only; OOV test teams are dropped. `VALIDATION_SEED = 42` seeds the within-test-set held-out position RNG, not the split itself. Temporal drift uses a separate 25/75 split (`DRIFT_TRAIN_FRAC = 0.25`).
 - **Vocab normalization** at ingest time collapses case/whitespace variants (`'Sitrus Berry'` / `'sitrus berry'` → one bucket) AND collapses `Mega <X>` species names down to base species. The cache is invalidated when either normalizer changes (bump `CACHE_VERSION`).
@@ -206,7 +211,8 @@ web/
 ```
 
 **Build artifacts pipeline:**
-1. Run `python scripts/precompute.py` locally after any change to corpus / fit hyperparams.
+0. Run `python -m k2dex.tournament_ingest` to populate the cache (Limitless API fetch + in-person import). This is the only step that makes network calls.
+1. Run `python scripts/precompute.py` locally after any change to corpus / fit hyperparams. This reads from the cache only (offline).
 2. Inspect `web/public/models/{species,species_item}/{meta.json,J.bin,...}` for sanity (vocab size, n_corpus_teams, file sizes).
 3. Commit the artifacts. CI is not allowed to regenerate them (the user wants manual eyeballing of every refresh).
 4. `npm run build` reads the artifacts as static files (Vite copies `public/` into `dist/`).

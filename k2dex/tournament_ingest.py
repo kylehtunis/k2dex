@@ -1,13 +1,21 @@
-"""Limitless TCG API ingestor for VGC tournament team data.
+"""Tournament team data ingestor and cache for VGC inverse Ising fitting.
 
-Phase 2 data source. Walks the Limitless tournaments endpoint newest-first
-(across all catalog pages as needed), fetches standings for tournaments
-matching the target regulation, applies singles-tournament filters (the API
-labels both doubles VGC and singles VGC events as `game=VGC` with identical
-regulation tags), and extracts team rosters (six Pokemon per team) for
-downstream inverse Ising fitting via pseudo-likelihood.
+Two data sources feed a unified cache (``tournaments_cache/``):
 
-Singles filter (two-stage, cheap-first):
+1. **Limitless API** -- online fetch via ``fetch_limitless_tournaments()``.
+   Walks the Limitless tournaments endpoint newest-first, fetches standings
+   for tournaments matching the target regulation, applies singles-tournament
+   filters. Only triggered manually via the CLI.
+
+2. **In-person tournament exports** -- offline import via
+   ``import_in_person_tournaments()``. Reads raw Limitless-format standings
+   JSON files from ``tournament_json/[format]/[id]_[date].json`` and
+   normalizes them into cache entries.
+
+Downstream consumers (loaders, notebooks, precompute) call only
+``load_cached_tournaments()``, which is a pure offline cache reader.
+
+Singles filter (Limitless API path only, two-stage, cheap-first):
 
 1. **Name pre-check**: skip tournaments whose name contains "singles"
    (case-insensitive). Avoids a standings fetch for the obvious cases.
@@ -19,40 +27,38 @@ Singles filter (two-stage, cheap-first):
 
 Cache strategy: per-tournament parsed team list only -- abilities, moves,
 tera, player names, and drops are discarded at parse time. Each team's
-final `placing` and swiss/bracket `record` (wins/losses/ties) ARE kept, to
-support outcome validation (does coupling coherence predict placement?).
-Each team member is preserved as a `(species, item)` tuple; items are kept
-because they (a) re-introduce held-item forme distinctions invisible in the
-species-only namespace, and (b) enable the Phase 3 item-pair Ising fit in
-`app.py:load_model_phase3`. Tournaments are immutable once finished, so the
-cache is write-once / read-many. Rejected tournaments are not cached;
-re-runs will re-fetch and re-reject. Cached entries are still subject to
-the name pre-check on load, but cannot be re-validated against the Protect
-heuristic (we don't keep decklists). If MIN_PROTECT_PER_PLAYER is tightened,
-clear `tournaments_cache/` to force a clean re-validation.
+final ``placing`` and swiss/bracket ``record`` (wins/losses/ties) ARE kept,
+to support outcome validation. Each team member is preserved as a
+``(species, item)`` tuple. Tournaments are immutable once finished, so the
+cache is write-once / read-many. Each cache entry carries a ``type`` field
+(``"limitless"`` or ``"in-person"``) for provenance tracking; old cache
+files without this field default to ``"limitless"`` on read.
 
-Cache format versioning: each payload includes a `version` field. Loading a
-cached file at version < CACHE_VERSION returns None, forcing a re-fetch; old
-formats are not upgraded in place. Bump CACHE_VERSION whenever the parsing
-logic changes in a way that would yield different team rosters than what's
-in cached files (item normalization, species canonicalization, etc.) so old
-caches are invalidated automatically.
+Cache format versioning: each payload includes a ``version`` field. Loading
+a cached file at version < CACHE_VERSION returns None, forcing a re-fetch;
+old formats are not upgraded in place. Bump CACHE_VERSION whenever the
+parsing logic changes in a way that would yield different team rosters than
+what's in cached files.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
+import re
 import time
 import urllib.error
 import urllib.request
+import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-logger = logging.getLogger("limitless_ingest")
+logger = logging.getLogger("tournament_ingest")
 
 from .constants import (
+    DEFAULT_LOCAL_DIR,
     MIN_TEAMS_PER_TOURNAMENT,
     PHASE2_MIN_TEAMS as DEFAULT_MIN_TEAMS,
     TEAM_SIZE,
@@ -293,10 +299,16 @@ def _cache_path(cache_dir: Path, tournament_id: str) -> Path:
     return cache_dir / f"{tournament_id}.json"
 
 
-def _save_tournament(cache_dir: Path, t: TournamentTeams) -> None:
+def _save_tournament(
+    cache_dir: Path,
+    t: TournamentTeams,
+    *,
+    tournament_type: str = "limitless",
+) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     payload = {
         "version": CACHE_VERSION,
+        "type": tournament_type,
         "meta": {
             "id": t.meta.id,
             "name": t.meta.name,
@@ -350,32 +362,22 @@ def _load_tournament(cache_dir: Path, tournament_id: str) -> TournamentTeams | N
     return TournamentTeams(meta=meta, teams=teams)
 
 
-def ingest(
+def fetch_limitless_tournaments(
     *,
     min_teams: int = DEFAULT_MIN_TEAMS,
     regulation: str = DEFAULT_REGULATION,
     game: str = DEFAULT_GAME,
     cache_dir: Path = DEFAULT_CACHE_DIR,
 ) -> list[TournamentTeams]:
-    """Ingest recent tournaments newest-first until >= min_teams teams accumulated.
+    """Fetch tournaments from the Limitless API, caching as we go.
 
-    Walks `iter_catalog_pages` lazily across catalog pages; filters to the
-    target regulation; skips tournaments flagged as singles by name (cache
-    hit or miss) or by Protect-ratio heuristic (fresh fetches only); skips
-    tournaments smaller than MIN_TEAMS_PER_TOURNAMENT (pre-fetch on registered
-    player count and post-extract on actual team count -- the second catches
-    high-dropout small events and re-filters cached tournaments if the
-    threshold is tightened, without needing a cache wipe); serves cached
-    tournaments from disk if present, hits the API otherwise. Returns once
-    the running team total meets the cutoff.
+    Walks the API newest-first until >= min_teams teams accumulated.
+    ``min_teams`` is a fetch limit (stop walking the API), not a corpus cap.
 
     Termination conditions (whichever fires first):
-    - `total_teams >= min_teams` (target hit -- normal stop)
-    - The API returns an empty page (catalog truly exhausted)
-    - A whole page yields zero new in-regulation tournament IDs. Limitless
-      is date-sorted newest-first, so once we walk past the start of the
-      target regulation we'll never see another instance of it -- no point
-      paging back through years of older formats.
+    - ``total_teams >= min_teams`` (target hit)
+    - The API returns an empty page (catalog exhausted)
+    - A whole page yields zero new in-regulation tournament IDs
     """
     cache_dir = Path(cache_dir)
     out: list[TournamentTeams] = []
@@ -419,7 +421,7 @@ def ingest(
                     continue
                 teams = extract_teams(standings)
                 ttd = TournamentTeams(meta=tm, teams=teams)
-                _save_tournament(cache_dir, ttd)
+                _save_tournament(cache_dir, ttd, tournament_type="limitless")
                 source = "fetched"
                 time.sleep(POLITE_SLEEP_SEC)
             # Post-extract size check: catches cached tournaments under a
@@ -507,14 +509,214 @@ def species_only_teams(
     return [frozenset(species for species, _ in team) for team in teams]
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    tournaments = ingest()
-    teams = all_teams(tournaments)
-    print(f"Tournaments: {len(tournaments)}")
+def load_cached_tournaments(
+    *,
+    cache_dir: Path = DEFAULT_CACHE_DIR,
+    regulation: str | None = DEFAULT_REGULATION,
+    tournament_type: str | None = None,
+    min_teams_per_tournament: int = MIN_TEAMS_PER_TOURNAMENT,
+) -> list[TournamentTeams]:
+    """Load all cached tournaments from disk. Pure offline, no API calls.
+
+    Reads every JSON file in ``cache_dir``, filters by regulation, provenance
+    type, tournament size, and singles name. Returns all qualifying
+    tournaments sorted by date (oldest first).
+    """
+    cache_dir = Path(cache_dir)
+    if not cache_dir.exists():
+        logger.warning("cache directory %s does not exist", cache_dir)
+        return []
+
+    out: list[TournamentTeams] = []
+    for p in sorted(cache_dir.glob("*.json")):
+        try:
+            with p.open("r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except (json.JSONDecodeError, OSError) as err:
+            logger.warning("skipping unreadable cache file %s: %s", p.name, err)
+            continue
+
+        if payload.get("version", 1) < CACHE_VERSION:
+            continue
+
+        entry_type = payload.get("type", "limitless")
+        if tournament_type is not None and entry_type != tournament_type:
+            continue
+
+        meta = TournamentMeta(**payload["meta"])
+        if regulation is not None and meta.regulation != regulation:
+            continue
+        if is_likely_singles_by_name(meta.name):
+            continue
+
+        teams = [
+            Team(
+                members=frozenset((m[0], m[1]) for m in team["members"]),
+                placing=team["placing"],
+                wins=team["record"][0],
+                losses=team["record"][1],
+                ties=team["record"][2],
+            )
+            for team in payload["teams"]
+        ]
+
+        if len(teams) < min_teams_per_tournament:
+            continue
+
+        out.append(TournamentTeams(meta=meta, teams=teams))
+
+    out.sort(key=lambda t: t.meta.date)
+    logger.info(
+        "loaded %d cached tournaments, %d teams total",
+        len(out), sum(len(t.teams) for t in out),
+    )
+    return out
+
+
+_DATE_SUFFIX_RE = re.compile(r"[_-](\d{4})[_-](\d{2})[_-](\d{2})$")
+
+
+def import_in_person_tournaments(
+    *,
+    local_dir: Path = DEFAULT_LOCAL_DIR,
+    cache_dir: Path = DEFAULT_CACHE_DIR,
+) -> list[TournamentTeams]:
+    """Import in-person tournament JSON files into the cache.
+
+    Scans ``local_dir/[format]/[id]_[date].json`` for raw Limitless-format
+    standings exports. Each file is normalized via ``extract_teams()`` and
+    written to ``cache_dir`` with ``type="in-person"``. Existing cache
+    entries are skipped (idempotent).
+
+    The parent directory name is used as the regulation (e.g. ``M-A``).
+    The date is parsed from the filename suffix (``[id]_YYYY-MM-DD.json``).
+    """
+    local_dir = Path(local_dir)
+    if not local_dir.exists():
+        logger.info("local tournament directory %s does not exist, skipping", local_dir)
+        return []
+
+    cache_dir = Path(cache_dir)
+    imported: list[TournamentTeams] = []
+
+    for format_dir in sorted(local_dir.iterdir()):
+        if not format_dir.is_dir():
+            continue
+        regulation = format_dir.name
+
+        for json_file in sorted(format_dir.glob("*.json")):
+            stem = json_file.stem
+            tournament_id = f"local_{stem}"
+
+            if _cache_path(cache_dir, tournament_id).exists():
+                logger.info("[skip cached]  %s (already imported)", stem)
+                continue
+
+            date_match = _DATE_SUFFIX_RE.search(stem)
+            date = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}" if date_match else ""
+
+            try:
+                with json_file.open("r", encoding="utf-8") as f:
+                    standings = json.load(f)
+            except (json.JSONDecodeError, OSError) as err:
+                logger.warning("skipping unreadable file %s: %s", json_file, err)
+                continue
+
+            if not isinstance(standings, list):
+                logger.warning("skipping %s: expected list, got %s", json_file, type(standings).__name__)
+                continue
+
+            teams = extract_teams(standings)
+
+            meta = TournamentMeta(
+                id=tournament_id,
+                name=stem,
+                date=date,
+                regulation=regulation,
+                players=len(standings),
+            )
+            tt = TournamentTeams(meta=meta, teams=teams)
+            _save_tournament(cache_dir, tt, tournament_type="in-person")
+            imported.append(tt)
+            logger.info(
+                "[imported]     %s -> %s (%d teams, regulation=%s, date=%s)",
+                json_file.name, tournament_id, len(teams), regulation, date or "(none)",
+            )
+
+    logger.info("imported %d in-person tournaments", len(imported))
+    return imported
+
+
+def ingest(
+    *,
+    min_teams: int = DEFAULT_MIN_TEAMS,
+    regulation: str = DEFAULT_REGULATION,
+    game: str = DEFAULT_GAME,
+    cache_dir: Path = DEFAULT_CACHE_DIR,
+) -> list[TournamentTeams]:
+    """Deprecated: use ``fetch_limitless_tournaments()`` + ``load_cached_tournaments()``.
+
+    Fetches from the Limitless API, then returns all cached tournaments.
+    """
+    warnings.warn(
+        "ingest() is deprecated. Use fetch_limitless_tournaments() to populate "
+        "the cache, then load_cached_tournaments() to read it.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    fetch_limitless_tournaments(
+        min_teams=min_teams, regulation=regulation, game=game, cache_dir=cache_dir,
+    )
+    return load_cached_tournaments(cache_dir=cache_dir, regulation=regulation)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Fetch/import tournament data into the cache.",
+    )
+    parser.add_argument(
+        "--limitless-only", action="store_true",
+        help="Only fetch from the Limitless API (skip in-person import)",
+    )
+    parser.add_argument(
+        "--in-person-only", action="store_true",
+        help="Only import local in-person files (skip API fetch)",
+    )
+    parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    parser.add_argument("--local-dir", type=Path, default=DEFAULT_LOCAL_DIR)
+    parser.add_argument("--regulation", default=DEFAULT_REGULATION)
+    parser.add_argument(
+        "--min-teams", type=int, default=DEFAULT_MIN_TEAMS,
+        help="Limitless API fetch limit (stop after this many teams)",
+    )
+    args = parser.parse_args()
+
+    if not args.in_person_only:
+        fetch_limitless_tournaments(
+            min_teams=args.min_teams,
+            regulation=args.regulation,
+            cache_dir=args.cache_dir,
+        )
+
+    if not args.limitless_only:
+        import_in_person_tournaments(
+            local_dir=args.local_dir,
+            cache_dir=args.cache_dir,
+        )
+
+    all_t = load_cached_tournaments(
+        cache_dir=args.cache_dir, regulation=args.regulation,
+    )
+    teams = all_teams(all_t)
+    print(f"Tournaments in cache: {len(all_t)}")
     print(f"Total teams: {len(teams)}")
     if teams:
         sample = next(iter(teams))
         print(f"Sample team:")
         for species, item in sorted(sample, key=lambda m: m[0]):
             print(f"  {species:<25} item: {item}")
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    main()

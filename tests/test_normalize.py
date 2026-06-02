@@ -1,6 +1,6 @@
 import unittest
 
-from k2dex.limitless_ingest import normalize_name, strip_mega_prefix
+from k2dex.tournament_ingest import normalize_name, strip_mega_prefix
 
 
 class TestNormalizeName(unittest.TestCase):

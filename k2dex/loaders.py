@@ -12,10 +12,9 @@ from collections import Counter
 import numpy as np
 from numpy.typing import NDArray
 
-from . import limitless_ingest
+from . import tournament_ingest
 from .constants import (
     PHASE2_MIN_TEAM_COUNT,
-    PHASE2_MIN_TEAMS,
     SPECIES_ITEM_LR_C,
     SPECIES_LR_C,
 )
@@ -42,14 +41,10 @@ def format_pair(species: str, item: str | None) -> str:
 
 
 def build_species_model() -> SpeciesModel:
-    """Species-only PL inverse Ising over the Limitless corpus.
-
-    Mirrors `app.py:load_model_species` minus the Streamlit caching
-    decorator. See that function's docstring for the full rationale.
-    """
-    tournaments = limitless_ingest.ingest(min_teams=PHASE2_MIN_TEAMS)
-    teams_full = limitless_ingest.all_teams(tournaments)
-    teams = limitless_ingest.species_only_teams(teams_full)
+    """Species-only PL inverse Ising over the cached tournament corpus."""
+    tournaments = tournament_ingest.load_cached_tournaments()
+    teams_full = tournament_ingest.all_teams(tournaments)
+    teams = tournament_ingest.species_only_teams(teams_full)
     team_counts: Counter[frozenset[str]] = Counter(teams)
 
     counts = Counter(name for team in teams for name in team)
@@ -72,13 +67,9 @@ def build_species_model() -> SpeciesModel:
 
 
 def build_species_item_model() -> SpeciesModel:
-    """(species, item)-pair PL inverse Ising over the Limitless corpus.
-
-    Mirrors `app.py:load_model_species_item` minus the Streamlit caching
-    decorator. See that function's docstring for the full rationale.
-    """
-    tournaments = limitless_ingest.ingest(min_teams=PHASE2_MIN_TEAMS)
-    teams = limitless_ingest.all_teams(tournaments)
+    """(species, item)-pair PL inverse Ising over the cached tournament corpus."""
+    tournaments = tournament_ingest.load_cached_tournaments()
+    teams = tournament_ingest.all_teams(tournaments)
 
     pair_counts = Counter(pair for team in teams for pair in team)
     pair_list_above_cutoff = [p for p, c in pair_counts.items() if c >= PHASE2_MIN_TEAM_COUNT]

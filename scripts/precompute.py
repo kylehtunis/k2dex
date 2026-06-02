@@ -40,7 +40,6 @@ from numpy.typing import NDArray
 
 from k2dex.constants import (
     PHASE2_MIN_TEAM_COUNT,
-    PHASE2_MIN_TEAMS,
     SPECIES_ITEM_LR_C,
     SPECIES_LR_C,
     TEAM_SIZE,
@@ -140,7 +139,6 @@ def write_model(
             "method": "pseudo_likelihood",
             "C": MODEL_LR_C[name],
             "min_team_count": PHASE2_MIN_TEAM_COUNT,
-            "min_teams": PHASE2_MIN_TEAMS,
         },
         "schema_version": 1,
     }

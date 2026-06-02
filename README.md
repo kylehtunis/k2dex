@@ -2,7 +2,7 @@
 
 Interactive tools and explainers applying complexity-science methods to competitive Pokemon (VGC) team composition data.
 
-The core model is a **pairwise maximum-entropy (inverse Ising)** fit on tournament team rosters from [Limitless VGC](https://play.limitlesstcg.com/). The fitted couplings *J* and biases *h* capture which Pokemon (and held items) tend to appear together on teams, and which ones compete for the same slot. Two model phases are user-facing:
+The core model is a **pairwise maximum-entropy (inverse Ising)** fit on tournament team rosters from [Limitless VGC](https://play.limitlesstcg.com/) and in-person tournament data. The fitted couplings *J* and biases *h* capture which Pokemon (and held items) tend to appear together on teams, and which ones compete for the same slot. Two model phases are user-facing:
 
 - **Species** (Phase 2): pseudo-likelihood fit on species-only features
 - **Species @ Item** (Phase 3): pseudo-likelihood fit on `(species, held item)` pair features, preserving held-item forme distinctions that Phase 2 collapses
@@ -25,13 +25,16 @@ k2dex/                  Python package: model fitting, sampling, rendering
   rendering.py          Diagnostic helpers + markdown-table builders
   rendering_html.py     Lab-notebook HTML helpers (sprites, slot cards, tables)
   styles.py             Design tokens + Streamlit widget overrides
-  limitless_ingest.py   Limitless API ingest with caching + chronological splits
+  tournament_ingest.py   Tournament data ingest, in-person import, and unified cache
 
 scripts/                CLI entry points
   app.py                Streamlit webapp
   precompute.py         Offline pipeline: fits models → web/public/models/
   scotus_precompute.py  SCOTUS inverse Ising fits → web/public/scotus/
 
+tournament_json/        In-person tournament data (committed dir, JSON files gitignored)
+  M-A/                  Reg M-A format; files named [id]_[YYYY-MM-DD].json
+tournaments_cache/      Unified cache (gitignored); Limitless + in-person entries
 notebooks/              Analysis pipeline (see Notebooks below)
 tests/                  Unit tests + parity baseline (Python ↔ TypeScript)
 web/                    Static React/TypeScript webapp (see below)
@@ -59,13 +62,15 @@ pip install -r requirements.txt
 
 ### 2. Ingest tournament data
 
-Fetch recent VGC tournament rosters from the Limitless API. Results are cached as one JSON per tournament under `tournaments_cache/`.
+Populate the tournament cache from both data sources. Results are cached as one JSON per tournament under `tournaments_cache/`.
 
 ```bash
-python -m k2dex.limitless_ingest
+python -m k2dex.tournament_ingest              # fetch Limitless API + import in-person data
+python -m k2dex.tournament_ingest --limitless-only    # Limitless API only
+python -m k2dex.tournament_ingest --in-person-only    # import tournament_json/ only
 ```
 
-This walks tournaments newest-first, applying size/format filters, until it accumulates enough teams (target: 25,000; may exhaust available tournaments before reaching it). The cache is versioned; re-running only fetches new tournaments.
+The Limitless path walks tournaments newest-first, applying size/format filters, until it reaches the fetch limit (default 25,000 teams). The in-person path reads raw standings exports from `tournament_json/[format]/[id]_[date].json` and normalizes them into cache entries. Both paths are idempotent; re-running only processes new data.
 
 ### 3. Precompute model artifacts
 
@@ -99,7 +104,7 @@ The precomputed model artifacts in `web/public/models/` are already committed to
 streamlit run scripts/app.py
 ```
 
-The Streamlit app is a development/research tool. It reads the same models but fits them live (cached via `@st.cache_resource`) rather than loading precomputed binaries.
+The Streamlit app is a development/research tool. It reads the same models but fits them live from the cache (via `@st.cache_resource`) rather than loading precomputed binaries. Requires the cache to be populated first (step 2).
 
 ### 6. Run tests
 
