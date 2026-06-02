@@ -130,12 +130,13 @@ describe("resolveFeature", () => {
     expect(r.warning).toBeNull();
   });
 
-  it("falls back to the best build when the item is out of vocab", () => {
+  it("skips when item is out of vocab and species has multiple builds", () => {
     const r = resolveFeature(slugIndex, model, "incineroar", "leftovers", {
       species: "Incineroar",
       item: "Leftovers",
     });
-    expect(r.idx).toBe(0); // highest-marginal Incineroar
+    expect(r.idx).toBeNull();
+    expect(r.warning).toContain("Incineroar");
     expect(r.warning).toContain("Leftovers");
   });
 
@@ -178,11 +179,11 @@ describe("matchPaste", () => {
     expect(errors).toHaveLength(1);
   });
 
-  it("keeps matches and warns on out-of-vocab", () => {
+  it("warns on out-of-vocab species and skipped multi-build items", () => {
     const paste = "Incineroar @ Leftovers\n\nPikachu @ Light Ball";
     const { idxs, warnings } = matchPaste(model, paste);
-    expect(idxs).toEqual([0]);
-    expect(warnings.length).toBeGreaterThanOrEqual(2);
+    expect(idxs).toEqual([]);
+    expect(warnings).toHaveLength(2);
   });
 });
 
