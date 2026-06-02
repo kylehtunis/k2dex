@@ -11,6 +11,8 @@ import { ScoreChip } from "../render/atoms";
 import type { IsingModel } from "../sampler/types";
 import { speciesToSlug } from "../render/sprite-url";
 import { buildPartialPaste } from "../render/format";
+import { encodeCore, type ModelId } from "../render/shareLink";
+import { usePageState } from "../state/PageStateContext";
 
 export interface CompletionRowProps {
   /** Order doesn't matter; row sorts them top-down by vocab order. */
@@ -41,7 +43,13 @@ export function CompletionRow({
   model,
 }: CompletionRowProps) {
   const sortedFree = [...freeIdxs].sort((a, b) => a - b);
-  const analyzeUrl = `/analysis?team=${[...fullTeam].sort((a, b) => a - b).join(",")}`;
+  const { completer } = usePageState();
+  const analyzeUrl = `/analysis?t=${encodeCore(
+    model.name as ModelId,
+    completer.fieldWeight,
+    fullTeam,
+    model,
+  )}`;
 
   const [copied, setCopied] = useState(false);
   const handleCopyPaste = useCallback(() => {

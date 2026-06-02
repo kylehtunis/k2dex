@@ -161,7 +161,7 @@
   font-family: var(--lab-font-serif);
   font-style: italic;
   font-size: 12px;
-  color: var(--lab-ink-muted);
+  color: var(--lab-warn);
   margin-top: 6px;
 }
 

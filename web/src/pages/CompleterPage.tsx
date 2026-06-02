@@ -18,7 +18,7 @@
 // into incoherent basins at low Bias Adjustment with few pins — so
 // checking it bumps Bias Adjustment to 0.8 and hides the PT options.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   FIELD_WEIGHT_OPTIONS,
@@ -47,6 +47,13 @@ import {
   CompletionTable,
 } from "../completer/CompletionRow";
 import { formatSigned } from "../render/format";
+import {
+  buildSlugIndex,
+  matchPaste,
+  resolveFeature,
+  resolveSpeciesSlug,
+} from "../render/vocab-match";
+import { decodeCompleter, encodeCompleter } from "../render/shareLink";
 import { runPT, type PTDistEntry } from "../completer/ptDriver";
 
 /** Fingerprint of the inputs that produced a run. Used to decide
@@ -85,7 +92,7 @@ type RunState =
     };
 
 export function CompleterPage() {
-  const { model, teamCounts, status } = useModel();
+  const { model, teamCounts, status, phaseKey: modelId, setPhaseKey } = useModel();
   const [searchParams, setSearchParams] = useSearchParams();
   const { completer, setCompleter } = usePageState();
 
@@ -97,9 +104,60 @@ export function CompleterPage() {
 
   const phaseKey = model?.name ?? "—";
 
-  // Pre-pin a species from the ?pinned= query param (set by the /science page).
+  // Identity of the URL state currently applied / being written, so the
+  // decode and live-sync effects don't clobber each other.
+  const appliedRef = useRef<string | null>(null);
+
+  // Decode a shared link (or the legacy ?pinned= from /science) into state.
+  // Switches the model first if the token names a different one, then
+  // applies once the matching model is ready.
   useEffect(() => {
     if (status !== "ready" || !model) return;
+    const identity = searchParams.toString();
+    if (!identity || identity === appliedRef.current) return;
+
+    if (searchParams.get("t")) {
+      const d = decodeCompleter(searchParams);
+      if (!d) {
+        appliedRef.current = identity;
+        return;
+      }
+      if (d.modelId !== modelId) {
+        setPhaseKey(d.modelId);
+        return; // re-run once the new model is ready
+      }
+      const slugIndex = buildSlugIndex(model);
+      const fixed: number[] = [];
+      for (const f of d.features) {
+        const r = resolveFeature(slugIndex, model, f.speciesSlug, f.itemSlug);
+        if (r.idx !== null) fixed.push(r.idx);
+      }
+      const excluded: string[] = [];
+      for (const slug of d.excludedSlugs) {
+        const name = resolveSpeciesSlug(slugIndex, model, slug);
+        if (name) excluded.push(name);
+      }
+      appliedRef.current = identity;
+      setCompleter({
+        fixedIdxs: fixed.slice(0, TEAM_SIZE),
+        excludedSpecies: excluded,
+        fieldWeight: d.fieldWeight,
+        usePT: d.usePT,
+        temperature: d.temperature,
+        ptRuns: d.ptRuns,
+        ptLadder: d.ptLadder,
+        ptSweeps: d.ptSweeps,
+        ptSwapInterval: d.ptSwapInterval,
+      });
+      if (d.seed !== null) {
+        setSeedCounter(d.seed);
+        setRestoredSeed(d.seed);
+      }
+      return;
+    }
+
+    // Legacy ?pinned= (set by the /science page): pin the species' most
+    // popular build.
     const pinned = searchParams.get("pinned");
     if (!pinned) return;
     let bestIdx = -1;
@@ -110,23 +168,38 @@ export function CompleterPage() {
         bestIdx = i;
       }
     }
+    appliedRef.current = identity;
     if (bestIdx !== -1) setCompleter({ fixedIdxs: [bestIdx] });
-    setSearchParams({}, { replace: true });
-  }, [status, model, searchParams, setSearchParams, setCompleter]);
+  }, [status, model, modelId, searchParams, setCompleter, setPhaseKey]);
 
   // Ephemeral state — not persisted across tab switches.
   const [seedCounter, setSeedCounter] = useState(1);
+  // A seed restored from a shared link but not yet consumed by a run.
+  // Keeps the URL advertising the reproducible seed until the user Samples.
+  const [restoredSeed, setRestoredSeed] = useState<number | null>(null);
   const [running, setRunning] = useState(false);
   const [runState, setRunState] = useState<RunState | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const elapsedTimer = useRef<number | null>(null);
 
-  useEffect(() => {
-    setRunState(null);
-    setErrorMsg(null);
-    setSeedCounter(1);
-  }, [phaseKey]);
+  // Clear per-model run state when the active model changes. Done during
+  // render (not in an effect) so it can't clobber the decode effect that
+  // restores a shared link's seed: useEffect runs after render, and this
+  // reset is declared after decode, so as an effect it would fire second
+  // and wipe the just-restored seed. The "—" placeholder isn't a loaded
+  // model, so we only reset when leaving one that was already loaded.
+  const prevRunPhase = useRef(phaseKey);
+  if (prevRunPhase.current !== phaseKey) {
+    const leavingLoadedModel = prevRunPhase.current !== "—";
+    prevRunPhase.current = phaseKey;
+    if (leavingLoadedModel) {
+      setRunState(null);
+      setErrorMsg(null);
+      setSeedCounter(1);
+      setRestoredSeed(null);
+    }
+  }
 
   const vocabOpts = useMemo(
     () => (model ? vocabOptions(model) : []),
@@ -197,6 +270,76 @@ export function CompleterPage() {
     return true;
   })();
 
+  // Seed to advertise in the URL: the displayed PT run's seed while inputs
+  // still match it, otherwise a seed restored from a link but not yet run.
+  const seedForUrl = !usePT
+    ? null
+    : runState?.mode === "pt" && isPTRerun
+      ? runState.seed
+      : restoredSeed;
+
+  // Live-sync the URL from the form (debounced so slider drags settle into
+  // one write). Skipped while an incoming link is still pending decode and
+  // when there's nothing worth sharing (empty roster + no excludes).
+  const fixedKey = fixedIdxs.join(",");
+  const excludedKey = [...excludedSpecies].sort().join(",");
+  const shareParams = useMemo(() => {
+    if (!model) return null;
+    if (fixedIdxs.length === 0 && excludedSpecies.length === 0) return null;
+    return encodeCompleter(
+      {
+        modelId,
+        fieldWeight,
+        fixedIdxs,
+        excludedSpecies,
+        usePT,
+        temperature,
+        ptRuns,
+        ptLadder,
+        ptSweeps,
+        ptSwapInterval,
+        seed: seedForUrl,
+      },
+      model,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    model, modelId, fieldWeight, fixedKey, excludedKey, usePT, temperature,
+    ptRuns, ptLadder, ptSweeps, ptSwapInterval, seedForUrl,
+  ]);
+  useEffect(() => {
+    if (!shareParams) return;
+    if (searchParams.get("t") && searchParams.toString() !== appliedRef.current) {
+      return; // incoming link not yet decoded
+    }
+    const next = shareParams.toString();
+    if (next === searchParams.toString()) return;
+    const handle = setTimeout(() => {
+      appliedRef.current = next;
+      setSearchParams(shareParams, { replace: true });
+    }, 300);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shareParams]);
+
+  // Import a pokepaste from the clipboard into the starting roster.
+  const [importMsg, setImportMsg] = useState<{
+    error: string | null;
+    warnings: string[];
+  } | null>(null);
+  const handleImport = useCallback(async () => {
+    if (!model) return;
+    try {
+      const text = await navigator.clipboard.readText();
+      const { idxs, errors, warnings } = matchPaste(model, text);
+      if (idxs.length > 0) setFixedIdxs(idxs);
+      setImportMsg({ error: errors[0] ?? null, warnings });
+    } catch {
+      setImportMsg({ error: "Couldn't read the clipboard.", warnings: [] });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model]);
+
   const startTimer = () => {
     const t0 = performance.now();
     setElapsedMs(0);
@@ -216,6 +359,8 @@ export function CompleterPage() {
     if (!canRun || !model) return;
     setErrorMsg(null);
     setRunning(true);
+    // The displayed run now governs the URL seed; drop any armed link seed.
+    setRestoredSeed(null);
 
     if (!usePT) {
       // Fast path — synchronous, ~50–200ms. queueMicrotask lets the
@@ -335,6 +480,21 @@ export function CompleterPage() {
             placeholder="Choose Pokemon to include"
             ariaLabel="Starting roster"
           />
+          <div style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              className="lab-analyze-btn lab-copy-paste-btn"
+              onClick={handleImport}
+            >
+              Import from clipboard
+            </button>
+          </div>
+          {importMsg?.error && (
+            <div className="lab-form-error">{importMsg.error}</div>
+          )}
+          {importMsg?.warnings.map((w, i) => (
+            <div className="lab-form-note" key={i}>{w}</div>
+          ))}
         </div>
         <div>
           <label className="lab-form-label">Exclude (must NOT appear)</label>

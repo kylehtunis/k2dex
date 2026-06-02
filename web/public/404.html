@@ -5,12 +5,15 @@
     <title>Redirecting…</title>
     <script>
       // SPA fallback for GitHub Pages: redirect to index with the original
-      // path encoded as a query parameter. The app reads it on load and
-      // replaces the URL via the router.
+      // path (and its query string) encoded as a single parameter. The app
+      // reads it on load and replaces the URL via the router. The query must
+      // ride along so shareable links (?t=...) survive the bounce.
       var base = "/k2dex";
       var path = location.pathname;
       if (path.startsWith(base)) path = path.slice(base.length) || "/";
-      location.replace(base + "/?route=" + encodeURIComponent(path) + location.hash);
+      location.replace(
+        base + "/?route=" + encodeURIComponent(path + location.search) + location.hash,
+      );
     </script>
   </head>
   <body></body>

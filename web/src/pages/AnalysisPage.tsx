@@ -10,7 +10,7 @@
 //
 // All math is deterministic (no MCMC); recomputes inline when inputs change.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   FIELD_WEIGHT_OPTIONS,
@@ -33,28 +33,102 @@ import { rankSingleSwaps } from "../sampler/rank";
 import { greedyOptimize } from "../sampler/greedy";
 import { buildPartialPaste, formatSigned } from "../render/format";
 import { speciesToSlug } from "../render/sprite-url";
+import { buildSlugIndex, matchPaste, resolveFeature } from "../render/vocab-match";
+import { decodeCore, encodeCore } from "../render/shareLink";
 import { PairwiseJTable } from "../analysis/PairwiseJTable";
 import { SwapsTable } from "../analysis/SwapsTable";
 import { ChainTable } from "../analysis/ChainTable";
 
 export function AnalysisPage() {
-  const { model, teamCounts, status } = useModel();
+  const { model, teamCounts, status, phaseKey, setPhaseKey } = useModel();
   const [searchParams, setSearchParams] = useSearchParams();
   const { analysis, setAnalysis } = usePageState();
   const { teamIdxs, fieldWeight } = analysis;
 
-  // Pre-populate from ?team= query param (set by the completer's "Analyze" button).
+  // The share token currently reflected in (or being applied from) the URL.
+  // Guards the decode/live-sync handshake: decode marks a token applied,
+  // live-sync skips writing while an unapplied incoming token is pending.
+  const appliedTokenRef = useRef<string | null>(null);
+
+  // Decode a shared link into state. Accepts the slug token (?t=) and a
+  // legacy ?team= index list. Switches the model first if the token names a
+  // different one, then applies once the matching model is ready.
   useEffect(() => {
     if (status !== "ready" || !model) return;
-    const teamParam = searchParams.get("team");
-    if (!teamParam) return;
-    const idxs = teamParam
+    const token = searchParams.get("t");
+    const legacyTeam = searchParams.get("team");
+    const key = token ?? (legacyTeam ? `team:${legacyTeam}` : null);
+    if (!key || key === appliedTokenRef.current) return;
+
+    if (token) {
+      const decoded = decodeCore(token);
+      if (!decoded) {
+        appliedTokenRef.current = key;
+        return;
+      }
+      if (decoded.modelId !== phaseKey) {
+        setPhaseKey(decoded.modelId);
+        return; // re-run once the new model is ready
+      }
+      const slugIndex = buildSlugIndex(model);
+      const idxs: number[] = [];
+      for (const f of decoded.features) {
+        const r = resolveFeature(slugIndex, model, f.speciesSlug, f.itemSlug);
+        if (r.idx !== null) idxs.push(r.idx);
+      }
+      appliedTokenRef.current = key;
+      setAnalysis({
+        teamIdxs: idxs.slice(0, TEAM_SIZE),
+        fieldWeight: decoded.fieldWeight,
+      });
+      return;
+    }
+
+    // Legacy ?team=idx,idx fallback.
+    const idxs = legacyTeam!
       .split(",")
       .map(Number)
       .filter((i) => !isNaN(i) && i >= 0 && i < model.V);
+    appliedTokenRef.current = key;
     if (idxs.length > 0) setAnalysis({ teamIdxs: idxs.slice(0, TEAM_SIZE) });
-    setSearchParams({}, { replace: true });
-  }, [status, model, searchParams, setSearchParams, setAnalysis]);
+  }, [status, model, phaseKey, searchParams, setAnalysis, setPhaseKey]);
+
+  // Live-sync the URL from state (debounced so a slider drag settles into
+  // one write). Skipped while an incoming token is still pending decode.
+  const teamKey = useMemo(
+    () => [...teamIdxs].sort((a, b) => a - b).join(","),
+    [teamIdxs],
+  );
+  useEffect(() => {
+    if (!model || teamIdxs.length === 0) return;
+    const incoming = searchParams.get("t");
+    if (incoming && incoming !== appliedTokenRef.current) return;
+    const token = encodeCore(phaseKey, fieldWeight, teamIdxs, model);
+    if (token === searchParams.get("t")) return;
+    const handle = setTimeout(() => {
+      appliedTokenRef.current = token;
+      setSearchParams({ t: token }, { replace: true });
+    }, 300);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model, phaseKey, teamKey, fieldWeight]);
+
+  // Import a pokepaste from the clipboard into the team.
+  const [importMsg, setImportMsg] = useState<{
+    error: string | null;
+    warnings: string[];
+  } | null>(null);
+  const handleImport = useCallback(async () => {
+    if (!model) return;
+    try {
+      const text = await navigator.clipboard.readText();
+      const { idxs, errors, warnings } = matchPaste(model, text);
+      if (idxs.length > 0) setAnalysis({ teamIdxs: idxs });
+      setImportMsg({ error: errors[0] ?? null, warnings });
+    } catch {
+      setImportMsg({ error: "Couldn't read the clipboard.", warnings: [] });
+    }
+  }, [model, setAnalysis]);
 
   const vocabOpts = useMemo(
     () => (model ? vocabOptions(model) : []),
@@ -162,17 +236,29 @@ export function AnalysisPage() {
           ariaLabel="Your team"
         />
       </div>
-      {teamIdxs.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <button
-            type="button"
-            className="lab-analyze-btn lab-copy-paste-btn"
-            onClick={handleCopyPaste}
-          >
-            {copied ? "Copied!" : "Copy pokepaste"}
-          </button>
-        </div>
+      <div style={{ marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className="lab-analyze-btn lab-copy-paste-btn"
+          onClick={handleImport}
+        >
+          Import from clipboard
+        </button>
+        <button
+          type="button"
+          className="lab-analyze-btn lab-copy-paste-btn"
+          onClick={handleCopyPaste}
+          disabled={!teamComplete}
+        >
+          {copied ? "Copied!" : "Copy pokepaste"}
+        </button>
+      </div>
+      {importMsg?.error && (
+        <div className="lab-form-error">{importMsg.error}</div>
       )}
+      {importMsg?.warnings.map((w, i) => (
+        <div className="lab-form-note" key={i}>{w}</div>
+      ))}
 
       {uniquenessError && (
         <div className="lab-form-error">{uniquenessError}</div>

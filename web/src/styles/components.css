@@ -345,6 +345,14 @@
 .lab-copy-paste-btn {
   cursor: pointer;
 }
+.lab-analyze-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.lab-analyze-btn:disabled:hover {
+  background: transparent;
+  color: var(--lab-accent);
+}
 
 /* ----- /science page ----- */
 

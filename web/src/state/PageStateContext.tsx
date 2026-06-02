@@ -9,7 +9,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useRef,
   useState,
   type ReactNode,
@@ -77,13 +76,21 @@ export function PageStateProvider({ children }: { children: ReactNode }) {
     () => ({ ...ANALYSIS_DEFAULTS }),
   );
 
-  useEffect(() => {
-    if (prevPhase.current !== phaseKey) {
-      prevPhase.current = phaseKey;
+  // Reset stale indices when the active model changes. Done during render
+  // (not in an effect) so the reset lands before any child page's effects:
+  // useEffect fires child-first, so a reset in a parent effect would run
+  // *after* a child's decode effect and clobber a just-restored shared link.
+  // See react.dev "You Might Not Need an Effect → Adjusting some state when
+  // a prop changes". The "—" placeholder (model not yet loaded) is not a
+  // real model, so we only reset when leaving an already-loaded model.
+  if (prevPhase.current !== phaseKey) {
+    const leavingLoadedModel = prevPhase.current !== "—";
+    prevPhase.current = phaseKey;
+    if (leavingLoadedModel) {
       setCompleterRaw({ ...COMPLETER_DEFAULTS });
       setAnalysisRaw({ ...ANALYSIS_DEFAULTS });
     }
-  }, [phaseKey]);
+  }
 
   const setCompleter = useCallback(
     (patch: Partial<CompleterInputs>) =>
