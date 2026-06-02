@@ -63,9 +63,15 @@ export function resolveFeature(
       }
     }
     const itemLabel = labels?.item ?? itemSlug;
+    if (candidates.length === 1) {
+      return {
+        idx: candidates[0],
+        warning: null,
+      };
+    }
     return {
-      idx: candidates[0],
-      warning: `${itemLabel} on ${speciesLabel} isn't in this model — matched the species only.`,
+      idx: null,
+      warning: `${speciesLabel} @ ${itemLabel} is not in this model — skipped.`,
     };
   }
   return { idx: candidates[0], warning: null };
