@@ -25,7 +25,8 @@ export function ModelPicker() {
           onClick={() => {
             if (o.key === phaseKey) return;
             setPhaseKey(o.key);
-            window.location.replace(pathname);
+            const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+            window.location.replace(base + pathname);
           }}
         >
           {o.label}
