@@ -125,6 +125,17 @@ _SPECIES_ALIASES: dict[str, str] = {
     "Floette": "Eternal Flower Floette",
 }
 
+_ITEM_ALIASES: dict[str, str] = {
+    "Dread Plate": "Black Glasses",
+    "Glimmorite": "Glimmoranite",
+}
+
+_ILLEGAL_ITEMS = frozenset({
+    "Covert Cloak",
+    "Assault Vest",
+    "Safety Goggles",
+})
+
 _BRACKET_RE = re.compile(r"^(.+?)\s*\[(.+)]\s*$")
 
 _COSMETIC_FORMES = frozenset({
@@ -341,6 +352,10 @@ def extract_teams(standings: list[dict]) -> list[Team]:
             name = strip_mega_prefix(name)
             name = _SPECIES_ALIASES.get(name, name)
             item = normalize_name(mon.get("item"))
+            if item:
+                item = _ITEM_ALIASES.get(item, item)
+                if item in _ILLEGAL_ITEMS:
+                    continue
             members.append((name, item))
         if len(members) != TEAM_SIZE:
             continue
