@@ -125,6 +125,69 @@ _SPECIES_ALIASES: dict[str, str] = {
     "Floette": "Eternal Flower Floette",
 }
 
+_BRACKET_RE = re.compile(r"^(.+?)\s*\[(.+)]\s*$")
+
+_COSMETIC_FORMES = frozenset({
+    "family of four", "family of three",
+    "unremarkable form", "masterpiece form",
+    "phony form", "antique form",
+})
+
+_REGIONAL_PREFIXES = frozenset({"hisuian", "alolan", "galarian", "paldean"})
+
+
+def normalize_bracket_forme(name: str) -> str:
+    """Convert bracket-notation formes to Limitless prefix-style names.
+
+    In-person tournament data uses ``Species [Forme]`` notation (e.g.
+    ``Arcanine [Hisuian Form]``) while the Limitless API uses prefix-style
+    names (``Hisuian Arcanine``). This normalizes to the Limitless convention
+    so both data sources produce identical vocab entries.
+
+    Must be called BEFORE ``normalize_name``, because ``normalize_name``'s
+    ``.capitalize()`` fails on bracket-prefixed tokens (``[hisuian`` stays
+    lowercase since ``[`` is not a letter).
+    """
+    if not name or "[" not in name:
+        return name
+
+    match = _BRACKET_RE.match(name)
+    if not match:
+        return name
+
+    base = match.group(1).strip()
+    bracket = match.group(2).strip()
+    bracket_lower = bracket.lower()
+
+    if bracket_lower in _COSMETIC_FORMES:
+        return base
+
+    if bracket_lower == "male":
+        return base
+    if bracket_lower == "female":
+        return f"{base} ♀"
+
+    if base.lower() == "rotom" and "rotom" in bracket_lower:
+        return bracket
+
+    for region in _REGIONAL_PREFIXES:
+        if bracket_lower.startswith(f"{region} form"):
+            region_title = region.capitalize()
+            remainder = bracket[len(f"{region} form"):].strip()
+            if remainder.startswith("- "):
+                breed = remainder[2:].strip()
+                return f"{region_title} {base} {breed}"
+            return f"{region_title} {base}"
+
+    if bracket_lower == "eternal flower":
+        return f"Eternal Flower {base}"
+
+    if bracket_lower.endswith(" form"):
+        forme_word = bracket[:-5].strip()
+        return f"{base} {forme_word}"
+
+    return name
+
 
 def strip_mega_prefix(species: str) -> str:
     """Collapse 'Mega <Base>' / 'Mega <Base> X/Y/Z' species names down to
@@ -271,7 +334,8 @@ def extract_teams(standings: list[dict]) -> list[Team]:
         decklist = entry.get("decklist") or []
         members: list[tuple[str, str | None]] = []
         for mon in decklist:
-            name = normalize_name(mon.get("name"))
+            raw_name = mon.get("name") or ""
+            name = normalize_name(normalize_bracket_forme(raw_name))
             if not name:
                 continue
             name = strip_mega_prefix(name)

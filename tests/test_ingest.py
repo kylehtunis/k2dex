@@ -16,6 +16,7 @@ from k2dex.tournament_ingest import (
     _save_tournament,
     load_cached_tournaments,
     import_in_person_tournaments,
+    normalize_bracket_forme,
 )
 
 
@@ -213,6 +214,65 @@ class TestImportInPerson(unittest.TestCase):
             result = import_in_person_tournaments(local_dir=local_dir, cache_dir=cache_dir)
             self.assertEqual(len(result), 1)
             self.assertEqual(result[0].meta.date, "2026-05-30")
+
+
+class TestNormalizeBracketForme(unittest.TestCase):
+    def test_regional_hisuian(self):
+        self.assertEqual(normalize_bracket_forme("Arcanine [Hisuian Form]"), "Hisuian Arcanine")
+        self.assertEqual(normalize_bracket_forme("Typhlosion [Hisuian Form]"), "Hisuian Typhlosion")
+
+    def test_regional_alolan(self):
+        self.assertEqual(normalize_bracket_forme("Ninetales [Alolan Form]"), "Alolan Ninetales")
+        self.assertEqual(normalize_bracket_forme("Raichu [Alolan Form]"), "Alolan Raichu")
+
+    def test_regional_galarian(self):
+        self.assertEqual(normalize_bracket_forme("Slowbro [Galarian Form]"), "Galarian Slowbro")
+        self.assertEqual(normalize_bracket_forme("Slowking [Galarian Form]"), "Galarian Slowking")
+
+    def test_regional_paldean_with_breed(self):
+        self.assertEqual(
+            normalize_bracket_forme("Tauros [Paldean Form - Aqua Breed]"),
+            "Paldean Tauros Aqua Breed",
+        )
+        self.assertEqual(
+            normalize_bracket_forme("Tauros [Paldean Form - Combat Breed]"),
+            "Paldean Tauros Combat Breed",
+        )
+
+    def test_rotom_formes(self):
+        self.assertEqual(normalize_bracket_forme("Rotom [Wash Rotom]"), "Wash Rotom")
+        self.assertEqual(normalize_bracket_forme("Rotom [Heat Rotom]"), "Heat Rotom")
+        self.assertEqual(normalize_bracket_forme("Rotom [Mow Rotom]"), "Mow Rotom")
+
+    def test_cosmetic_stripped(self):
+        self.assertEqual(normalize_bracket_forme("Maushold [Family of Four]"), "Maushold")
+        self.assertEqual(normalize_bracket_forme("Maushold [Family of Three]"), "Maushold")
+        self.assertEqual(normalize_bracket_forme("Sinistcha [Unremarkable Form]"), "Sinistcha")
+        self.assertEqual(normalize_bracket_forme("Sinistcha [Masterpiece Form]"), "Sinistcha")
+        self.assertEqual(normalize_bracket_forme("Polteageist [Phony Form]"), "Polteageist")
+
+    def test_gender_male_stripped(self):
+        self.assertEqual(normalize_bracket_forme("Meowstic [Male]"), "Meowstic")
+        self.assertEqual(normalize_bracket_forme("Basculegion [Male]"), "Basculegion")
+
+    def test_gender_female(self):
+        self.assertEqual(normalize_bracket_forme("Basculegion [Female]"), "Basculegion ♀")
+        self.assertEqual(normalize_bracket_forme("Meowstic [Female]"), "Meowstic ♀")
+
+    def test_named_forme_suffix(self):
+        self.assertEqual(normalize_bracket_forme("Lycanroc [Dusk Form]"), "Lycanroc Dusk")
+        self.assertEqual(normalize_bracket_forme("Lycanroc [Midday Form]"), "Lycanroc Midday")
+        self.assertEqual(normalize_bracket_forme("Lycanroc [Midnight Form]"), "Lycanroc Midnight")
+
+    def test_eternal_flower(self):
+        self.assertEqual(normalize_bracket_forme("Floette [Eternal Flower]"), "Eternal Flower Floette")
+
+    def test_no_brackets_unchanged(self):
+        self.assertEqual(normalize_bracket_forme("Incineroar"), "Incineroar")
+        self.assertEqual(normalize_bracket_forme("Wash Rotom"), "Wash Rotom")
+
+    def test_empty_and_none(self):
+        self.assertEqual(normalize_bracket_forme(""), "")
 
 
 if __name__ == "__main__":
