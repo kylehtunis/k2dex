@@ -45,6 +45,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from k2dex.constants import (
+    CURRENT_REGULATION,
     PHASE2_MIN_TEAM_COUNT,
     SPECIES_ITEM_LR_LAMBDA,
     SPECIES_LR_LAMBDA,
@@ -263,7 +264,8 @@ def main() -> int:
     )
     group.add_argument(
         "--regulation",
-        help="Regulation string for tournament filtering (e.g. 'M-A').",
+        default=CURRENT_REGULATION,
+        help=f"Regulation string for tournament filtering (default: {CURRENT_REGULATION}).",
     )
     group.add_argument(
         "--type",
@@ -313,8 +315,8 @@ def main() -> int:
         generate_manifest(out_dir, default_model=args.default_model)
         return 0
 
-    if not args.display_name or not args.regulation or not args.model_type:
-        parser.error("--display-name, --regulation, and --type are required for model builds.")
+    if not args.display_name or not args.model_type:
+        parser.error("--display-name and --type are required for model builds.")
 
     slug = slugify(args.display_name)
     lam = args.lam if args.lam is not None else DEFAULT_LAMBDA[args.model_type]

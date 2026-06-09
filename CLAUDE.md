@@ -139,6 +139,7 @@ The app uses a "lab notebook" palette + type system delivered via CSS injection.
 
 Easy to get wrong if you only look at one file:
 
+- **`CURRENT_REGULATION`** (`constants.py` + `constants.ts`) determines the active regulation for the webapp model picker (models from other regulations are collapsed under a "Legacy" toggle) and serves as the default for `--regulation` in `precompute.py` and both loaders. Update this constant when a new regulation begins.
 - **Gaussian model vocab cutoff is `min_usage=0.002`** (~170 Pokémon at Reg M-A 1760). PL model vocab cutoff is `PHASE2_MIN_TEAM_COUNT = 5` (feature must appear in ≥5 teams).
 - **Regularization differs by model.** `SPECIES_LR_LAMBDA = 10.0`; `SPECIES_ITEM_LR_LAMBDA = 1.0` (sparser pair matrix wants weaker regularization). Lambda is the canonical L2 penalty; converted to sklearn's `C = 1/lambda` internally. Each `loaders` builder passes its own default; `precompute.py --lambda` overrides it. `meta.json` records `fit.lambda`. `notebooks/regularization_sweep.ipynb` is the sweep harness behind these values.
 - **`MIN_TEAMS_PER_TOURNAMENT = 64`** filters out small/quirky tournaments at ingest time. Below this they tended to be majority-Bo1 or unusual local metas.
@@ -270,7 +271,7 @@ The invariant: **no Python↔TypeScript code duplication is allowed without a ga
 | `k2dex.loaders.format_pair` | `render/format.ts:formatPair` | covered indirectly (precompute writes the joined string into `meta.json:vocab`) |
 | `scripts.precompute.pack_lower_triangle` (writer) | `sampler/model.ts:unpackLowerTriangle` (reader) | JS smoke + `tests/test_precompute.py` round-trip |
 | `scripts.precompute.serialize_team_counts` schema | `sampler/model.ts:loadTeamCounts` + `render/corpus.ts:teamKey` | `tests/test_precompute.py` + `test_parity.py::test_corpus_cases` |
-| `k2dex.constants.{TEAM_SIZE, FIELD_WEIGHT_OPTIONS, ...}` | `web/src/constants.ts` | manual (rarely changes; values pinned by v1 simplification) |
+| `k2dex.constants.{TEAM_SIZE, CURRENT_REGULATION, FIELD_WEIGHT_OPTIONS, ...}` | `web/src/constants.ts` | manual (rarely changes; values pinned by v1 simplification) |
 | `k2dex.rendering_html` HTML class names (`lab-slot`, `lab-comp-table`, …) | `web/src/render/*.tsx` className strings + `web/src/styles/components.css` | visual — class renames must touch both sides |
 | `k2dex.styles` `LAB_*` constants + CSS rules | `web/src/styles/{tokens,layout,components,widgets}.css` | visual — palette/typography changes touch both |
 

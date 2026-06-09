@@ -14,6 +14,7 @@ from numpy.typing import NDArray
 
 from . import tournament_ingest
 from .constants import (
+    CURRENT_REGULATION,
     PHASE2_MIN_TEAM_COUNT,
     SPECIES_ITEM_LR_LAMBDA,
     SPECIES_LR_LAMBDA,
@@ -43,7 +44,7 @@ def format_pair(species: str, item: str | None) -> str:
 
 def build_species_model(
     *,
-    regulation: str = "M-A",
+    regulation: str = CURRENT_REGULATION,
     min_team_count: int = PHASE2_MIN_TEAM_COUNT,
     lam: float = SPECIES_LR_LAMBDA,
 ) -> SpeciesModel:
@@ -75,7 +76,7 @@ def build_species_model(
 
 def build_species_item_model(
     *,
-    regulation: str = "M-A",
+    regulation: str = CURRENT_REGULATION,
     min_team_count: int = PHASE2_MIN_TEAM_COUNT,
     lam: float = SPECIES_ITEM_LR_LAMBDA,
 ) -> SpeciesModel:

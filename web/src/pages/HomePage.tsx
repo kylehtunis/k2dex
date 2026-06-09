@@ -5,7 +5,9 @@
 // Layout.tsx). After selecting, the choice is persisted via ModelContext
 // (localStorage) so subsequent page visits remember it.
 
+import { useState } from "react";
 import { Link } from "react-router-dom";
+import { CURRENT_REGULATION } from "../constants";
 import { useModel } from "../state/ModelContext";
 import type { ModelSummary } from "../state/manifest";
 
@@ -17,6 +19,50 @@ function formatDate(iso: string): string {
 
 function dimTag(fd: number): string {
   return fd === 1 ? "Species only" : "With held items";
+}
+
+function ModelCard({
+  m,
+  isActive,
+  status,
+  onSelect,
+}: {
+  m: ModelSummary;
+  isActive: boolean;
+  status: string;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`lab-home-model-card${isActive ? " is-active" : ""}`}
+      aria-pressed={isActive}
+    >
+      <div className="lab-home-model-card-header">
+        <span className="lab-home-model-card-label">{m.displayName}</span>
+        <span className="lab-home-model-card-tag">{dimTag(m.featureDimensions)}</span>
+      </div>
+      <div className="lab-home-model-card-footer">
+        <span className="lab-home-model-stats">
+          {m.V.toLocaleString()} features
+          <span className="lab-home-model-sep">·</span>
+          {m.nCorpusTeams.toLocaleString()} teams
+          {m.latestTournamentDate && (
+            <>
+              <span className="lab-home-model-sep">·</span>
+              {formatDate(m.latestTournamentDate)}
+            </>
+          )}
+        </span>
+        {isActive && (
+          <span className="lab-home-model-active-mark">
+            {status === "loading" ? "Loading…" : "✓ active"}
+          </span>
+        )}
+      </div>
+    </button>
+  );
 }
 
 const TOOLS = [
@@ -42,13 +88,19 @@ const TOOLS = [
 
 export function HomePage() {
   const { modelId, setModelId, manifest, status } = useModel();
+  const [legacyOpen, setLegacyOpen] = useState(false);
 
-  const grouped = new Map<string, ModelSummary[]>();
+  const currentModels: ModelSummary[] = [];
+  const legacyGrouped = new Map<string, ModelSummary[]>();
   if (manifest) {
     for (const m of manifest.models) {
       const reg = m.regulation || "Other";
-      if (!grouped.has(reg)) grouped.set(reg, []);
-      grouped.get(reg)!.push(m);
+      if (reg === CURRENT_REGULATION) {
+        currentModels.push(m);
+      } else {
+        if (!legacyGrouped.has(reg)) legacyGrouped.set(reg, []);
+        legacyGrouped.get(reg)!.push(m);
+      }
     }
   }
 
@@ -81,50 +133,41 @@ export function HomePage() {
           VGC tournaments (64+ players).
         </p>
 
-        {manifest && [...grouped.entries()].map(([reg, models]) => (
-          <div key={reg} className="lab-home-model-group">
-            {grouped.size > 1 && (
-              <div className="lab-home-model-group-label">Reg {reg}</div>
-            )}
+        {manifest && currentModels.length > 0 && (
+          <div className="lab-home-model-group">
             <div className="lab-home-model-cards">
-              {models.map((m) => {
-                const isActive = m.id === modelId;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setModelId(m.id)}
-                    className={`lab-home-model-card${isActive ? " is-active" : ""}`}
-                    aria-pressed={isActive}
-                  >
-                    <div className="lab-home-model-card-header">
-                      <span className="lab-home-model-card-label">{m.displayName}</span>
-                      <span className="lab-home-model-card-tag">{dimTag(m.featureDimensions)}</span>
-                    </div>
-                    <div className="lab-home-model-card-footer">
-                      <span className="lab-home-model-stats">
-                        {m.V.toLocaleString()} features
-                        <span className="lab-home-model-sep">·</span>
-                        {m.nCorpusTeams.toLocaleString()} teams
-                        {m.latestTournamentDate && (
-                          <>
-                            <span className="lab-home-model-sep">·</span>
-                            {formatDate(m.latestTournamentDate)}
-                          </>
-                        )}
-                      </span>
-                      {isActive && (
-                        <span className="lab-home-model-active-mark">
-                          {status === "loading" ? "Loading…" : "✓ active"}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
+              {currentModels.map((m) => (
+                <ModelCard key={m.id} m={m} isActive={m.id === modelId} status={status} onSelect={() => setModelId(m.id)} />
+              ))}
             </div>
           </div>
-        ))}
+        )}
+
+        {manifest && legacyGrouped.size > 0 && (
+          <div className="lab-home-legacy">
+            <button
+              type="button"
+              className="lab-home-legacy-toggle"
+              onClick={() => setLegacyOpen((o) => !o)}
+              aria-expanded={legacyOpen}
+            >
+              <span>Legacy regulations</span>
+              <span className={`lab-home-legacy-chevron${legacyOpen ? " open" : ""}`}>
+                &#9662;
+              </span>
+            </button>
+            {legacyOpen && [...legacyGrouped.entries()].map(([reg, models]) => (
+              <div key={reg} className="lab-home-model-group">
+                <div className="lab-home-model-group-label">Reg {reg}</div>
+                <div className="lab-home-model-cards">
+                  {models.map((m) => (
+                    <ModelCard key={m.id} m={m} isActive={m.id === modelId} status={status} onSelect={() => setModelId(m.id)} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Tools */}
