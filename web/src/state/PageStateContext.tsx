@@ -66,8 +66,8 @@ const PageStateContext = createContext<PageStateContextValue | null>(null);
 
 export function PageStateProvider({ children }: { children: ReactNode }) {
   const { model } = useModel();
-  const phaseKey = model?.name ?? "—";
-  const prevPhase = useRef(phaseKey);
+  const currentId = model?.id ?? "—";
+  const prevId = useRef(currentId);
 
   const [completer, setCompleterRaw] = useState<CompleterInputs>(
     () => ({ ...COMPLETER_DEFAULTS }),
@@ -83,9 +83,9 @@ export function PageStateProvider({ children }: { children: ReactNode }) {
   // See react.dev "You Might Not Need an Effect → Adjusting some state when
   // a prop changes". The "—" placeholder (model not yet loaded) is not a
   // real model, so we only reset when leaving an already-loaded model.
-  if (prevPhase.current !== phaseKey) {
-    const leavingLoadedModel = prevPhase.current !== "—";
-    prevPhase.current = phaseKey;
+  if (prevId.current !== currentId) {
+    const leavingLoadedModel = prevId.current !== "—";
+    prevId.current = currentId;
     if (leavingLoadedModel) {
       setCompleterRaw({ ...COMPLETER_DEFAULTS });
       setAnalysisRaw({ ...ANALYSIS_DEFAULTS });

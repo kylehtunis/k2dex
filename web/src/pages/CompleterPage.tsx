@@ -92,7 +92,7 @@ type RunState =
     };
 
 export function CompleterPage() {
-  const { model, teamCounts, status, phaseKey: modelId, setPhaseKey } = useModel();
+  const { model, teamCounts, status, modelId, setModelId } = useModel();
   const [searchParams, setSearchParams] = useSearchParams();
   const { completer, setCompleter } = usePageState();
 
@@ -102,7 +102,7 @@ export function CompleterPage() {
   } = completer;
   const setFixedIdxs = (v: number[]) => setCompleter({ fixedIdxs: v });
 
-  const phaseKey = model?.name ?? "—";
+  const currentModelId = model?.id ?? "—";
 
   // Identity of the URL state currently applied / being written, so the
   // decode and live-sync effects don't clobber each other.
@@ -123,7 +123,7 @@ export function CompleterPage() {
         return;
       }
       if (d.modelId !== modelId) {
-        setPhaseKey(d.modelId);
+        setModelId(d.modelId);
         return; // re-run once the new model is ready
       }
       const slugIndex = buildSlugIndex(model);
@@ -170,7 +170,7 @@ export function CompleterPage() {
     }
     appliedRef.current = identity;
     if (bestIdx !== -1) setCompleter({ fixedIdxs: [bestIdx] });
-  }, [status, model, modelId, searchParams, setCompleter, setPhaseKey]);
+  }, [status, model, modelId, searchParams, setCompleter, setModelId]);
 
   // Ephemeral state — not persisted across tab switches.
   const [seedCounter, setSeedCounter] = useState(1);
@@ -189,10 +189,10 @@ export function CompleterPage() {
   // reset is declared after decode, so as an effect it would fire second
   // and wipe the just-restored seed. The "—" placeholder isn't a loaded
   // model, so we only reset when leaving one that was already loaded.
-  const prevRunPhase = useRef(phaseKey);
-  if (prevRunPhase.current !== phaseKey) {
+  const prevRunPhase = useRef(currentModelId);
+  if (prevRunPhase.current !== currentModelId) {
     const leavingLoadedModel = prevRunPhase.current !== "—";
-    prevRunPhase.current = phaseKey;
+    prevRunPhase.current = currentModelId;
     if (leavingLoadedModel) {
       setRunState(null);
       setErrorMsg(null);
@@ -221,10 +221,10 @@ export function CompleterPage() {
         elapsedTimer.current = null;
       }
     };
-  }, [phaseKey]);
+  }, [currentModelId]);
 
   const corpusCaption = model
-    ? `Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`
+    ? `Reg ${model.regulation} · ${model.nCorpusTeams.toLocaleString()} teams`
     : undefined;
 
   const fixedNames = model ? fixedIdxs.map((i) => model.vocab[i]) : [];

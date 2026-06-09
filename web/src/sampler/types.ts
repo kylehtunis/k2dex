@@ -5,11 +5,21 @@
 // render layer only, exactly as in the Python sampling.py.
 
 export interface IsingModel {
+  /** Unique slug identifier (e.g. "reg-m-a-species-item"). */
+  readonly id: string;
+  /** Human-readable display name (e.g. "Reg M-A Species @ Item"). */
+  readonly displayName: string;
+  /** Regulation this model was fit on (e.g. "M-A"). */
+  readonly regulation: string;
+  /** 1 for species-only, 2 for species+item. */
+  readonly featureDimensions: number;
+  /** ISO date string of the most recent tournament in the corpus. */
+  readonly latestTournamentDate: string;
   /** Vocab size (number of features). */
   readonly V: number;
   /** Team size constraint (always 6 for VGC). */
   readonly teamSize: number;
-  /** Vocab display strings (Phase 2: bare species; Phase 3: "Species @ Item"). */
+  /** Vocab display strings (bare species or "Species @ Item"). */
   readonly vocab: readonly string[];
   /** Per-feature species name, for uniqueness constraints. */
   readonly speciesOf: readonly string[];
@@ -25,7 +35,7 @@ export interface IsingModel {
   readonly indexOf: ReadonlyMap<string, number>;
   /** Number of corpus teams the model was fit on. */
   readonly nCorpusTeams: number;
-  /** Display name of the model ("species" | "species_item"). */
+  /** @deprecated Use `id` instead. */
   readonly name: string;
 }
 

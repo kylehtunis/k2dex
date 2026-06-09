@@ -2,15 +2,14 @@
 //
 // Layout mirrors app.py:_render_meta:
 //   PageTitle
-//   §01  Fitted model stat strip
+//   §01  Extreme couplings         (top META_TOP_PAIRS, both directions)
 //   §02  Extreme features by Bias  (top META_TOP_FEATURES, both directions)
-//   §03  Extreme couplings         (top META_TOP_PAIRS, both directions)
-//   §04  Distributional diagnostics (J histogram + h line plot)
+//   §03  Distributional diagnostics (J histogram + h line plot)
 
 import { useMemo } from "react";
 import { META_TOP_FEATURES, META_TOP_PAIRS } from "../constants";
 import { useModel } from "../state/ModelContext";
-import { PageTitle, SectionLabel, StatStrip } from "../render/atoms";
+import { PageTitle, SectionLabel } from "../render/atoms";
 import { FeatureBiasTable } from "../meta/FeatureBiasTable";
 import { ExtremeCouplingsTable } from "../meta/ExtremeCouplingsTable";
 import { filteredCouplings } from "../meta/couplings";
@@ -46,7 +45,7 @@ export function MetaPage() {
   }, [model]);
 
   const corpusCaption = model
-    ? `Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`
+    ? `Reg ${model.regulation} · ${model.nCorpusTeams.toLocaleString()} teams`
     : undefined;
 
   return (
@@ -61,22 +60,40 @@ export function MetaPage() {
         <p style={{ color: "var(--lab-ink-muted)" }}>Loading model…</p>
       ) : <>
 
-      <SectionLabel num="01" title="Fitted model" />
-      <StatStrip
-        cells={[
-          { label: "Model", value: model.name === "species" ? "Species" : "Species @ Item", sub: model.name === "species" ? "PL · species" : "PL · item-pair" },
-          {
-            label: "Vocab",
-            value: model.V.toLocaleString(),
-            sub: "unique entries",
-          },
-          {
-            label: "Corpus",
-            value: model.nCorpusTeams.toLocaleString(),
-            sub: "teams observed",
-          },
-        ]}
+      <SectionLabel
+        num="01"
+        title="Extreme couplings"
+        right={`top ${META_TOP_PAIRS} each direction · ranked by Coupling`}
       />
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 24,
+          marginBottom: 12,
+        }}
+      >
+        <div>
+          <div className="lab-subheading lab-subheading-pos">
+            Top Positive Coupling · synergies
+          </div>
+          <ExtremeCouplingsTable
+            rows={sorted.posSorted.slice(0, META_TOP_PAIRS)}
+            maxJ={sorted.maxJ}
+            model={model}
+          />
+        </div>
+        <div>
+          <div className="lab-subheading lab-subheading-neg">
+            Top Negative Coupling · antisynergies
+          </div>
+          <ExtremeCouplingsTable
+            rows={sorted.negSorted.slice(0, META_TOP_PAIRS)}
+            maxJ={sorted.maxJ}
+            model={model}
+          />
+        </div>
+      </div>
 
       <SectionLabel
         num="02"
@@ -108,41 +125,6 @@ export function MetaPage() {
           <FeatureBiasTable
             order={sorted.orderAsc.slice(0, META_TOP_FEATURES)}
             maxM={sorted.maxM}
-            model={model}
-          />
-        </div>
-      </div>
-
-      <SectionLabel
-        num="03"
-        title="Extreme couplings"
-        right={`top ${META_TOP_PAIRS} each direction · ranked by Coupling`}
-      />
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 24,
-          marginBottom: 12,
-        }}
-      >
-        <div>
-          <div className="lab-subheading lab-subheading-pos">
-            Top Positive Coupling · synergies
-          </div>
-          <ExtremeCouplingsTable
-            rows={sorted.posSorted.slice(0, META_TOP_PAIRS)}
-            maxJ={sorted.maxJ}
-            model={model}
-          />
-        </div>
-        <div>
-          <div className="lab-subheading lab-subheading-neg">
-            Top Negative Coupling · antisynergies
-          </div>
-          <ExtremeCouplingsTable
-            rows={sorted.negSorted.slice(0, META_TOP_PAIRS)}
-            maxJ={sorted.maxJ}
             model={model}
           />
         </div>

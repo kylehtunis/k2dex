@@ -54,6 +54,115 @@
   font-weight: 600;
 }
 
+/* Model picker dropdown. */
+.lab-model-picker {
+  position: relative;
+  display: inline-block;
+}
+.lab-model-picker-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--lab-panel);
+  border: 1px solid var(--lab-rule);
+  border-radius: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-family: var(--lab-font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--lab-ink-soft);
+  transition: border-color 80ms ease;
+}
+.lab-model-picker-toggle:hover {
+  border-color: var(--lab-accent);
+}
+.lab-model-picker-chevron {
+  font-size: 9px;
+  transition: transform 150ms ease;
+}
+.lab-model-picker-chevron.open {
+  transform: rotate(180deg);
+}
+.lab-model-picker-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 100;
+  min-width: 320px;
+  background: var(--lab-bg);
+  border: 1px solid var(--lab-rule);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 6px 0;
+}
+.lab-model-picker-group-label {
+  font-family: var(--lab-font-sans);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+  padding: 8px 14px 4px;
+}
+.lab-model-picker-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 60ms ease;
+}
+.lab-model-picker-option:hover {
+  background: var(--lab-panel);
+}
+.lab-model-picker-option.active {
+  border-left: 3px solid var(--lab-accent);
+  padding-left: 11px;
+}
+.lab-model-picker-option-name {
+  font-family: var(--lab-font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lab-ink);
+}
+.lab-model-picker-option-meta {
+  font-family: var(--lab-font-sans);
+  font-size: 10px;
+  color: var(--lab-ink-muted);
+  letter-spacing: 0.02em;
+}
+
+.lab-model-picker-legacy {
+  border-top: 1px solid var(--lab-rule);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+.lab-model-picker-legacy-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--lab-font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+}
+.lab-model-picker-legacy-toggle:hover {
+  color: var(--lab-ink);
+}
+
 /* Form labels (uppercase eyebrow style). */
 .lab-form-label {
   font-family: var(--lab-font-sans);

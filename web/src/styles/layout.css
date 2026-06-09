@@ -263,11 +263,52 @@
 }
 
 /* Corpus / model picker cards */
+.lab-home-model-group {
+  margin-bottom: 18px;
+}
+.lab-home-model-group-label {
+  font-family: var(--lab-font-sans);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+  margin-bottom: 8px;
+}
 .lab-home-model-cards {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
   max-width: 760px;
+}
+
+.lab-home-legacy {
+  margin-top: 8px;
+}
+.lab-home-legacy-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 0;
+  font-family: var(--lab-font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+}
+.lab-home-legacy-toggle:hover {
+  color: var(--lab-ink);
+}
+.lab-home-legacy-chevron {
+  font-size: 9px;
+  transition: transform 0.15s ease;
+}
+.lab-home-legacy-chevron.open {
+  transform: rotate(180deg);
 }
 
 .lab-home-model-card {

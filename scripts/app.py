@@ -37,8 +37,8 @@ from k2dex import helpers, styles
 from k2dex.constants import (
     PHASE1_MIN_USAGE,
     PHASE1_RIDGE_EPS,
-    SPECIES_ITEM_LR_C,
-    SPECIES_LR_C,
+    SPECIES_ITEM_LR_LAMBDA,
+    SPECIES_LR_LAMBDA,
     TEAM_SIZE,
 )
 from k2dex.loaders import (
@@ -78,14 +78,43 @@ class PhaseModel:
     team_counts: Counter | None
     species_of: list[str]
     item_of: list[str | None]
+    latest_tournament_date: str = ""
 
 
-def _load_phase(phase: str) -> tuple[str, PhaseModel]:
-    if phase.startswith("Phase 1"):
+def _load_manifest_models() -> list[dict]:
+    """Load model entries from the precompute manifest."""
+    manifest_path = Path(__file__).resolve().parent.parent / "web" / "public" / "models" / "manifest.json"
+    if not manifest_path.exists():
+        return []
+    with open(manifest_path) as f:
+        return json.load(f).get("models", [])
+
+
+def _model_type_from_dimensions(fd: int) -> str:
+    return "species" if fd == 1 else "species_item"
+
+
+def _load_phase(phase: str, manifest_models: list[dict]) -> tuple[str, PhaseModel]:
+    if phase == "Phase 1 (Gaussian)":
         return "phase1", PhaseModel(*load_model_phase1())
-    if phase.startswith("Phase 2"):
-        return "species", PhaseModel(*load_model_species())
-    return "species_item", PhaseModel(*load_model_species_item())
+    for m in manifest_models:
+        if m["display_name"] == phase:
+            model_type = _model_type_from_dimensions(m.get("feature_dimensions", 1))
+            lam = m.get("fit", {}).get("lambda") if "fit" in m else None
+            # The manifest doesn't carry fit params; derive from the meta.json.
+            meta_path = (
+                Path(__file__).resolve().parent.parent
+                / "web" / "public" / "models" / m["id"] / "meta.json"
+            )
+            if lam is None and meta_path.exists():
+                with open(meta_path) as f:
+                    meta = json.load(f)
+                lam = meta.get("fit", {}).get("lambda", 1.0)
+            if lam is None:
+                lam = 1.0
+            result = load_model_by_params(model_type, m["regulation"], lam)
+            return m["id"], PhaseModel(*result)
+    return "unknown", PhaseModel([], np.array([]), np.array([]), np.array([]), None, [], [])
 
 
 DATA_PATH_PHASE1 = "gen9championsvgc2026regma-1760.json"
@@ -127,18 +156,15 @@ def load_model_phase1() -> tuple[
     return vocab, m, J, h, None, species_of, item_of
 
 
-@st.cache_resource(show_spinner="Loading Phase 2 (pseudo-likelihood / Limitless species)...")
-def load_model_species():
-    """Streamlit-cached wrapper around `loaders.build_species_model`.
-    See that function's docstring for fit details."""
-    return build_species_model()
-
-
-@st.cache_resource(show_spinner="Loading Phase 3 (pseudo-likelihood / item-pair vocab)...")
-def load_model_species_item():
-    """Streamlit-cached wrapper around `loaders.build_species_item_model`.
-    See that function's docstring for fit details."""
-    return build_species_item_model()
+@st.cache_resource(show_spinner="Loading model...")
+def load_model_by_params(
+    model_type: str,
+    regulation: str,
+    lam: float,
+) -> tuple:
+    """Build a model from manifest-derived parameters."""
+    builder = {"species": build_species_model, "species_item": build_species_item_model}[model_type]
+    return builder(regulation=regulation, lam=lam)
 
 
 @st.cache_data(show_spinner=False)
@@ -334,29 +360,23 @@ def main() -> None:
     st.set_page_config(page_title="k2dex · science", layout="wide")
     styles.inject()
 
+    manifest_models = _load_manifest_models()
+    model_options = ["Phase 1 (Gaussian)"] + [m["display_name"] for m in manifest_models]
+
     header_col1, header_col2 = st.columns([3, 2])
     with header_col1:
         st.markdown("### k2dex · science")
     with header_col2:
         st.markdown('<div class="lab-phase-picker-marker"></div>', unsafe_allow_html=True)
-        phase = st.radio(
-            "Phase",
-            ["Phase 1 (Gaussian)", "Phase 2 (PL, species)", "Phase 3 (PL, item-pair)"],
-            horizontal=True,
+        phase = st.selectbox(
+            "Model",
+            model_options,
+            index=len(model_options) - 1 if model_options else 0,
             label_visibility="collapsed",
-            key="phase_picker",
-            help=(
-                "**Phase 1** — Gaussian / precision-matrix Ising fit on Smogon "
-                "chaos stats. Fast to fit; systematically under-magnitudes strong "
-                "negative couplings.  "
-                "**Phase 2** — pseudo-likelihood fit on Limitless tournament team "
-                "rosters, species-only vocab.  "
-                "**Phase 3** — pseudo-likelihood fit on (species, item) pairs. "
-                "Restores held-item forme distinctions that Phase 2 collapses."
-            ),
+            key="model_picker",
         )
 
-    phase_key, model = _load_phase(phase)
+    phase_key, model = _load_phase(phase, manifest_models)
 
     completer_tab, analysis_tab, meta_tab = st.tabs(
         ["Team completer", "Team analysis", "Meta data"],
@@ -1018,16 +1038,12 @@ def _render_meta(phase_key: str, model: PhaseModel) -> None:
 
     # Summary strip
     n_corpus_teams = sum(team_counts.values()) if team_counts is not None else None
-    fit_label = {
-        "phase1": f"Gaussian · ridge ε={PHASE1_RIDGE_EPS}",
-        "species": f"sklearn LogReg · L2 · C={SPECIES_LR_C}",
-        "species_item": f"sklearn LogReg · L2 · C={SPECIES_ITEM_LR_C}",
-    }[phase_key]
-    phase_label = {
-        "phase1": "Phase 1", "species": "Phase 2", "species_item": "Phase 3",
-    }[phase_key]
+    if phase_key == "phase1":
+        fit_label = f"Gaussian · ridge ε={PHASE1_RIDGE_EPS}"
+    else:
+        fit_label = f"sklearn LogReg · L2 · PL"
     summary_cols = st.columns(6)
-    summary_cols[0].metric("Phase", phase_label)
+    summary_cols[0].metric("Model", phase_key)
     summary_cols[1].metric("Vocab size", f"{V:,}")
     summary_cols[2].metric(
         "Corpus teams",

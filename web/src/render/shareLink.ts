@@ -6,10 +6,13 @@
 // contain [a-z0-9-]. base64/gzip would inflate a payload this short, so
 // the readable delimited form is also the most wieldy.
 //
-// Core token `t` (shared by both pages): "<model>.<fwIndex>.<mons>"
-//   <model>   s | si
-//   <fwIndex> index into FIELD_WEIGHT_OPTIONS
-//   <mons>    "_"-joined; each "speciesSlug" or "speciesSlug~itemSlug"
+// Core token `t` (shared by both pages): "<modelSlug>.<fwIndex>.<mons>"
+//   <modelSlug>  the model's id slug (e.g. "reg-m-a-species-item")
+//   <fwIndex>    index into FIELD_WEIGHT_OPTIONS
+//   <mons>       "_"-joined; each "speciesSlug" or "speciesSlug~itemSlug"
+//
+// Legacy tokens using "s" or "si" as the model code are decoded to the
+// corresponding slug for backward compatibility.
 //
 // Completer adds default-omitting params: x (excluded), g (greedy),
 // tmp (temperature index), a (advanced PT knobs), seed (reproduces the
@@ -26,15 +29,9 @@ import {
 import { speciesToSlug, itemToSlug } from "./sprite-url";
 import type { IsingModel } from "../sampler/types";
 
-export type ModelId = "species" | "species_item";
-
-const MODEL_CODE: Record<ModelId, string> = {
-  species: "s",
-  species_item: "si",
-};
-const CODE_MODEL: Record<string, ModelId> = {
-  s: "species",
-  si: "species_item",
+const LEGACY_CODE_TO_SLUG: Record<string, string> = {
+  s: "reg-m-a-species",
+  si: "reg-m-a-species-item",
 };
 
 const DEFAULT_TEMPERATURE = 0.5;
@@ -53,7 +50,6 @@ function featureSlug(model: IsingModel, i: number): string {
 function fieldWeightIndex(fieldWeight: number): number {
   const exact = (FIELD_WEIGHT_OPTIONS as readonly number[]).indexOf(fieldWeight);
   if (exact >= 0) return exact;
-  // Nearest, as a defensive fallback for off-grid values.
   let best = 0;
   let bestD = Infinity;
   FIELD_WEIGHT_OPTIONS.forEach((v, i) => {
@@ -68,7 +64,7 @@ function fieldWeightIndex(fieldWeight: number): number {
 
 /** Build the shared core token from a team of vocab indices. */
 export function encodeCore(
-  modelId: ModelId,
+  modelId: string,
   fieldWeight: number,
   idxs: readonly number[],
   model: IsingModel,
@@ -77,11 +73,11 @@ export function encodeCore(
     .sort((a, b) => a - b)
     .map((i) => featureSlug(model, i))
     .join("_");
-  return `${MODEL_CODE[modelId]}.${fieldWeightIndex(fieldWeight)}.${mons}`;
+  return `${modelId}.${fieldWeightIndex(fieldWeight)}.${mons}`;
 }
 
 export interface DecodedCore {
-  modelId: ModelId;
+  modelId: string;
   fieldWeight: number;
   features: FeatureSlug[];
 }
@@ -93,12 +89,19 @@ function parseMon(s: string): FeatureSlug {
     : { speciesSlug: s.slice(0, tilde), itemSlug: s.slice(tilde + 1) };
 }
 
+/** Resolve the model slug from the first token segment, handling legacy codes. */
+function resolveModelSlug(code: string): string | null {
+  if (LEGACY_CODE_TO_SLUG[code]) return LEGACY_CODE_TO_SLUG[code];
+  if (/^[a-z0-9_-]+$/.test(code)) return code;
+  return null;
+}
+
 /** Decode the shared core token; null on a malformed/empty token. */
 export function decodeCore(t: string | null): DecodedCore | null {
   if (!t) return null;
   const parts = t.split(".");
   if (parts.length < 2) return null;
-  const modelId = CODE_MODEL[parts[0]];
+  const modelId = resolveModelSlug(parts[0]);
   if (!modelId) return null;
   const fieldWeight = FIELD_WEIGHT_OPTIONS[Number(parts[1])] ?? 0.3;
   const monsStr = parts.slice(2).join(".");
@@ -109,7 +112,7 @@ export function decodeCore(t: string | null): DecodedCore | null {
 }
 
 export interface CompleterShareState {
-  modelId: ModelId;
+  modelId: string;
   fieldWeight: number;
   fixedIdxs: readonly number[];
   excludedSpecies: readonly string[];
@@ -157,7 +160,7 @@ export function encodeCompleter(
 }
 
 export interface DecodedCompleter {
-  modelId: ModelId;
+  modelId: string;
   fieldWeight: number;
   features: FeatureSlug[];
   excludedSlugs: string[];

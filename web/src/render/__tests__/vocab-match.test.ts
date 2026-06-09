@@ -44,6 +44,11 @@ function buildModel(): IsingModel {
   // Marginals: Incineroar @ Sitrus is the most popular Incineroar build.
   const m = Float64Array.from([0.5, 0.2, 0.3, 0.4, 0.35]);
   return {
+    id: "test-species-item",
+    displayName: "Test Species @ Item",
+    regulation: "test",
+    featureDimensions: 2 as const,
+    latestTournamentDate: "",
     V,
     teamSize: 6,
     vocab,
@@ -54,7 +59,7 @@ function buildModel(): IsingModel {
     h: new Float64Array(V),
     indexOf,
     nCorpusTeams: 1000,
-    name: "species_item",
+    name: "test-species-item",
   };
 }
 
@@ -191,12 +196,11 @@ describe("shareLink core token", () => {
   const model = buildModel();
 
   it("round-trips a team to features", () => {
-    const token = encodeCore("species_item", 0.3, [3, 0], model);
-    expect(token).toBe("si.3.incineroar~sitrus-berry_calyrex-shadow~life-orb");
+    const token = encodeCore("test-species-item", 0.3, [3, 0], model);
+    expect(token).toBe("test-species-item.3.incineroar~sitrus-berry_calyrex-shadow~life-orb");
     const decoded = decodeCore(token)!;
-    expect(decoded.modelId).toBe("species_item");
+    expect(decoded.modelId).toBe("test-species-item");
     expect(decoded.fieldWeight).toBeCloseTo(0.3);
-    // Resolve back to the original indices (sorted).
     const slugIndex = buildSlugIndex(model);
     const idxs = decoded.features.map(
       (f) => resolveFeature(slugIndex, model, f.speciesSlug, f.itemSlug).idx,
@@ -204,16 +208,23 @@ describe("shareLink core token", () => {
     expect(idxs).toEqual([0, 3]);
   });
 
+  it("decodes legacy model codes", () => {
+    const decoded = decodeCore("si.3.incineroar~sitrus-berry")!;
+    expect(decoded.modelId).toBe("reg-m-a-species-item");
+    const decoded2 = decodeCore("s.5.amoonguss")!;
+    expect(decoded2.modelId).toBe("reg-m-a-species");
+  });
+
   it("encodes itemless features without a tilde", () => {
-    const token = encodeCore("species", 0.5, [4], model);
-    expect(token).toBe("s.5.amoonguss");
+    const token = encodeCore("test-species", 0.5, [4], model);
+    expect(token).toBe("test-species.5.amoonguss");
     expect(decodeCore(token)!.features[0].itemSlug).toBeNull();
   });
 
   it("returns null on a malformed token", () => {
     expect(decodeCore("")).toBeNull();
     expect(decodeCore("garbage")).toBeNull();
-    expect(decodeCore("xx.3.incineroar")).toBeNull();
+    expect(decodeCore("X!Y.3.incineroar")).toBeNull();
   });
 });
 
@@ -223,7 +234,7 @@ describe("shareLink completer token", () => {
   it("omits defaults and round-trips the primary inputs", () => {
     const params = encodeCompleter(
       {
-        modelId: "species_item",
+        modelId: "test-species-item",
         fieldWeight: 0.3,
         fixedIdxs: [0],
         excludedSpecies: ["Amoonguss"],
@@ -254,7 +265,7 @@ describe("shareLink completer token", () => {
   it("carries greedy mode without a seed", () => {
     const params = encodeCompleter(
       {
-        modelId: "species_item",
+        modelId: "test-species-item",
         fieldWeight: 0.8,
         fixedIdxs: [0],
         excludedSpecies: [],
@@ -276,7 +287,7 @@ describe("shareLink completer token", () => {
   it("encodes a non-default seed and advanced knobs", () => {
     const params = encodeCompleter(
       {
-        modelId: "species_item",
+        modelId: "test-species-item",
         fieldWeight: 0.3,
         fixedIdxs: [0],
         excludedSpecies: [],

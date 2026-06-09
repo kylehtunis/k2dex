@@ -97,16 +97,24 @@ class TestWriteModelRoundTrip(unittest.TestCase):
         })
         species_of = list(vocab)
         item_of = [None] * V
+        latest_date = "2026-01-15T00:00:00.000Z"
 
         fake_builder = mock.Mock(return_value=(
-            vocab, m, J, h, team_counts, species_of, item_of,
+            vocab, m, J, h, team_counts, species_of, item_of, latest_date,
         ))
 
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.dict(precompute.MODEL_BUILDERS, {"synthetic": fake_builder}), \
-                 mock.patch.dict(precompute.MODEL_LR_C, {"synthetic": 0.1}):
+            with mock.patch.dict(precompute.MODEL_BUILDERS, {"species": fake_builder}):
                 with contextlib.redirect_stdout(io.StringIO()):
-                    precompute.write_model("synthetic", Path(tmp))
+                    precompute.write_model(
+                        slug="synthetic",
+                        display_name="Synthetic Test",
+                        regulation="test",
+                        model_type="species",
+                        lam=10.0,
+                        out_dir=Path(tmp),
+                        force=True,
+                    )
 
             model_dir = Path(tmp) / "synthetic"
             self.assertTrue((model_dir / "meta.json").exists())
@@ -118,11 +126,17 @@ class TestWriteModelRoundTrip(unittest.TestCase):
             with open(model_dir / "meta.json") as f:
                 meta = json.load(f)
             self.assertEqual(meta["V"], V)
+            self.assertEqual(meta["id"], "synthetic")
+            self.assertEqual(meta["display_name"], "Synthetic Test")
+            self.assertEqual(meta["regulation"], "test")
+            self.assertEqual(meta["feature_dimensions"], 1)
+            self.assertEqual(meta["latest_tournament_date"], latest_date)
             self.assertEqual(meta["vocab"], vocab)
             self.assertEqual(meta["species_of"], species_of)
             self.assertEqual(meta["item_of"], item_of)
             self.assertEqual(meta["n_corpus_teams"], 14)
-            self.assertEqual(meta["schema_version"], 1)
+            self.assertEqual(meta["schema_version"], 2)
+            self.assertEqual(meta["fit"]["lambda"], 10.0)
 
             h_read = np.fromfile(model_dir / "h.bin", dtype=np.float32)
             m_read = np.fromfile(model_dir / "m.bin", dtype=np.float32)

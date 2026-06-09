@@ -1,8 +1,7 @@
 """Offline precompute pipeline for the static web build.
 
-Fits both PL inverse-Ising models (Species, Species @ Item) on the live
-Limitless corpus and serializes the artifacts the JS client needs into
-`web/public/models/{species,species_item}/`:
+Fits a single PL inverse-Ising model per invocation and serializes the
+artifacts the JS client needs into `web/public/models/<slug>/`:
 
     meta.json         — vocab, species_of, item_of, scalars, fit hyperparams
     J.bin             — float32 lower triangle, V*(V-1)/2 entries
@@ -20,15 +19,22 @@ regularized, no accumulating round-off). Lower-triangle packing halves
 J's bytes; the JS loader reconstructs the symmetric matrix on init.
 
 Usage:
-    python precompute.py                # build both models -> default dir
-    python precompute.py --out custom/  # alternate output root
-    python precompute.py --model species
-    python precompute.py --skip-team-counts  # debug: skip the corpus index
+    # Build one model at a time:
+    python precompute.py --display-name "Reg M-A Species @ Item" --regulation M-A --type species_item
+    python precompute.py --display-name "Reg M-A Species" --regulation M-A --type species
+
+    # Override regularization (default: lambda=10 for species, lambda=1 for species_item):
+    python precompute.py --display-name "Reg M-B Species" --regulation M-B --type species --lambda 5.0
+
+    # Generate manifest after all models are built:
+    python precompute.py --generate-manifest
+    python precompute.py --generate-manifest --default-model reg-m-a-species-item
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -39,13 +45,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from k2dex.constants import (
+    CURRENT_REGULATION,
     PHASE2_MIN_TEAM_COUNT,
-    SPECIES_ITEM_LR_C,
-    SPECIES_LR_C,
+    SPECIES_ITEM_LR_LAMBDA,
+    SPECIES_LR_LAMBDA,
     TEAM_SIZE,
 )
 from k2dex.loaders import build_species_item_model, build_species_model
-
 
 DEFAULT_OUT_DIR = Path(__file__).resolve().parent.parent / "web" / "public" / "models"
 
@@ -54,11 +60,24 @@ MODEL_BUILDERS = {
     "species_item": build_species_item_model,
 }
 
-# L2 inverse-strength used by each model's builder; recorded in meta.json.
-MODEL_LR_C = {
-    "species": SPECIES_LR_C,
-    "species_item": SPECIES_ITEM_LR_C,
+DEFAULT_LAMBDA = {
+    "species": SPECIES_LR_LAMBDA,
+    "species_item": SPECIES_ITEM_LR_LAMBDA,
 }
+
+
+def slugify(display_name: str) -> str:
+    """Convert a human-readable display name to a URL-safe slug.
+
+    Lowercases, replaces non-alphanumeric characters with hyphens,
+    collapses runs, and strips leading/trailing hyphens.
+    """
+    s = display_name.lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    s = s.strip("-")
+    if not s:
+        raise ValueError(f"display name produces empty slug: {display_name!r}")
+    return s
 
 
 def pack_lower_triangle(J: NDArray[np.floating]) -> NDArray[np.float32]:
@@ -104,19 +123,39 @@ def serialize_team_counts(
 
 
 def write_model(
-    name: str,
+    slug: str,
+    display_name: str,
+    regulation: str,
+    model_type: str,
+    lam: float,
     out_dir: Path,
     *,
+    min_team_count: int = PHASE2_MIN_TEAM_COUNT,
     skip_team_counts: bool = False,
+    force: bool = False,
 ) -> None:
-    print(f"\n=== Building model: {name} ===")
-    builder = MODEL_BUILDERS[name]
-    vocab, m, J, h, team_counts, species_of, item_of = builder()
+    model_dir = out_dir / slug
+    if model_dir.exists() and not force:
+        print(f"error: {model_dir} already exists. Use --force to overwrite.")
+        sys.exit(1)
+
+    print(f"\n=== Building model: {slug} ===")
+    print(f"  display_name: {display_name}")
+    print(f"  regulation: {regulation}")
+    print(f"  type: {model_type}")
+    print(f"  lambda: {lam}")
+
+    builder = MODEL_BUILDERS[model_type]
+    vocab, m, J, h, team_counts, species_of, item_of, latest_date = builder(
+        regulation=regulation,
+        min_team_count=min_team_count,
+        lam=lam,
+    )
     V = len(vocab)
     n_teams = int(sum(team_counts.values()))
-    print(f"  V = {V}, corpus teams = {n_teams:,}")
+    feature_dimensions = 1 if all(i is None for i in item_of) else 2
+    print(f"  V = {V}, corpus teams = {n_teams:,}, latest tournament = {latest_date}")
 
-    model_dir = out_dir / name
     model_dir.mkdir(parents=True, exist_ok=True)
 
     j_flat = pack_lower_triangle(J)
@@ -128,7 +167,11 @@ def write_model(
     print(f"  m.bin: {V * 4:,} bytes")
 
     meta = {
-        "name": name,
+        "id": slug,
+        "display_name": display_name,
+        "regulation": regulation,
+        "feature_dimensions": feature_dimensions,
+        "latest_tournament_date": latest_date,
         "V": V,
         "team_size": TEAM_SIZE,
         "n_corpus_teams": n_teams,
@@ -137,10 +180,10 @@ def write_model(
         "item_of": item_of,
         "fit": {
             "method": "pseudo_likelihood",
-            "C": MODEL_LR_C[name],
-            "min_team_count": PHASE2_MIN_TEAM_COUNT,
+            "lambda": lam,
+            "min_team_count": min_team_count,
         },
-        "schema_version": 1,
+        "schema_version": 2,
     }
     with open(model_dir / "meta.json", "w") as f:
         json.dump(meta, f, indent=None, separators=(",", ":"))
@@ -158,33 +201,140 @@ def write_model(
           f"({len(tc_serialized):,} unique rosters)")
 
 
+def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> None:
+    """Scan model directories and write manifest.json."""
+    models = []
+    for meta_path in sorted(out_dir.glob("*/meta.json")):
+        with open(meta_path) as f:
+            meta = json.load(f)
+        slug = meta.get("id", meta.get("name", meta_path.parent.name))
+        models.append({
+            "id": slug,
+            "display_name": meta.get("display_name", slug),
+            "regulation": meta.get("regulation", ""),
+            "feature_dimensions": meta.get("feature_dimensions", 1),
+            "V": meta["V"],
+            "n_corpus_teams": meta["n_corpus_teams"],
+            "latest_tournament_date": meta.get("latest_tournament_date", ""),
+            "team_size": meta.get("team_size", TEAM_SIZE),
+        })
+
+    if not models:
+        print(f"No models found in {out_dir}")
+        return
+
+    resolved_default = default_model
+    if resolved_default is None:
+        resolved_default = models[0]["id"]
+    if not any(m["id"] == resolved_default for m in models):
+        print(f"warn: default_model {resolved_default!r} not found; using {models[0]['id']!r}")
+        resolved_default = models[0]["id"]
+
+    models.sort(key=lambda m: m["id"] != resolved_default)
+
+    manifest = {
+        "schema_version": 1,
+        "default_model": resolved_default,
+        "models": models,
+    }
+    manifest_path = out_dir / "manifest.json"
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+    print(f"Manifest written: {manifest_path} ({len(models)} model(s))")
+    for m in models:
+        default_marker = " [default]" if m["id"] == resolved_default else ""
+        print(f"  {m['id']}: V={m['V']}, teams={m['n_corpus_teams']:,}, "
+              f"regulation={m['regulation']}{default_marker}")
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser = argparse.ArgumentParser(
+        description="Build PL inverse-Ising model artifacts for the static webapp.",
+    )
     parser.add_argument(
         "--out",
         type=Path,
         default=DEFAULT_OUT_DIR,
         help=f"Output root directory (default: {DEFAULT_OUT_DIR})",
     )
-    parser.add_argument(
-        "--model",
-        choices=list(MODEL_BUILDERS),
-        action="append",
-        help="Which model(s) to build; repeatable. Default: all.",
+
+    group = parser.add_argument_group("model build (one model per invocation)")
+    group.add_argument(
+        "--display-name",
+        help="Human-readable model name (e.g. 'Reg M-A Species @ Item'). "
+             "The directory slug is auto-generated from this.",
     )
-    parser.add_argument(
+    group.add_argument(
+        "--regulation",
+        default=CURRENT_REGULATION,
+        help=f"Regulation string for tournament filtering (default: {CURRENT_REGULATION}).",
+    )
+    group.add_argument(
+        "--type",
+        choices=list(MODEL_BUILDERS),
+        dest="model_type",
+        help="Model type: 'species' or 'species_item'.",
+    )
+    group.add_argument(
+        "--lambda",
+        type=float,
+        dest="lam",
+        default=None,
+        help="L2 regularization strength (default: 10.0 for species, 1.0 for species_item). "
+             "Converted to sklearn C = 1/lambda internally.",
+    )
+    group.add_argument(
+        "--min-team-count",
+        type=int,
+        default=PHASE2_MIN_TEAM_COUNT,
+        help=f"Vocab cutoff: feature must appear in >= N teams (default: {PHASE2_MIN_TEAM_COUNT}).",
+    )
+    group.add_argument(
         "--skip-team-counts",
         action="store_true",
         help="Skip team_counts.json (faster iteration during dev).",
     )
+    group.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing model directory.",
+    )
+
+    manifest_group = parser.add_argument_group("manifest generation")
+    manifest_group.add_argument(
+        "--generate-manifest",
+        action="store_true",
+        help="Scan model directories and write manifest.json. No model build.",
+    )
+    manifest_group.add_argument(
+        "--default-model",
+        help="Model slug to mark as default in the manifest.",
+    )
     args = parser.parse_args()
-
-    models = args.model or list(MODEL_BUILDERS)
     out_dir = args.out.resolve()
-    print(f"Output root: {out_dir}")
 
-    for name in models:
-        write_model(name, out_dir, skip_team_counts=args.skip_team_counts)
+    if args.generate_manifest:
+        generate_manifest(out_dir, default_model=args.default_model)
+        return 0
+
+    if not args.display_name or not args.model_type:
+        parser.error("--display-name and --type are required for model builds.")
+
+    slug = slugify(args.display_name)
+    lam = args.lam if args.lam is not None else DEFAULT_LAMBDA[args.model_type]
+
+    print(f"Output root: {out_dir}")
+    write_model(
+        slug=slug,
+        display_name=args.display_name,
+        regulation=args.regulation,
+        model_type=args.model_type,
+        lam=lam,
+        out_dir=out_dir,
+        min_team_count=args.min_team_count,
+        skip_team_counts=args.skip_team_counts,
+        force=args.force,
+    )
 
     print("\nDone. Inspect artifacts before committing.")
     return 0

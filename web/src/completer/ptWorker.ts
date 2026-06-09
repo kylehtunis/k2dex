@@ -87,6 +87,11 @@ self.onmessage = (e: MessageEvent<PTRequest>) => {
   const req = e.data;
   try {
     const model: IsingModel = {
+      id: "",
+      displayName: "",
+      regulation: "",
+      featureDimensions: 1,
+      latestTournamentDate: "",
       V: req.modelData.V,
       teamSize: req.modelData.teamSize,
       vocab: req.modelData.vocab,
@@ -95,7 +100,7 @@ self.onmessage = (e: MessageEvent<PTRequest>) => {
       m: req.modelData.m,
       J: req.modelData.J,
       h: req.modelData.h,
-      indexOf: new Map(), // not used by the sampler
+      indexOf: new Map(),
       nCorpusTeams: 0,
       name: "",
     };
