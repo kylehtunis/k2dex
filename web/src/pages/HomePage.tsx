@@ -78,7 +78,7 @@ export function HomePage() {
         </div>
         <p className="lab-home-section-note">
           Both models are fit on real team rosters from recent
-          VGC tournaments (64+ players).
+          VGC tournaments (32+ players).
           The <em>Species&nbsp;@&nbsp;Item</em> model is
           higher-resolution and the default.
         </p>
