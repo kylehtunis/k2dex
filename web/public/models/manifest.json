@@ -4,22 +4,22 @@
   "models": [
     {
       "id": "reg-m-a-species-item",
-      "display_name": "Reg M-A Species @ Item",
+      "display_name": "Reg. M-A Species @ Item",
       "regulation": "M-A",
       "feature_dimensions": 2,
-      "V": 774,
-      "n_corpus_teams": 19930,
-      "latest_tournament_date": "2026-06-08T01:00:00.000Z",
+      "V": 779,
+      "n_corpus_teams": 20032,
+      "latest_tournament_date": "2026-06-08T23:30:00.000Z",
       "team_size": 6
     },
     {
       "id": "reg-m-a-species",
-      "display_name": "Reg M-A Species",
+      "display_name": "Reg. M-A Species",
       "regulation": "M-A",
       "feature_dimensions": 1,
       "V": 193,
-      "n_corpus_teams": 21658,
-      "latest_tournament_date": "2026-06-08T01:00:00.000Z",
+      "n_corpus_teams": 21773,
+      "latest_tournament_date": "2026-06-08T23:30:00.000Z",
       "team_size": 6
     }
   ]
