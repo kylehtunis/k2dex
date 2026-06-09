@@ -59,8 +59,8 @@ logger = logging.getLogger("tournament_ingest")
 
 from .constants import (
     DEFAULT_LOCAL_DIR,
+    LIMITLESS_MAX_TEAMS as DEFAULT_MAX_TEAMS,
     MIN_TEAMS_PER_TOURNAMENT,
-    PHASE2_MIN_TEAMS as DEFAULT_MIN_TEAMS,
     TEAM_SIZE,
 )
 
@@ -130,11 +130,13 @@ _ITEM_ALIASES: dict[str, str] = {
     "Glimmorite": "Glimmoranite",
 }
 
-_ILLEGAL_ITEMS = frozenset({
-    "Covert Cloak",
-    "Assault Vest",
-    "Safety Goggles",
-})
+_ILLEGAL_ITEMS_BY_REGULATION: dict[str, frozenset[str]] = {
+    "M-A": frozenset({
+        "Covert Cloak",
+        "Assault Vest",
+        "Safety Goggles",
+    }),
+}
 
 _BRACKET_RE = re.compile(r"^(.+?)\s*\[(.+)]\s*$")
 
@@ -277,12 +279,16 @@ def list_tournaments_page(game: str = DEFAULT_GAME, page: int = 1) -> list[Tourn
     ]
 
 
-def iter_catalog_pages(game: str = DEFAULT_GAME) -> Iterator[list[TournamentMeta]]:
+def iter_catalog_pages(
+    game: str = DEFAULT_GAME,
+    start_page: int = 1,
+) -> Iterator[list[TournamentMeta]]:
     """Lazily yield catalog pages (50 entries each), newest first, until the
-    API returns an empty page. Caller is responsible for ID-deduping across
-    pages and for deciding when the relevant region of the catalog is
-    exhausted (see `ingest` for the format-aware termination logic)."""
-    page = 1
+    API returns an empty page. ``start_page`` lets callers skip past recent
+    pages to reach older tournaments (useful for fetching previous formats).
+    Caller is responsible for ID-deduping across pages and for deciding when
+    the relevant region of the catalog is exhausted."""
+    page = start_page
     while True:
         batch = list_tournaments_page(game=game, page=page)
         if not batch:
@@ -324,7 +330,11 @@ def passes_doubles_protect_check(
     return protect_count / len(standings) >= min_ratio
 
 
-def extract_teams(standings: list[dict]) -> list[Team]:
+def extract_teams(
+    standings: list[dict],
+    *,
+    regulation: str | None = None,
+) -> list[Team]:
     """Parse standings into a list of `Team` records (roster + outcome).
 
     Drops players whose decklist isn't exactly TEAM_SIZE entries with distinct
@@ -336,10 +346,14 @@ def extract_teams(standings: list[dict]) -> list[Team]:
     -- the Limitless API has been observed to return e.g. 'Sitrus Berry',
     'Sitrus berry', and 'sitrus berry' for the same item across tournaments.
 
+    When ``regulation`` is provided, items banned in that regulation are
+    stripped from the team member (the mon is kept with ``item=None``).
+
     `placing` and the win/loss/tie `record` are read straight from the
     standings entry; placing is None when the API doesn't report it, and a
     missing record defaults to 0-0-0 (no signal, filterable downstream).
     """
+    illegal_items = _ILLEGAL_ITEMS_BY_REGULATION.get(regulation or "", frozenset())
     teams: list[Team] = []
     for entry in standings:
         decklist = entry.get("decklist") or []
@@ -354,8 +368,8 @@ def extract_teams(standings: list[dict]) -> list[Team]:
             item = normalize_name(mon.get("item"))
             if item:
                 item = _ITEM_ALIASES.get(item, item)
-                if item in _ILLEGAL_ITEMS:
-                    continue
+                if item in illegal_items:
+                    item = None
             members.append((name, item))
         if len(members) != TEAM_SIZE:
             continue
@@ -443,18 +457,23 @@ def _load_tournament(cache_dir: Path, tournament_id: str) -> TournamentTeams | N
 
 def fetch_limitless_tournaments(
     *,
-    min_teams: int = DEFAULT_MIN_TEAMS,
+    max_teams: int = DEFAULT_MAX_TEAMS,
     regulation: str = DEFAULT_REGULATION,
     game: str = DEFAULT_GAME,
     cache_dir: Path = DEFAULT_CACHE_DIR,
+    start_page: int = 1,
+    min_teams_per_tournament: int = MIN_TEAMS_PER_TOURNAMENT,
 ) -> list[TournamentTeams]:
     """Fetch tournaments from the Limitless API, caching as we go.
 
-    Walks the API newest-first until >= min_teams teams accumulated.
-    ``min_teams`` is a fetch limit (stop walking the API), not a corpus cap.
+    Walks the API newest-first until >= ``max_teams`` teams accumulated.
+    ``max_teams`` is a fetch limit (stop walking the API), not a corpus cap.
+    ``start_page`` lets callers skip past recent catalog pages to reach
+    tournaments from older formats. ``min_teams_per_tournament`` filters out
+    small events (both pre-fetch by player count and post-extract by team count).
 
     Termination conditions (whichever fires first):
-    - ``total_teams >= min_teams`` (target hit)
+    - ``total_teams >= max_teams`` (target hit)
     - The API returns an empty page (catalog exhausted)
     - A whole page yields zero new in-regulation tournament IDs
     """
@@ -463,7 +482,7 @@ def fetch_limitless_tournaments(
     total_teams = 0
     seen_ids: set[str] = set()
 
-    for batch in iter_catalog_pages(game=game):
+    for batch in iter_catalog_pages(game=game, start_page=start_page):
         new_in_regulation = 0
         for tm in batch:
             if tm.id in seen_ids:
@@ -478,10 +497,10 @@ def fetch_limitless_tournaments(
             # Pre-fetch size check: registered players bound the team count
             # from above (teams <= players always), so skipping here avoids
             # API calls for events too small to clear the threshold.
-            if tm.players < MIN_TEAMS_PER_TOURNAMENT:
+            if tm.players < min_teams_per_tournament:
                 logger.info(
                     "[skip small]   %s '%s' (players=%d < %d)",
-                    tm.id, tm.name, tm.players, MIN_TEAMS_PER_TOURNAMENT,
+                    tm.id, tm.name, tm.players, min_teams_per_tournament,
                 )
                 continue
             cached = _load_tournament(cache_dir, tm.id)
@@ -498,7 +517,7 @@ def fetch_limitless_tournaments(
                     logger.info("[skip protect] %s '%s'", tm.id, tm.name)
                     time.sleep(POLITE_SLEEP_SEC)
                     continue
-                teams = extract_teams(standings)
+                teams = extract_teams(standings, regulation=tm.regulation)
                 ttd = TournamentTeams(meta=tm, teams=teams)
                 _save_tournament(cache_dir, ttd, tournament_type="limitless")
                 source = "fetched"
@@ -506,19 +525,19 @@ def fetch_limitless_tournaments(
             # Post-extract size check: catches cached tournaments under a
             # newly-tightened threshold and high-dropout events where
             # extract_teams trimmed below the limit.
-            if len(ttd.teams) < MIN_TEAMS_PER_TOURNAMENT:
+            if len(ttd.teams) < min_teams_per_tournament:
                 logger.info(
                     "[skip small]   %s '%s' (teams=%d < %d after extract)",
-                    tm.id, tm.name, len(ttd.teams), MIN_TEAMS_PER_TOURNAMENT,
+                    tm.id, tm.name, len(ttd.teams), min_teams_per_tournament,
                 )
                 continue
             out.append(ttd)
             total_teams += len(ttd.teams)
             logger.info(
                 "[%5d / %d] %s %s '%s' (+%d teams)",
-                total_teams, min_teams, source, tm.id, tm.name, len(ttd.teams),
+                total_teams, max_teams, source, tm.id, tm.name, len(ttd.teams),
             )
-            if total_teams >= min_teams:
+            if total_teams >= max_teams:
                 logger.info("ingested %d tournaments, %d teams total", len(out), total_teams)
                 return out
         if new_in_regulation == 0:
@@ -705,7 +724,7 @@ def import_in_person_tournaments(
                 logger.warning("skipping %s: expected list, got %s", json_file, type(standings).__name__)
                 continue
 
-            teams = extract_teams(standings)
+            teams = extract_teams(standings, regulation=regulation)
 
             meta = TournamentMeta(
                 id=tournament_id,
@@ -728,7 +747,7 @@ def import_in_person_tournaments(
 
 def ingest(
     *,
-    min_teams: int = DEFAULT_MIN_TEAMS,
+    max_teams: int = DEFAULT_MAX_TEAMS,
     regulation: str = DEFAULT_REGULATION,
     game: str = DEFAULT_GAME,
     cache_dir: Path = DEFAULT_CACHE_DIR,
@@ -744,7 +763,7 @@ def ingest(
         stacklevel=2,
     )
     fetch_limitless_tournaments(
-        min_teams=min_teams, regulation=regulation, game=game, cache_dir=cache_dir,
+        max_teams=max_teams, regulation=regulation, game=game, cache_dir=cache_dir,
     )
     return load_cached_tournaments(cache_dir=cache_dir, regulation=regulation)
 
@@ -765,16 +784,26 @@ def main() -> None:
     parser.add_argument("--local-dir", type=Path, default=DEFAULT_LOCAL_DIR)
     parser.add_argument("--regulation", default=DEFAULT_REGULATION)
     parser.add_argument(
-        "--min-teams", type=int, default=DEFAULT_MIN_TEAMS,
+        "--max-teams", type=int, default=DEFAULT_MAX_TEAMS,
         help="Limitless API fetch limit (stop after this many teams)",
+    )
+    parser.add_argument(
+        "--start-page", type=int, default=1,
+        help="Catalog page to start from (newest-first; use to skip past recent tournaments)",
+    )
+    parser.add_argument(
+        "--min-teams-per-tournament", type=int, default=MIN_TEAMS_PER_TOURNAMENT,
+        help="Skip tournaments with fewer teams than this (default %(default)s)",
     )
     args = parser.parse_args()
 
     if not args.in_person_only:
         fetch_limitless_tournaments(
-            min_teams=args.min_teams,
+            max_teams=args.max_teams,
             regulation=args.regulation,
             cache_dir=args.cache_dir,
+            start_page=args.start_page,
+            min_teams_per_tournament=args.min_teams_per_tournament,
         )
 
     if not args.limitless_only:
@@ -784,7 +813,9 @@ def main() -> None:
         )
 
     all_t = load_cached_tournaments(
-        cache_dir=args.cache_dir, regulation=args.regulation,
+        cache_dir=args.cache_dir,
+        regulation=args.regulation,
+        min_teams_per_tournament=args.min_teams_per_tournament,
     )
     teams = all_teams(all_t)
     print(f"Tournaments in cache: {len(all_t)}")

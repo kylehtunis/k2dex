@@ -70,9 +70,10 @@ Populate the tournament cache from both data sources. Results are cached as one 
 python -m k2dex.tournament_ingest              # fetch Limitless API + import in-person data
 python -m k2dex.tournament_ingest --limitless-only    # Limitless API only
 python -m k2dex.tournament_ingest --in-person-only    # import tournament_json/ only
+python -m k2dex.tournament_ingest --regulation G --start-page 20  # older format, skip recent pages
 ```
 
-The Limitless path walks tournaments newest-first, applying size/format filters, until it reaches the fetch limit (default 25,000 teams). The in-person path reads raw standings exports from `tournament_json/[format]/[id]_[date].json` and normalizes them into cache entries. Both paths are idempotent; re-running only processes new data.
+The Limitless path walks tournaments newest-first, applying size/format filters, until it reaches the fetch limit (`--max-teams`, default 25,000). `--start-page` skips past recent catalog pages to reach tournaments from older formats. The in-person path reads raw standings exports from `tournament_json/[format]/[id]_[date].json` and normalizes them into cache entries. Both paths are idempotent; re-running only processes new data.
 
 ### 3. Precompute model artifacts
 

@@ -230,6 +230,8 @@ def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> Non
         print(f"warn: default_model {resolved_default!r} not found; using {models[0]['id']!r}")
         resolved_default = models[0]["id"]
 
+    models.sort(key=lambda m: m["id"] != resolved_default)
+
     manifest = {
         "schema_version": 1,
         "default_model": resolved_default,
