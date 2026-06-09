@@ -40,7 +40,7 @@ import { SwapsTable } from "../analysis/SwapsTable";
 import { ChainTable } from "../analysis/ChainTable";
 
 export function AnalysisPage() {
-  const { model, teamCounts, status, phaseKey, setPhaseKey } = useModel();
+  const { model, teamCounts, status, modelId, setModelId } = useModel();
   const [searchParams, setSearchParams] = useSearchParams();
   const { analysis, setAnalysis } = usePageState();
   const { teamIdxs, fieldWeight } = analysis;
@@ -66,8 +66,8 @@ export function AnalysisPage() {
         appliedTokenRef.current = key;
         return;
       }
-      if (decoded.modelId !== phaseKey) {
-        setPhaseKey(decoded.modelId);
+      if (decoded.modelId !== modelId) {
+        setModelId(decoded.modelId);
         return; // re-run once the new model is ready
       }
       const slugIndex = buildSlugIndex(model);
@@ -91,7 +91,7 @@ export function AnalysisPage() {
       .filter((i) => !isNaN(i) && i >= 0 && i < model.V);
     appliedTokenRef.current = key;
     if (idxs.length > 0) setAnalysis({ teamIdxs: idxs.slice(0, TEAM_SIZE) });
-  }, [status, model, phaseKey, searchParams, setAnalysis, setPhaseKey]);
+  }, [status, model, modelId, searchParams, setAnalysis, setModelId]);
 
   // Live-sync the URL from state (debounced so a slider drag settles into
   // one write). Skipped while an incoming token is still pending decode.
@@ -103,7 +103,7 @@ export function AnalysisPage() {
     if (!model || teamIdxs.length === 0) return;
     const incoming = searchParams.get("t");
     if (incoming && incoming !== appliedTokenRef.current) return;
-    const token = encodeCore(phaseKey, fieldWeight, teamIdxs, model);
+    const token = encodeCore(modelId, fieldWeight, teamIdxs, model);
     if (token === searchParams.get("t")) return;
     const handle = setTimeout(() => {
       appliedTokenRef.current = token;
@@ -111,7 +111,7 @@ export function AnalysisPage() {
     }, 300);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model, phaseKey, teamKey, fieldWeight]);
+  }, [model, modelId, teamKey, fieldWeight]);
 
   // Import a pokepaste from the clipboard into the team.
   const [importMsg, setImportMsg] = useState<{
@@ -204,7 +204,7 @@ export function AnalysisPage() {
       : null;
 
   const corpusCaption = model
-    ? `Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`
+    ? `Reg ${model.regulation} · ${model.nCorpusTeams.toLocaleString()} teams`
     : undefined;
   const teamNames = model ? teamIdxs.map((i) => model.vocab[i]) : [];
 

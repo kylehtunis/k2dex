@@ -1,63 +1,30 @@
 // Closing section: bridges the toy/SCOTUS machinery to the real model.
 // The figure is a force-directed graph of the top species, drawn from the
-// species-only (Phase 2) J — one node per species. A slider hides couplings
-// below a threshold and recomputes the spring layout, so the strongest
-// structure emerges as you raise it. Not animated — just layout. The prose's
-// spin/parameter counts read from the Species @ Item (Phase 3) model via the
-// shared context; the figure loads the species model independently.
-//
-// The graph itself (reps, layout, render) is shared with the Metagame Model
-// page — see web/src/components/CouplingGraph.tsx. This section owns its own
-// filter UI (mode picker + single |J| threshold).
+// active model's J. A slider hides couplings below a threshold and
+// recomputes the spring layout, so the strongest structure emerges as you
+// raise it. Not animated, just layout. The prose's spin/parameter counts
+// read from the active model. The graph itself (reps, layout, render) is
+// shared with the Metagame Model page via CouplingGraph.tsx.
 
 import { useCallback, useEffect, useState } from "react";
 import { useModel } from "../../state/ModelContext";
-import { loadModel } from "../../sampler/model";
-import type { IsingModel } from "../../sampler/types";
 import { CouplingGraph, type CouplingEdge } from "../../components/CouplingGraph";
 
 const TOP_SPECIES = 32;
 const VIEW_SIZE = 600;
 
 export function Pokemon() {
-  const { model, phaseKey, setPhaseKey, status } = useModel();
+  const { model, status } = useModel();
 
-  // Force Phase 3 so the prose's spin/parameter counts read live from the
-  // Species @ Item model.
-  useEffect(() => {
-    if (phaseKey !== "species_item") setPhaseKey("species_item");
-  }, []);
+  const ready = model !== null && status === "ready";
 
-  const ready =
-    model !== null && status === "ready" && phaseKey === "species_item";
-
-  // The figure uses the species-only (Phase 2) model — one node per species,
-  // with J directly between species. Loaded independently of the shared
-  // context, which stays on species_item for the prose counts above.
-  const [figModel, setFigModel] = useState<IsingModel | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    loadModel("species").then((m) => {
-      if (!cancelled) setFigModel(m);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  const figReady = figModel !== null;
-
-  // Live model dimensions for the prose.
   const nSpins = ready ? model!.V : null;
   const nParams = nSpins !== null ? nSpins + (nSpins * (nSpins - 1)) / 2 : null;
   const nTeams = ready ? model!.nCorpusTeams : null;
+  const regulation = ready ? model!.regulation : null;
 
-  // "all" shows both signs (faithful to the model, but negative couplings
-  // dominate); "positive" drops exclusions for the cleaner "works together" view.
   const [mode, setMode] = useState<"all" | "positive">("all");
 
-  // Threshold on |J|, in fixed units. Default 0 (show everything); the slider
-  // range is hardcoded per mode (positive couplings top out lower than the
-  // negative ones the "all" view includes). Reset to 0 when switching modes.
   const [threshold, setThreshold] = useState(0);
   useEffect(() => {
     setThreshold(0);
@@ -90,14 +57,15 @@ export function Pokemon() {
         teams. These are the observations the model is fit to.
       </p>
       <p>
-        In the SCOTUS example there were 9 spins to fit, one per justice. The
-        current VGC regulation, Pokémon Champions Regulation M-A, has roughly
-        200 species and formes and about 100 held items. Modeling species alone
+        In the SCOTUS example there were 9 spins to fit, one per justice.
+        {regulation && <> The current VGC regulation, Pokémon Champions Regulation {regulation}, has</>}
+        {!regulation && <> The current VGC regulation has</>}
+        {" "}roughly 200 species and formes and about 100 held items. Modeling species alone
         is around 200 spins; every Species @ Item combination is closer to 20,000. With
         one parameter per spin plus one per pair of spins (for the coupling),
         that full model needs to fit about 200 million parameters (nearly a gigabyte),
         all of which still has to run in the browser! So we keep only the spins
-        that appear in 5 or more teams, bringing the Species @ Item model down to
+        that appear in 5 or more teams, bringing the model down to
         {" "}<strong>{nSpins !== null ? nSpins.toLocaleString() : "—"} spins</strong>{" "}
         and about{" "}
         <strong>
@@ -138,7 +106,7 @@ export function Pokemon() {
             aria-checked={mode === "all"}
             className={"lab-t-btn" + (mode === "all" ? " is-selected" : "")}
             onClick={() => setMode("all")}
-            disabled={!figReady}
+            disabled={!ready}
           >
             <span className="lab-t-btn-label">All Couplings</span>
             <span className="lab-t-btn-hint">see what the model sees</span>
@@ -149,7 +117,7 @@ export function Pokemon() {
             aria-checked={mode === "positive"}
             className={"lab-t-btn" + (mode === "positive" ? " is-selected" : "")}
             onClick={() => setMode("positive")}
-            disabled={!figReady}
+            disabled={!ready}
           >
             <span className="lab-t-btn-label">Positive couplings only</span>
             <span className="lab-t-btn-hint">visualize synergies</span>
@@ -165,22 +133,22 @@ export function Pokemon() {
             step={0.05}
             value={threshold}
             onChange={(e) => setThreshold(Number(e.target.value))}
-            disabled={!figReady}
+            disabled={!ready}
           />
         </label>
       </div>
-      {!figReady ? (
+      {!ready ? (
         <p style={{ color: "var(--lab-ink-muted)" }}>Loading the live model…</p>
       ) : (
         <CouplingGraph
-          model={figModel!}
+          model={model!}
           filterEdge={filterEdge}
           topSpecies={TOP_SPECIES}
           viewSize={VIEW_SIZE}
           renderCaption={({ reps, visibleNodes }) => (
             <>
               The {reps.length} most-used species, connected by their pairwise
-              coupling strengths from the fitted Species model <em>J</em>.{" "}
+              coupling strengths from the fitted model <em>J</em>.{" "}
               {visibleNodes} shown at this threshold. Blue = positive
               (co-occurs), red = negative (excludes); thickness ∝ strength.
             </>

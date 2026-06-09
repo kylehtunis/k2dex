@@ -37,6 +37,8 @@ function buildSyntheticModel(): IsingModel {
   for (let i = 0; i < vocab.length; i++) indexOf.set(vocab[i], i);
 
   return {
+    id: "synthetic", displayName: "Synthetic", regulation: "test",
+    featureDimensions: 2, latestTournamentDate: "",
     V, teamSize: TEAM_SIZE, vocab, speciesOf, itemOf, m, J, h, indexOf,
     nCorpusTeams: 0, name: "synthetic",
   };

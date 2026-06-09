@@ -46,7 +46,7 @@ export function MetaPage() {
   }, [model]);
 
   const corpusCaption = model
-    ? `Reg M-A · ${model.nCorpusTeams.toLocaleString()} teams`
+    ? `Reg ${model.regulation} · ${model.nCorpusTeams.toLocaleString()} teams`
     : undefined;
 
   return (
@@ -64,7 +64,7 @@ export function MetaPage() {
       <SectionLabel num="01" title="Fitted model" />
       <StatStrip
         cells={[
-          { label: "Model", value: model.name === "species" ? "Species" : "Species @ Item", sub: model.name === "species" ? "PL · species" : "PL · item-pair" },
+          { label: "Model", value: model.displayName, sub: model.featureDimensions === 1 ? "PL · species" : "PL · item-pair" },
           {
             label: "Vocab",
             value: model.V.toLocaleString(),

@@ -11,7 +11,7 @@ import { ScoreChip } from "../render/atoms";
 import type { IsingModel } from "../sampler/types";
 import { speciesToSlug } from "../render/sprite-url";
 import { buildPartialPaste } from "../render/format";
-import { encodeCore, type ModelId } from "../render/shareLink";
+import { encodeCore } from "../render/shareLink";
 import { usePageState } from "../state/PageStateContext";
 
 export interface CompletionRowProps {
@@ -45,7 +45,7 @@ export function CompletionRow({
   const sortedFree = [...freeIdxs].sort((a, b) => a - b);
   const { completer } = usePageState();
   const analyzeUrl = `/analysis?t=${encodeCore(
-    model.name as ModelId,
+    model.id,
     completer.fieldWeight,
     fullTeam,
     model,

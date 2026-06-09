@@ -2,14 +2,16 @@
 
 Interactive tools and explainers applying complexity-science methods to competitive Pokemon (VGC) team composition data.
 
-The core model is a **pairwise maximum-entropy (inverse Ising)** fit on tournament team rosters from [Limitless VGC](https://play.limitlesstcg.com/) and in-person tournament data. The fitted couplings *J* and biases *h* capture which Pokemon (and held items) tend to appear together on teams, and which ones compete for the same slot. Two model phases are user-facing:
+The core model is a **pairwise maximum-entropy (inverse Ising)** fit on tournament team rosters from [Limitless VGC](https://play.limitlesstcg.com/) and in-person tournament data. The fitted couplings *J* and biases *h* capture which Pokemon (and held items) tend to appear together on teams, and which ones compete for the same slot. The pipeline supports **N arbitrary models** across different regulations, each built independently via a CLI:
 
-- **Species** (Phase 2): pseudo-likelihood fit on species-only features
-- **Species @ Item** (Phase 3): pseudo-likelihood fit on `(species, held item)` pair features, preserving held-item forme distinctions that Phase 2 collapses
+- **Species models**: pseudo-likelihood fit on species-only features
+- **Species @ Item models**: pseudo-likelihood fit on `(species, held item)` pair features, preserving held-item forme distinctions that the species model collapses
+
+Models are organized by regulation (e.g. M-A, M-B) and discoverable via a `manifest.json` that the webapp fetches on boot. A collapsible model picker groups available models by regulation.
 
 The webapp surfaces these as a **team completer** (parallel-tempered MCMC or greedy sampling), **per-team diagnostics** (pairwise couplings, swap suggestions, nearest observed teams), and **format-wide statistics** (bias rankings, extreme couplings). An interactive [Science](https://kylehtunis.github.io/k2dex/science) page explains the math from first principles with toy simulations.
 
-A local Streamlit webapp is also available, which surfaces **all** available models, parameters and options. Intended as a  scientific dashboard and playground, rather than as a tool for competitive Pokemon.
+A local Streamlit webapp is also available, which surfaces all available models, parameters and options. Intended as a scientific dashboard and playground, rather than as a tool for competitive Pokemon.
 
 **[Live site →](https://kylehtunis.github.io/k2dex/)**
 
@@ -18,8 +20,8 @@ A local Streamlit webapp is also available, which surfaces **all** available mod
 ```
 k2dex/                  Python package: model fitting, sampling, rendering
   constants.py          Shared numeric constants (vocab cutoffs, regularization, seeds)
-  helpers.py            Phase 1 Gaussian inverse Ising primitives
-  loaders.py            Model builders: build_species_model / build_species_item_model
+  helpers.py            Gaussian inverse Ising primitives (Smogon chaos path)
+  loaders.py            Model builders (parameterized by regulation, lambda, vocab cutoff)
   models.py             fit_pl_ising: per-spin L2 logistic regression + symmetrize
   sampling.py           MCMC family (swap / anneal / PT) + mean-field + greedy + rank_single_swaps
   rendering.py          Diagnostic helpers + markdown-table builders
@@ -29,7 +31,7 @@ k2dex/                  Python package: model fitting, sampling, rendering
 
 scripts/                CLI entry points
   app.py                Streamlit webapp
-  precompute.py         Offline pipeline: fits models → web/public/models/
+  precompute.py         Offline pipeline: fits one model per invocation → web/public/models/<slug>/
   scotus_precompute.py  SCOTUS inverse Ising fits → web/public/scotus/
 
 tournament_json/        In-person tournament data (committed dir, JSON files gitignored)
@@ -74,13 +76,33 @@ The Limitless path walks tournaments newest-first, applying size/format filters,
 
 ### 3. Precompute model artifacts
 
-Fit both models and serialize them for the static webapp:
+Build one model per invocation:
 
 ```bash
-python scripts/precompute.py
+# Species @ Item model for Regulation M-A
+python scripts/precompute.py \
+  --display-name "Reg M-A Species @ Item" \
+  --regulation M-A \
+  --type species_item
+
+# Species-only model for Regulation M-A
+python scripts/precompute.py \
+  --display-name "Reg M-A Species" \
+  --regulation M-A \
+  --type species
+
+# Override regularization (lambda = L2 penalty strength; default 10.0 for species, 1.0 for species_item)
+python scripts/precompute.py \
+  --display-name "Reg M-B Species @ Item" \
+  --regulation M-B \
+  --type species_item \
+  --lambda 2.0
+
+# After building all models, generate the manifest for webapp discovery
+python scripts/precompute.py --generate-manifest --default-model reg-m-a-species-item
 ```
 
-This writes `meta.json`, `J.bin`, `h.bin`, `m.bin`, and `team_counts.json` for each model under `web/public/models/{species,species_item}/`. Inspect the output (vocab size, corpus team count, file sizes) before committing. CI does not regenerate these; they are committed to git after manual review.
+Each invocation writes `meta.json`, `J.bin`, `h.bin`, `m.bin`, and `team_counts.json` under `web/public/models/<slug>/`, where the slug is auto-generated from the display name. The manifest (`manifest.json`) lists all models with summary metadata so the webapp can populate its model picker without loading model data. Inspect the output before committing. CI does not regenerate these; they are committed to git after manual review.
 
 To rebuild the SCOTUS science-page artifacts:
 
@@ -104,7 +126,7 @@ The precomputed model artifacts in `web/public/models/` are already committed to
 streamlit run scripts/app.py
 ```
 
-The Streamlit app is a development/research tool. It reads the same models but fits them live from the cache (via `@st.cache_resource`) rather than loading precomputed binaries. Requires the cache to be populated first (step 2).
+The Streamlit app is a development/research tool with a model selector dropdown driven by the same `manifest.json`. It fits models live from the cache (via `@st.cache_resource`) rather than loading precomputed binaries. Requires the cache to be populated first (step 2).
 
 ### 6. Run tests
 
@@ -126,14 +148,14 @@ The notebooks form a dependency chain. Explore in order, or jump into any standa
 | # | Notebook | Description |
 |---|---------|-------------|
 | 1 | `spatial_embedding.ipynb` | PPMI, truncated SVD, role-residual NN ranking, NMF role decomposition |
-| 2 | `inverse_ising.ipynb` | Phase 1: Gaussian / precision-matrix `(J, h)` fit and visualization |
+| 2 | `inverse_ising.ipynb` | Gaussian / precision-matrix `(J, h)` fit and visualization |
 | 3 | `j_communities.ipynb` | Louvain community detection on +J (archetypes) and -J (role pools) subgraphs |
 | 4 | `forward_ising.ipynb` | Forward sampling: swap-move MCMC, calibration against empirical marginals |
-| 5 | `inverse_ising_phase2.ipynb` | Phase 2: pseudo-likelihood fit on Limitless rosters |
+| 5 | `inverse_ising_phase2.ipynb` | Pseudo-likelihood species fit on Limitless rosters |
 | 6 | `validation.ipynb` | Leave-k-out evaluation, cross-model comparison (chronological 90/10 split) |
 | 7 | `temporal_drift.ipynb` | Standalone: how quickly model accuracy degrades as the meta evolves (25/75 split) |
 | 8 | `energy_discrimination.ipynb` | Standalone: real-vs-null scoring, Bias Adjustment sweep, AUC analysis |
-| 9 | `regularization_sweep.ipynb` | Standalone: L2 regularization sweep behind the per-phase C values |
+| 9 | `regularization_sweep.ipynb` | Standalone: L2 regularization sweep behind the per-model lambda values |
 | 10 | `outcome_validation.ipynb` | Standalone: does Score/coherence predict tournament placement? (confirms the model captures meta typicality, not team quality) |
 
 ## Key concepts

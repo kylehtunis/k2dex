@@ -12,7 +12,7 @@ Three inverse Ising pairwise-MaxEnt models, each fitting `(J, h)` to a different
 - **Species model** — pseudo-likelihood (PL) fit on Limitless tournament team rosters, species-only vocab.
 - **Species+Item model** — PL fit on `(species, item)` pair features from the same Limitless data. Restores held-item forme distinctions the species model collapses.
 
-The repo is a sequence of notebooks plus **two coexisting webapp surfaces**: the original Streamlit app (`scripts/app.py`) and a static React/TypeScript port (`web/`) deployed to GitHub Pages. Both surface only the species and species+item models — the Gaussian model lives on in the notebooks. Both have **three pages** under one model picker: `/completer` (full PT sampling by default, or an opt-in fast greedy completion), `/analysis` (per-team diagnostics), `/meta` (Metagame Model, format-wide statistics). User-facing terminology is decoupled from the underlying math: `J` → "Coupling Strength", `h` → "Bias", `ΣJ` → "Coherence", `E` → "Score" (sign-flipped so higher = better), `field_weight` → "Bias Adjustment". The webapp is one deliverable of the larger project — not the single end goal; deeper scientific content lives in the notebooks and the `/science` page.
+The repo is a sequence of notebooks plus **two coexisting webapp surfaces**: the original Streamlit app (`scripts/app.py`) and a static React/TypeScript port (`web/`) deployed to GitHub Pages. Both surface all precomputed models (across multiple regulations) via a manifest-driven model picker — the Gaussian model lives only in the notebooks. Both have **three pages** under one model picker: `/completer` (full PT sampling by default, or an opt-in fast greedy completion), `/analysis` (per-team diagnostics), `/meta` (Metagame Model, format-wide statistics). User-facing terminology is decoupled from the underlying math: `J` → "Coupling Strength", `h` → "Bias", `ΣJ` → "Coherence", `E` → "Score" (sign-flipped so higher = better), `field_weight` → "Bias Adjustment". The webapp is one deliverable of the larger project — not the single end goal; deeper scientific content lives in the notebooks and the `/science` page.
 
 The static webapp is the primary public surface. The Streamlit app remains as a development/research tool. The TS port mirrors every piece of math; any drift is caught by `tests/test_parity.py` (see "Code duplicated across Python and TypeScript" below).
 
@@ -26,7 +26,10 @@ python -m unittest discover tests    # regression gate (includes parity tests)
 python -m k2dex.tournament_ingest     # fetch from Limitless API + import in-person data into cache
 python -m k2dex.tournament_ingest --limitless-only   # Limitless API only
 python -m k2dex.tournament_ingest --in-person-only   # import tournament_json/ only
-python scripts/precompute.py         # rebuild web/public/models/ artifacts (manual; inspect before commit)
+python scripts/precompute.py \        # build one model (see precompute CLI below)
+  --display-name "Reg M-A Species @ Item" \
+  --regulation M-A --type species_item
+python scripts/precompute.py --generate-manifest  # rebuild manifest.json after all models built
 python scripts/scotus_precompute.py  # rebuild web/public/scotus/ artifacts for the /science SCOTUS section (manual)
 
 # Static webapp (all run from web/)
@@ -68,9 +71,9 @@ tournament_json/        In-person tournament raw JSON source (committed dir, JSO
 tournaments_cache/      Unified cache (gitignored); both Limitless + in-person entries
 scripts/                CLI entry points (not part of the k2dex package)
   app.py                Streamlit webapp (rendering only; samplers imported)
-  precompute.py         Offline pipeline: fits both models via k2dex.loaders and
-                        serializes them to web/public/models/{species,species_item}/
-                        for the static webapp to load at runtime
+  precompute.py         Offline pipeline: fits one model per invocation via
+                        k2dex.loaders; serializes to web/public/models/<slug>/
+                        for the static webapp. Also generates manifest.json.
   scotus_precompute.py  Fits PL inverse Ising on scotus_votes.txt at several
                         N checkpoints; writes web/public/scotus/{votes,fits}.json
                         for the /science page's SCOTUS section
@@ -106,9 +109,9 @@ The notebooks form a dependency chain. Run in order, or re-derive intermediate s
 
 All modules below live under `k2dex/` and use relative imports within the package.
 
-- **`constants.py`** — vocab cutoffs, corpus size, regularization strength, validation seed / fraction, ingest filters. Change any knob here, not in the notebook or app. (Static webapp mirrors a subset of these in `web/src/constants.ts` — see duplication register below.)
+- **`constants.py`** — vocab cutoffs, corpus size, regularization strength (as lambda, converted to sklearn C internally), validation seed / fraction, ingest filters. Change any knob here, not in the notebook or app. (Static webapp mirrors a subset of these in `web/src/constants.ts` — see duplication register below.)
 - **`helpers.py`** — Gaussian model only (Smogon chaos path): `load_chaos`, `build_vocab`, `build_cooccurrence`, `build_ppmi`, `binary_moments`, `binary_correlation`, `ising_gaussian`. Frozen-dataclass return types throughout.
-- **`loaders.py`** — pure `build_species_model()` / `build_species_item_model()` that fit `(J, h, m, vocab, team_counts, species_of, item_of)` end-to-end from the cached corpus (via `load_cached_tournaments`). No Streamlit, no API calls. `scripts/app.py` wraps them in `@st.cache_resource`; `scripts/precompute.py` calls them directly. Also exports `format_pair(species, item)`.
+- **`loaders.py`** — pure `build_species_model()` / `build_species_item_model()` that fit `(J, h, m, vocab, team_counts, species_of, item_of, latest_tournament_date)` end-to-end from the cached corpus (via `load_cached_tournaments`). Both accept keyword args `regulation`, `min_team_count`, `lam` (L2 lambda; converted to `C = 1/lam` for sklearn internally). No Streamlit, no API calls. `scripts/app.py` wraps them in `@st.cache_resource`; `scripts/precompute.py` calls them directly. Also exports `format_pair(species, item)`.
 - **`models.py`** — `fit_pl_ising(X, *, C, max_iter)` runs V per-spin L2 logistic regressions, skips degenerate spins, symmetrizes via `J = 0.5 * (J_asym + J_asym.T)`, zeros diagonal. Used by notebooks 5/6 and `loaders.py` (which in turn feeds `scripts/app.py:load_model_{species,species_item}` and `scripts/precompute.py`).
 - **`sampling.py`** — `swap_mcmc` / `anneal_mcmc` / `parallel_tempered_mcmc` / `meanfield_marginals` / `greedy_optimize` / `rank_single_swaps`. All accept keyword-only `species_of` / `item_of` for species+item uniqueness constraints (no-duplicate-species, no-duplicate-item). Shared inner loop in `_local_swap_step` so the three MCMC variants stay in sync. **Mirrored 1:1 in `web/src/sampler/`** — every public symbol has a TypeScript counterpart gated by `tests/test_parity.py`.
 - **`rendering.py`** — pure-function helpers: `team_obs_count`, `min_swaps_to_observed`, `nearest_observed`, `intra_team_sum_j`, `pairwise_j_rows`, `render_pairwise_j_table`. No Streamlit imports.
@@ -118,7 +121,7 @@ All modules below live under `k2dex/` and use relative imports within the packag
 
 Scripts (under `scripts/`):
 
-- **`precompute.py`** — CLI that fits both models via `k2dex.loaders` and serializes each as `meta.json` + `J.bin` (float32 lower triangle) + `h.bin` + `m.bin` + `team_counts.json` under `web/public/models/<name>/`. Lower-triangle packing halves J's bytes; JS-side loader reconstructs symmetric J. Artifacts are committed to git after manual inspection; CI does **not** regenerate them.
+- **`precompute.py`** — CLI that fits **one model per invocation** via `k2dex.loaders` and serializes it as `meta.json` (schema v2) + `J.bin` (float32 lower triangle) + `h.bin` + `m.bin` + `team_counts.json` under `web/public/models/<slug>/`. The slug is auto-generated from `--display-name`. Also generates `manifest.json` (via `--generate-manifest`) for webapp model discovery. Lower-triangle packing halves J's bytes; JS-side loader reconstructs symmetric J. Artifacts are committed to git after manual inspection; CI does **not** regenerate them.
 - **`scotus_precompute.py`** — fits PL inverse Ising on `scotus_votes.txt` at several N checkpoints; writes `web/public/scotus/{votes,fits}.json`.
 - **`app.py`** — Streamlit webapp. Rendering only; samplers imported from `k2dex.sampling`.
 
@@ -137,14 +140,14 @@ The app uses a "lab notebook" palette + type system delivered via CSS injection.
 Easy to get wrong if you only look at one file:
 
 - **Gaussian model vocab cutoff is `min_usage=0.002`** (~170 Pokémon at Reg M-A 1760). PL model vocab cutoff is `PHASE2_MIN_TEAM_COUNT = 5` (feature must appear in ≥5 teams).
-- **Regularization differs by model.** `SPECIES_LR_C = 0.1`; `SPECIES_ITEM_LR_C = 1.0` (sparser pair matrix wants weaker regularization). Each `loaders` builder passes its own constant. `precompute.py` records the per-model `C` in `meta.json`. `notebooks/regularization_sweep.ipynb` is the sweep harness behind these values.
+- **Regularization differs by model.** `SPECIES_LR_LAMBDA = 10.0`; `SPECIES_ITEM_LR_LAMBDA = 1.0` (sparser pair matrix wants weaker regularization). Lambda is the canonical L2 penalty; converted to sklearn's `C = 1/lambda` internally. Each `loaders` builder passes its own default; `precompute.py --lambda` overrides it. `meta.json` records `fit.lambda`. `notebooks/regularization_sweep.ipynb` is the sweep harness behind these values.
 - **`MIN_TEAMS_PER_TOURNAMENT = 64`** filters out small/quirky tournaments at ingest time. Below this they tended to be majority-Bo1 or unusual local metas.
 - **`PHASE2_MIN_TEAMS = 25000`** is the Limitless API fetch limit (stop walking the API after this many teams). It does not cap the model corpus; model fitting uses all cached data from both Limitless and in-person sources.
 - **Smogon's `Teammates` values are skill-weighted floats, not raw integer counts**; we treat them as proportional to team-appearances. PPMI is computed in probability space so absolute counts cancel.
 - **Field h**: the Gaussian model derives it from mean-field self-consistency; the PL models give h directly as the per-spin logreg intercept.
 - **Energy formulas**: raw `H(s) = -h·s - 0.5 s'Js`. Adjusted `H_adj(s) = -(field_weight·h)·s - 0.5 s'Js`. At `field_weight=0` only the pairwise term remains, dropping the popularity prior — this is the knob for surfacing archetype-coherent completions when standard sampling is too meta-biased.
 - **Completer mode + Bias Adjustment defaults.** PT sampler defaults to Bias Adjustment `0.3`; Greedy flips to `0.8` (greedy wanders into incoherent basins at low weight with few pins). Toggling the checkbox sets bias in *both* directions. Defaults live in `web/src/state/PageStateContext.tsx` (web) and the `st.select_slider`s in `scripts/app.py` (Streamlit, both `0.3`).
-- **Clipboard import + shareable URLs (static webapp only).** Both `/completer` and `/analysis` parse pokepastes via `render/vocab-match.ts` (slug-based matching bridges Showdown forme names to corpus names, with mega-normalization mirroring `tournament_ingest.strip_mega_prefix` and a small `IMPORT_SPECIES_ALIASES` map for edge cases). OOV species/items surface as `.lab-form-note` warnings. Both pages **live-sync state into the URL** (`render/shareLink.ts`), encoded by slug (not index) so links survive vocab reorders. The completer token carries the RNG seed so shared links reproduce exact PT results. Legacy query params still decode for old links. No Python twin, so no parity rows.
+- **Clipboard import + shareable URLs (static webapp only).** Both `/completer` and `/analysis` parse pokepastes via `render/vocab-match.ts` (slug-based matching bridges Showdown forme names to corpus names, with mega-normalization mirroring `tournament_ingest.strip_mega_prefix` and a small `IMPORT_SPECIES_ALIASES` map for edge cases). OOV species/items surface as `.lab-form-note` warnings. Both pages **live-sync state into the URL** (`render/shareLink.ts`), encoded by slug (not index) so links survive vocab reorders. Token format: `<modelSlug>.<fwIndex>.<mons>`, where model slug is the auto-generated id from manifest. Legacy codes `"s"` / `"si"` decode to `"reg-m-a-species"` / `"reg-m-a-species-item"` for backward compatibility. The completer token carries the RNG seed so shared links reproduce exact PT results. No Python twin, so no parity rows.
 - **Swap-move MH** for fixed team size: simultaneously turn one currently-on mon off and one currently-off mon on (single-spin flips break the size constraint). Energy diff `ΔH = h_eff[i_out] − h_eff[i_in] + (J[i_out] − J[i_in]) · s + J[i_in, i_out]`. The last term corrects for the swapped pair's mutual coupling — easy to forget.
 - **Validation split is chronological 90/10** (`VALIDATION_TEAM_FRAC_TEST = 0.10`), out-of-time (fit on past, test on future). Vocab is built from train only; OOV test teams are dropped. `VALIDATION_SEED = 42` seeds the within-test-set held-out position RNG, not the split itself. Temporal drift uses a separate 25/75 split (`DRIFT_TRAIN_FRAC = 0.25`).
 - **Vocab normalization** at ingest time collapses case/whitespace variants (`'Sitrus Berry'` / `'sitrus berry'` → one bucket) AND collapses `Mega <X>` species names down to base species. The cache is invalidated when either normalizer changes (bump `CACHE_VERSION`).
@@ -168,7 +171,8 @@ web/
     assets/missingno.svg     also copied into web/src/assets/ for ?url import
     404.html                 GH Pages SPA fallback (humans only — see SEO note)
     robots.txt               Allow all + Sitemap: line (sitemap itself generated)
-    models/{species,species_item}/  ← precompute.py output, committed to git
+    models/manifest.json    ← model discovery index (precompute.py --generate-manifest)
+    models/<slug>/           ← per-model artifacts (precompute.py), committed to git
     scotus/{votes,fits}.json ← scotus_precompute.py output, committed to git
   src/
     main.tsx, App.tsx        bootstrap + router (includes /science route)
@@ -177,7 +181,8 @@ web/
     usePageMeta.ts           Hook: syncs <head> (title/canonical/OG) on SPA nav
     constants.ts             mirrors a subset of constants.py
     assets/                  Vite-handled imports (missingno fallback)
-    state/ModelContext.tsx   load + cache (J, h, m, team_counts) per model
+    state/manifest.ts       ModelSummary/Manifest types + loadManifest()
+    state/ModelContext.tsx   manifest-driven model loader; caches (J, h, m, team_counts) per slug
     components/              Layout, ModelPicker, VocabSelect (react-select wrapper),
                              CouplingGraph (shared force-directed coupling graph)
     pages/{Completer,Analysis,Meta,Science}Page.tsx
@@ -212,10 +217,11 @@ web/
 
 **Build artifacts pipeline:**
 0. Run `python -m k2dex.tournament_ingest` to populate the cache (Limitless API fetch + in-person import). This is the only step that makes network calls.
-1. Run `python scripts/precompute.py` locally after any change to corpus / fit hyperparams. This reads from the cache only (offline).
-2. Inspect `web/public/models/{species,species_item}/{meta.json,J.bin,...}` for sanity (vocab size, n_corpus_teams, file sizes).
-3. Commit the artifacts. CI is not allowed to regenerate them (the user wants manual eyeballing of every refresh).
-4. `npm run build` reads the artifacts as static files (Vite copies `public/` into `dist/`).
+1. Run `python scripts/precompute.py --display-name "..." --regulation ... --type ...` once per model. This reads from the cache only (offline). Each invocation writes artifacts to `web/public/models/<slug>/`.
+2. Run `python scripts/precompute.py --generate-manifest` to rebuild `manifest.json` from all model directories.
+3. Inspect `web/public/models/<slug>/{meta.json,J.bin,...}` and `manifest.json` for sanity (vocab size, n_corpus_teams, file sizes).
+4. Commit the artifacts. CI is not allowed to regenerate them (the user wants manual eyeballing of every refresh).
+5. `npm run build` reads the artifacts as static files (Vite copies `public/` into `dist/`).
 
 **SEO / indexability (per-route static HTML).** `scripts/prerender-routes.ts` runs as the last step of `npm run build` and writes a real `dist/<route>/index.html` per route (HTTP 200, unique title/description, self-referencing canonical) plus `dist/sitemap.xml`, all driven from `src/siteMeta.ts`. **Adding a route means adding one entry to `src/siteMeta.ts`** — it feeds the prerendered HTML, the runtime head, and the sitemap together. `public/sitemap.xml` does **not** exist; it's generated (don't reintroduce a static one).
 
@@ -234,7 +240,7 @@ Interactive explainer for the math behind the project. Lives under `web/src/scie
 - **Animation rates** are per-section `STEPS_PER_FRAME` constants. Tune if the page feels too fast/slow.
 - **SCOTUS section**: 3-state pin chips, exact enumeration (2^(9-|pinned|) <= 512). Color convention: **conservative = red, liberal = blue** (political-map standard). Vote data encodes `1 = conservative, 0 = liberal`. Graph-edge colors are unrelated (coupling sign: positive = blue, negative = red).
 - **`GraphView` node render modes**: default circle, `sprite` (raw URL, e.g. SCOTUS justices), or `feature` (Pokemon vocab string, renders via `SpriteImg` with item overlay). Prefer `feature` for Pokemon nodes.
-- **Pokemon section** reuses `CouplingGraph.tsx` (shared with Metagame Model page). Prose counts are read live from the model, not hardcoded.
+- **Pokemon section** uses the user's active model (from `useModel()`) for both prose and the coupling graph figure. No separate model load. Reuses `CouplingGraph.tsx` (shared with Metagame Model page). Prose counts and regulation name are read live from the model, not hardcoded.
 - **Citations**: `References.tsx` is the single source of truth. Inline citations are `<a href="#ref-...">` anchors. Add new citations there; don't scatter free-floating references.
 
 ## Code duplicated across Python and TypeScript

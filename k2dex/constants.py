@@ -18,8 +18,8 @@ PHASE1_RIDGE_EPS = 0.01        # ridge for precision-matrix inversion
 # --- Phase 2 / 3 (PL inverse Ising on Limitless teams) ---
 PHASE2_MIN_TEAMS = 25000       # Limitless API fetch limit: stop walking after this many teams
 PHASE2_MIN_TEAM_COUNT = 5      # vocab cutoff: feature must appear in >=5 teams
-SPECIES_LR_C = 0.1            # L2 inverse-strength for the species per-spin logreg
-SPECIES_ITEM_LR_C = 1.0      # L2 inverse-strength for the (species, item) per-spin logreg
+SPECIES_LR_LAMBDA = 10.0       # L2 regularization strength for the species model
+SPECIES_ITEM_LR_LAMBDA = 1.0  # L2 regularization strength for the species+item model
 
 # --- Limitless ingest filter ---
 MIN_TEAMS_PER_TOURNAMENT = 32  # was 16; bump spreads corpus more temporally

@@ -12,18 +12,23 @@
 import type { IsingModel, TeamCounts } from "./types";
 
 interface MetaJson {
-  name: string;
+  id?: string;
+  name?: string;
+  display_name?: string;
+  regulation?: string;
+  feature_dimensions?: number;
+  latest_tournament_date?: string;
   V: number;
   team_size: number;
   n_corpus_teams: number;
   vocab: string[];
   species_of: string[];
   item_of: (string | null)[];
-  fit: { method: string; C: number; min_team_count: number; min_teams: number };
+  fit: { method: string; C?: number; lambda?: number; min_team_count: number };
   schema_version: number;
 }
 
-const SCHEMA_VERSION = 1;
+const SUPPORTED_SCHEMA_VERSIONS = [1, 2];
 
 /** Fetch a binary file as a Float32Array (assumes little-endian, native
  * to all platforms we care about). */
@@ -72,7 +77,7 @@ export function unpackLowerTriangle(
  * defaults to "models" which combines with Vite's `base` to resolve
  * relative to the deployed site root. */
 export async function loadModel(
-  modelName: "species" | "species_item",
+  modelName: string,
   basePath = "models",
 ): Promise<IsingModel> {
   const base = `${import.meta.env.BASE_URL}${basePath}/${modelName}`;
@@ -83,9 +88,9 @@ export async function loadModel(
     fetchFloat32(`${base}/m.bin`),
   ]);
 
-  if (meta.schema_version !== SCHEMA_VERSION) {
+  if (!SUPPORTED_SCHEMA_VERSIONS.includes(meta.schema_version)) {
     throw new Error(
-      `Model schema mismatch: file=${meta.schema_version}, runtime=${SCHEMA_VERSION}`,
+      `Unsupported model schema version: ${meta.schema_version}`,
     );
   }
   if (hF32.length !== meta.V || mF32.length !== meta.V) {
@@ -102,7 +107,15 @@ export async function loadModel(
     indexOf.set(meta.vocab[i], i);
   }
 
+  const id = meta.id ?? meta.name ?? modelName;
+  const hasItems = meta.item_of.some((x) => x !== null);
+
   return {
+    id,
+    displayName: meta.display_name ?? id,
+    regulation: meta.regulation ?? "",
+    featureDimensions: meta.feature_dimensions ?? (hasItems ? 2 : 1),
+    latestTournamentDate: meta.latest_tournament_date ?? "",
     V: meta.V,
     teamSize: meta.team_size,
     vocab: meta.vocab,
@@ -113,14 +126,14 @@ export async function loadModel(
     h,
     indexOf,
     nCorpusTeams: meta.n_corpus_teams,
-    name: meta.name,
+    name: id,
   };
 }
 
 /** Load the corpus team-count index for `nearestObserved` queries.
  * Returns a Map keyed by sorted-index "-"-joined strings. */
 export async function loadTeamCounts(
-  modelName: "species" | "species_item",
+  modelName: string,
   basePath = "models",
 ): Promise<TeamCounts> {
   const base = `${import.meta.env.BASE_URL}${basePath}/${modelName}`;

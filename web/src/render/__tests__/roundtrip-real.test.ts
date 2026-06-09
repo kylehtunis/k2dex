@@ -15,6 +15,11 @@ function loadMeta(name: string): IsingModel {
   const indexOf = new Map<string, number>();
   vocab.forEach((v, i) => indexOf.set(v, i));
   return {
+    id: meta.id ?? meta.name,
+    displayName: meta.display_name ?? meta.name,
+    regulation: meta.regulation ?? "",
+    featureDimensions: meta.feature_dimensions ?? (itemOf.some((x: string | null) => x !== null) ? 2 : 1),
+    latestTournamentDate: meta.latest_tournament_date ?? "",
     V,
     teamSize: meta.team_size,
     vocab,
@@ -25,18 +30,18 @@ function loadMeta(name: string): IsingModel {
     h: new Float64Array(V),
     indexOf,
     nCorpusTeams: meta.n_corpus_teams,
-    name: meta.name,
+    name: meta.id ?? meta.name,
   };
 }
 
 describe("real-model share-token round-trip", () => {
-  for (const name of ["species", "species_item"] as const) {
+  for (const name of ["reg-m-a-species", "reg-m-a-species-item"]) {
     it(`every vocab index round-trips for ${name}`, () => {
       const model = loadMeta(name);
       const slugIndex = buildSlugIndex(model);
       const failures: string[] = [];
       for (let i = 0; i < model.V; i++) {
-        const token = encodeCore(model.name as "species" | "species_item", 0.3, [i], model);
+        const token = encodeCore(model.id, 0.3, [i], model);
         const decoded = decodeCore(token)!;
         const f = decoded.features[0];
         const r = resolveFeature(slugIndex, model, f.speciesSlug, f.itemSlug);
