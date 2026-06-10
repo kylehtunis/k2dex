@@ -131,6 +131,12 @@
   font-weight: 600;
   color: var(--lab-ink);
 }
+.lab-model-picker-option-desc {
+  font-family: var(--lab-font-sans);
+  font-size: 10px;
+  color: var(--lab-ink);
+  font-style: italic;
+}
 .lab-model-picker-option-meta {
   font-family: var(--lab-font-sans);
   font-size: 10px;

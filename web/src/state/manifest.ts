@@ -1,6 +1,7 @@
 export interface ModelSummary {
   id: string;
   displayName: string;
+  description?: string;
   regulation: string;
   featureDimensions: 1 | 2;
   V: number;
@@ -21,6 +22,7 @@ interface ManifestJson {
   models: Array<{
     id: string;
     display_name: string;
+    description?: string;
     regulation: string;
     feature_dimensions: 1 | 2;
     V: number;
@@ -44,6 +46,7 @@ export async function loadManifest(): Promise<Manifest> {
     models: raw.models.map((m) => ({
       id: m.id,
       displayName: m.display_name,
+      ...(m.description !== undefined && { description: m.description }),
       regulation: m.regulation,
       featureDimensions: m.feature_dimensions,
       V: m.V,

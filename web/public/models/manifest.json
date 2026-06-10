@@ -5,6 +5,7 @@
     {
       "id": "reg-m-a-species-item",
       "display_name": "Reg. M-A Species @ Item",
+      "description": "Used for creating teams of Pokémon with their held items. This is the recommended model.",
       "regulation": "M-A",
       "feature_dimensions": 2,
       "V": 779,
@@ -15,6 +16,7 @@
     {
       "id": "reg-m-a-species",
       "display_name": "Reg. M-A Species",
+      "description": "Used for creating teams of Pokémon, considering only the species. Lower resolution than the Species @ Item model.",
       "regulation": "M-A",
       "feature_dimensions": 1,
       "V": 193,

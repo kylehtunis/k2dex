@@ -40,6 +40,11 @@ function ModelOption({
       <span className="lab-model-picker-option-name">
         {m.displayName}
       </span>
+      {m.description && (
+        <span className="lab-model-picker-option-desc">
+          {m.description}
+        </span>
+      )}
       <span className="lab-model-picker-option-meta">
         {m.V.toLocaleString()} {dimLabel(m.featureDimensions)}
         {" · "}

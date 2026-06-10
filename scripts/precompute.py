@@ -130,6 +130,7 @@ def write_model(
     lam: float,
     out_dir: Path,
     *,
+    description: str | None = None,
     min_team_count: int = PHASE2_MIN_TEAM_COUNT,
     skip_team_counts: bool = False,
     force: bool = False,
@@ -141,6 +142,8 @@ def write_model(
 
     print(f"\n=== Building model: {slug} ===")
     print(f"  display_name: {display_name}")
+    if description:
+        print(f"  description: {description}")
     print(f"  regulation: {regulation}")
     print(f"  type: {model_type}")
     print(f"  lambda: {lam}")
@@ -166,7 +169,7 @@ def write_model(
     print(f"  h.bin: {V * 4:,} bytes")
     print(f"  m.bin: {V * 4:,} bytes")
 
-    meta = {
+    meta: dict = {
         "id": slug,
         "display_name": display_name,
         "regulation": regulation,
@@ -185,6 +188,8 @@ def write_model(
         },
         "schema_version": 2,
     }
+    if description:
+        meta["description"] = description
     with open(model_dir / "meta.json", "w") as f:
         json.dump(meta, f, indent=None, separators=(",", ":"))
     print(f"  meta.json: {(model_dir / 'meta.json').stat().st_size:,} bytes")
@@ -208,7 +213,7 @@ def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> Non
         with open(meta_path) as f:
             meta = json.load(f)
         slug = meta.get("id", meta.get("name", meta_path.parent.name))
-        models.append({
+        entry: dict = {
             "id": slug,
             "display_name": meta.get("display_name", slug),
             "regulation": meta.get("regulation", ""),
@@ -217,7 +222,10 @@ def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> Non
             "n_corpus_teams": meta["n_corpus_teams"],
             "latest_tournament_date": meta.get("latest_tournament_date", ""),
             "team_size": meta.get("team_size", TEAM_SIZE),
-        })
+        }
+        if "description" in meta:
+            entry["description"] = meta["description"]
+        models.append(entry)
 
     if not models:
         print(f"No models found in {out_dir}")
@@ -263,6 +271,11 @@ def main() -> int:
         "--display-name",
         help="Human-readable model name (e.g. 'Reg M-A Species @ Item'). "
              "The directory slug is auto-generated from this.",
+    )
+    group.add_argument(
+        "--description",
+        default=None,
+        help="Optional short description shown in the model picker.",
     )
     group.add_argument(
         "--regulation",
@@ -331,6 +344,7 @@ def main() -> int:
         model_type=args.model_type,
         lam=lam,
         out_dir=out_dir,
+        description=args.description,
         min_team_count=args.min_team_count,
         skip_team_counts=args.skip_team_counts,
         force=args.force,
