@@ -99,8 +99,12 @@ def build_species_model(
     """Species-only PL inverse Ising over the cached tournament corpus.
 
     `recency_tau` / `in_person_multiplier` set the per-team fit weights (see
-    `team_weights`). The vocab cutoff and the marginals `m` are weighted to
-    match the weighted fit; `team_counts` stays a raw count for display.
+    `team_weights`). The marginals `m` are weighted to match the weighted fit;
+    `team_counts` stays a raw count for display. The vocab cutoff requires
+    `min_team_count` in BOTH raw and weighted counts: raw support so that no
+    single highly-weighted team can push a one-off feature into the vocab,
+    weighted support so features whose evidence is all heavily decayed drop
+    out instead of hitting the degenerate-spin path.
     """
     tournaments = tournament_ingest.load_cached_tournaments(regulation=regulation)
     latest_date = max(t.meta.date for t in tournaments)
@@ -114,11 +118,15 @@ def build_species_model(
     teams = tournament_ingest.species_only_teams([o.members for o in observations])
     team_counts: Counter[frozenset[str]] = Counter(teams)
 
+    raw_counts = Counter(name for team in teams for name in team)
     weighted_counts: dict[str, float] = {}
     for ti, team in enumerate(teams):
         for name in team:
             weighted_counts[name] = weighted_counts.get(name, 0.0) + w[ti]
-    vocab = sorted(name for name, c in weighted_counts.items() if c >= min_team_count)
+    vocab = sorted(
+        name for name, c in weighted_counts.items()
+        if c >= min_team_count and raw_counts[name] >= min_team_count
+    )
     name_to_i = {name: i for i, name in enumerate(vocab)}
     V = len(vocab)
 
@@ -146,8 +154,8 @@ def build_species_item_model(
 ) -> SpeciesModel:
     """(species, item)-pair PL inverse Ising over the cached tournament corpus.
 
-    Weighting semantics match `build_species_model`: weighted vocab cutoff and
-    marginals, raw `team_counts` for display.
+    Weighting semantics match `build_species_model`: weighted marginals, vocab
+    cutoff on BOTH raw and weighted counts, raw `team_counts` for display.
     """
     tournaments = tournament_ingest.load_cached_tournaments(regulation=regulation)
     latest_date = max(t.meta.date for t in tournaments)
@@ -160,11 +168,15 @@ def build_species_item_model(
     )
     teams = [o.members for o in observations]
 
+    raw_counts = Counter(pair for team in teams for pair in team)
     weighted_counts: dict[tuple[str, str | None], float] = {}
     for ti, team in enumerate(teams):
         for pair in team:
             weighted_counts[pair] = weighted_counts.get(pair, 0.0) + w[ti]
-    pair_list_above_cutoff = [p for p, c in weighted_counts.items() if c >= min_team_count]
+    pair_list_above_cutoff = [
+        p for p, c in weighted_counts.items()
+        if c >= min_team_count and raw_counts[p] >= min_team_count
+    ]
     pair_list = sorted(pair_list_above_cutoff, key=lambda p: format_pair(p[0], p[1]))
     vocab = [format_pair(s, i) for s, i in pair_list]
     pair_to_idx = {p: i for i, p in enumerate(pair_list)}

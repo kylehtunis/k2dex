@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
-from k2dex.loaders import team_weights
-from k2dex.tournament_ingest import TeamObservation
+from k2dex.loaders import build_species_item_model, team_weights
+from k2dex.tournament_ingest import (
+    Team,
+    TeamObservation,
+    TournamentMeta,
+    TournamentTeams,
+    _save_tournament,
+)
 
 
 def _obs(date: str, tournament_type: str = "limitless") -> TeamObservation:
@@ -66,6 +75,62 @@ class TestTeamWeights(unittest.TestCase):
         self.assertTrue(np.all(w > 0))
         # Newer in-person teams must outweigh older online teams.
         self.assertGreater(w[3], w[0])
+
+
+class TestWeightedVocabCutoff(unittest.TestCase):
+    """The vocab cutoff requires min_team_count in BOTH raw and weighted
+    counts: a single highly-weighted recent team must not push a one-off
+    feature into the vocab, and a feature whose support is entirely decayed
+    away must drop out."""
+
+    BASE = [(f"Mon{k}", f"Item{k}") for k in range(12)]
+
+    def _team(self, members) -> Team:
+        return Team(members=frozenset(members), placing=None, wins=0, losses=0, ties=0)
+
+    def _rotating(self, t: int, n: int) -> list[tuple[str, str]]:
+        # n distinct members per team, rotating through BASE so no column is
+        # all-on / all-off (which would trip the degenerate-spin skip).
+        return [self.BASE[(t + j) % len(self.BASE)] for j in range(n)]
+
+    def _tournament(self, tid, date, ttype, teams) -> TournamentTeams:
+        meta = TournamentMeta(id=tid, name=tid, date=date, regulation="M-A",
+                              players=len(teams))
+        return TournamentTeams(meta=meta, teams=teams, tournament_type=ttype)
+
+    def test_single_heavy_team_cannot_mint_vocab(self) -> None:
+        # 64 old online teams (age 60d) + 32 recent in-person teams. At
+        # tau=20 / mult=4 each recent team carries weight ~2.9, above the
+        # cutoff of 2. One recent team carries a unique (ghost) pair; two old
+        # teams carry a (stale) pair whose weighted mass decays below 2.
+        old_teams = [self._team(self._rotating(t, 6)) for t in range(62)]
+        old_teams += [self._team(self._rotating(t, 5) + [("StaleMon", "Stale Item")])
+                      for t in range(2)]
+        new_teams = [self._team(self._rotating(t, 6)) for t in range(31)]
+        new_teams += [self._team(self._rotating(7, 5) + [("GhostMon", "Ghost Item")])]
+
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as td:
+            try:
+                os.chdir(td)
+                cache = Path("tournaments_cache")
+                _save_tournament(cache, self._tournament(
+                    "old", "2026-01-01", "limitless", old_teams))
+                _save_tournament(cache, self._tournament(
+                    "new", "2026-03-02", "in-person", new_teams))
+
+                vocab, m, J, h, *_ = build_species_item_model(
+                    regulation="M-A", min_team_count=2,
+                    recency_tau=20.0, in_person_multiplier=4.0,
+                )
+            finally:
+                os.chdir(cwd)
+
+        self.assertNotIn("GhostMon @ Ghost Item", vocab)   # raw=1, weighted ~2.9
+        self.assertNotIn("StaleMon @ Stale Item", vocab)   # raw=2, weighted ~0.1
+        self.assertIn("Mon0 @ Item0", vocab)               # staple: both counts high
+        # No degenerate-skip artifacts: every vocab feature has a fitted h.
+        self.assertTrue(np.all(h != 0.0))
 
 
 if __name__ == "__main__":
