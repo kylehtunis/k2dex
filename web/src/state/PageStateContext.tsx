@@ -52,7 +52,7 @@ const COMPLETER_DEFAULTS: CompleterInputs = {
 
 const ANALYSIS_DEFAULTS: AnalysisInputs = {
   teamIdxs: [],
-  fieldWeight: 0.3,
+  fieldWeight: 0.5,
 };
 
 interface PageStateContextValue {
