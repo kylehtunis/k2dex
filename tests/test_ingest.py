@@ -14,6 +14,7 @@ from k2dex.tournament_ingest import (
     TournamentTeams,
     Team,
     _save_tournament,
+    all_team_observations,
     load_cached_tournaments,
     import_in_person_tournaments,
     normalize_bracket_forme,
@@ -30,12 +31,14 @@ def _make_team(species_items: list[tuple[str, str | None]], placing=None) -> Tea
 
 def _make_tournament(
     tid: str, name: str, date: str, regulation: str, teams: list[Team],
+    tournament_type: str = "limitless",
 ) -> TournamentTeams:
     return TournamentTeams(
         meta=TournamentMeta(
             id=tid, name=name, date=date, regulation=regulation, players=len(teams),
         ),
         teams=teams,
+        tournament_type=tournament_type,
     )
 
 
@@ -53,8 +56,11 @@ class TestSaveTournamentType(unittest.TestCase):
     def test_type_field_written(self):
         with tempfile.TemporaryDirectory() as td:
             cache_dir = Path(td)
-            tt = _make_tournament("t1", "Test Event", "2026-01-01", "M-A", SAMPLE_TEAMS)
-            _save_tournament(cache_dir, tt, tournament_type="in-person")
+            tt = _make_tournament(
+                "t1", "Test Event", "2026-01-01", "M-A", SAMPLE_TEAMS,
+                tournament_type="in-person",
+            )
+            _save_tournament(cache_dir, tt)
 
             with (cache_dir / "t1.json").open() as f:
                 payload = json.load(f)
@@ -77,13 +83,12 @@ class TestLoadCachedTournaments(unittest.TestCase):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.cache_dir = Path(self.tmpdir.name)
         t1 = _make_tournament("a", "Alpha", "2026-01-10", "M-A", SAMPLE_TEAMS)
-        t2 = _make_tournament("b", "Beta", "2026-01-05", "M-A", SAMPLE_TEAMS)
+        t2 = _make_tournament("b", "Beta", "2026-01-05", "M-A", SAMPLE_TEAMS,
+                              tournament_type="in-person")
         t3 = _make_tournament("c", "Gamma", "2026-02-01", "G", SAMPLE_TEAMS)
         t4 = _make_tournament("d", "Delta Singles", "2026-01-15", "M-A", SAMPLE_TEAMS)
-        _save_tournament(self.cache_dir, t1, tournament_type="limitless")
-        _save_tournament(self.cache_dir, t2, tournament_type="in-person")
-        _save_tournament(self.cache_dir, t3, tournament_type="limitless")
-        _save_tournament(self.cache_dir, t4, tournament_type="limitless")
+        for t in (t1, t2, t3, t4):
+            _save_tournament(self.cache_dir, t)
 
     def tearDown(self):
         self.tmpdir.cleanup()
@@ -106,6 +111,23 @@ class TestLoadCachedTournaments(unittest.TestCase):
         )
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].meta.id, "b")
+
+    def test_tournament_type_round_trips(self):
+        result = load_cached_tournaments(cache_dir=self.cache_dir, regulation="M-A")
+        types = {t.meta.id: t.tournament_type for t in result}
+        self.assertEqual(types, {"a": "limitless", "b": "in-person"})
+
+    def test_all_team_observations_keeps_provenance(self):
+        result = load_cached_tournaments(cache_dir=self.cache_dir, regulation="M-A")
+        obs = all_team_observations(result)
+        self.assertEqual(len(obs), sum(len(t.teams) for t in result))
+        # Same ordering as the tournament list: result is date-sorted, so the
+        # in-person event ("b", 2026-01-05) contributes the first block.
+        self.assertEqual(obs[0].date, "2026-01-05")
+        self.assertEqual(obs[0].tournament_type, "in-person")
+        self.assertEqual(obs[-1].date, "2026-01-10")
+        self.assertEqual(obs[-1].tournament_type, "limitless")
+        self.assertEqual(obs[0].members, SAMPLE_TEAMS[0].members)
 
     def test_sorted_by_date(self):
         result = load_cached_tournaments(cache_dir=self.cache_dir, regulation="M-A")

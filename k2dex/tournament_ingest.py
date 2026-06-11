@@ -109,10 +109,29 @@ class Team:
 
 @dataclass(frozen=True)
 class TournamentTeams:
-    """A tournament's parsed teams (rosters + outcomes) and identifying metadata."""
+    """A tournament's parsed teams (rosters + outcomes) and identifying metadata.
+
+    `tournament_type` is the provenance of the entry: `"limitless"` (online,
+    fetched from the API) or `"in-person"` (imported from tournament_json/).
+    """
 
     meta: TournamentMeta
     teams: list[Team]
+    tournament_type: str = "limitless"
+
+
+@dataclass(frozen=True)
+class TeamObservation:
+    """A roster plus the per-team provenance used for sample weighting.
+
+    The flattened counterpart of `Team` that keeps the parent tournament's
+    date and source type (which `all_teams` projects away). Consumed by
+    `loaders.team_weights` to compute recency / in-person fit weights.
+    """
+
+    members: frozenset[tuple[str, str | None]]
+    date: str             # parent tournament date, ISO YYYY-MM-DD
+    tournament_type: str  # "limitless" or "in-person"
 
 
 _MEGA_FORME_SUFFIXES = (" X", " Y", " Z")
@@ -392,16 +411,11 @@ def _cache_path(cache_dir: Path, tournament_id: str) -> Path:
     return cache_dir / f"{tournament_id}.json"
 
 
-def _save_tournament(
-    cache_dir: Path,
-    t: TournamentTeams,
-    *,
-    tournament_type: str = "limitless",
-) -> None:
+def _save_tournament(cache_dir: Path, t: TournamentTeams) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     payload = {
         "version": CACHE_VERSION,
-        "type": tournament_type,
+        "type": t.tournament_type,
         "meta": {
             "id": t.meta.id,
             "name": t.meta.name,
@@ -452,7 +466,9 @@ def _load_tournament(cache_dir: Path, tournament_id: str) -> TournamentTeams | N
         )
         for team in payload["teams"]
     ]
-    return TournamentTeams(meta=meta, teams=teams)
+    return TournamentTeams(
+        meta=meta, teams=teams, tournament_type=payload.get("type", "limitless"),
+    )
 
 
 def fetch_limitless_tournaments(
@@ -518,8 +534,8 @@ def fetch_limitless_tournaments(
                     time.sleep(POLITE_SLEEP_SEC)
                     continue
                 teams = extract_teams(standings, regulation=tm.regulation)
-                ttd = TournamentTeams(meta=tm, teams=teams)
-                _save_tournament(cache_dir, ttd, tournament_type="limitless")
+                ttd = TournamentTeams(meta=tm, teams=teams, tournament_type="limitless")
+                _save_tournament(cache_dir, ttd)
                 source = "fetched"
                 time.sleep(POLITE_SLEEP_SEC)
             # Post-extract size check: catches cached tournaments under a
@@ -569,6 +585,24 @@ def all_teams_with_outcomes(tournaments: list[TournamentTeams]) -> list[Team]:
     validation (coherence/Score vs. placement).
     """
     return [team for t in tournaments for team in t.teams]
+
+
+def all_team_observations(tournaments: list[TournamentTeams]) -> list[TeamObservation]:
+    """Flatten ingested tournaments into per-team `TeamObservation` records.
+
+    Same flattening (and ordering) as `all_teams`, but keeps each roster's
+    tournament date and provenance type -- the inputs for recency / in-person
+    sample weighting in `loaders`.
+    """
+    return [
+        TeamObservation(
+            members=team.members,
+            date=t.meta.date,
+            tournament_type=t.tournament_type,
+        )
+        for t in tournaments
+        for team in t.teams
+    ]
 
 
 def chronological_split(
@@ -661,7 +695,7 @@ def load_cached_tournaments(
         if len(teams) < min_teams_per_tournament:
             continue
 
-        out.append(TournamentTeams(meta=meta, teams=teams))
+        out.append(TournamentTeams(meta=meta, teams=teams, tournament_type=entry_type))
 
     out.sort(key=lambda t: t.meta.date)
     logger.info(
@@ -733,8 +767,8 @@ def import_in_person_tournaments(
                 regulation=regulation,
                 players=len(standings),
             )
-            tt = TournamentTeams(meta=meta, teams=teams)
-            _save_tournament(cache_dir, tt, tournament_type="in-person")
+            tt = TournamentTeams(meta=meta, teams=teams, tournament_type="in-person")
+            _save_tournament(cache_dir, tt)
             imported.append(tt)
             logger.info(
                 "[imported]     %s -> %s (%d teams, regulation=%s, date=%s)",

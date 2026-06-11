@@ -26,6 +26,9 @@ Usage:
     # Override regularization (default: lambda=10 for species, lambda=1 for species_item):
     python precompute.py --display-name "Reg M-B Species" --regulation M-B --type species --lambda 5.0
 
+    # Weighted fit (recency decay + in-person upweight; values from weighting_sweep.ipynb):
+    python precompute.py --display-name "Reg M-A Species @ Item" --type species_item --tau 90 --in-person-weight 2.0
+
     # Generate manifest after all models are built:
     python precompute.py --generate-manifest
     python precompute.py --generate-manifest --default-model reg-m-a-species-item
@@ -46,7 +49,9 @@ from numpy.typing import NDArray
 
 from k2dex.constants import (
     CURRENT_REGULATION,
+    IN_PERSON_WEIGHT,
     PHASE2_MIN_TEAM_COUNT,
+    RECENCY_TAU_DAYS,
     SPECIES_ITEM_LR_LAMBDA,
     SPECIES_LR_LAMBDA,
     TEAM_SIZE,
@@ -132,6 +137,8 @@ def write_model(
     *,
     description: str | None = None,
     min_team_count: int = PHASE2_MIN_TEAM_COUNT,
+    recency_tau: float | None = RECENCY_TAU_DAYS,
+    in_person_weight: float = IN_PERSON_WEIGHT,
     skip_team_counts: bool = False,
     force: bool = False,
 ) -> None:
@@ -147,12 +154,16 @@ def write_model(
     print(f"  regulation: {regulation}")
     print(f"  type: {model_type}")
     print(f"  lambda: {lam}")
+    print(f"  recency_tau_days: {recency_tau if recency_tau is not None else '(no decay)'}")
+    print(f"  in_person_weight: {in_person_weight}")
 
     builder = MODEL_BUILDERS[model_type]
     vocab, m, J, h, team_counts, species_of, item_of, latest_date = builder(
         regulation=regulation,
         min_team_count=min_team_count,
         lam=lam,
+        recency_tau=recency_tau,
+        in_person_multiplier=in_person_weight,
     )
     V = len(vocab)
     n_teams = int(sum(team_counts.values()))
@@ -185,6 +196,8 @@ def write_model(
             "method": "pseudo_likelihood",
             "lambda": lam,
             "min_team_count": min_team_count,
+            "recency_tau_days": recency_tau,
+            "in_person_weight": in_person_weight,
         },
         "schema_version": 2,
     }
@@ -297,6 +310,22 @@ def main() -> int:
              "Converted to sklearn C = 1/lambda internally.",
     )
     group.add_argument(
+        "--tau",
+        type=float,
+        dest="recency_tau",
+        default=RECENCY_TAU_DAYS,
+        help="Recency decay timescale in days for per-team fit weights "
+             "(default: no decay). Recorded in meta.json:fit.",
+    )
+    group.add_argument(
+        "--in-person-weight",
+        type=float,
+        dest="in_person_weight",
+        default=IN_PERSON_WEIGHT,
+        help=f"Fit-weight multiplier on in-person teams (default: {IN_PERSON_WEIGHT}). "
+             "Recorded in meta.json:fit.",
+    )
+    group.add_argument(
         "--min-team-count",
         type=int,
         default=PHASE2_MIN_TEAM_COUNT,
@@ -346,6 +375,8 @@ def main() -> int:
         out_dir=out_dir,
         description=args.description,
         min_team_count=args.min_team_count,
+        recency_tau=args.recency_tau,
+        in_person_weight=args.in_person_weight,
         skip_team_counts=args.skip_team_counts,
         force=args.force,
     )

@@ -99,6 +99,16 @@ python scripts/precompute.py \
   --type species_item \
   --lambda 2.0
 
+# Weighted fit: exponential recency decay (--tau, in days) and an in-person
+# upweight (--in-person-weight). Defaults come from k2dex/constants.py
+# (RECENCY_TAU_DAYS / IN_PERSON_WEIGHT, tuned by notebooks/weighting_sweep.ipynb);
+# both values are recorded in meta.json under "fit".
+python scripts/precompute.py \
+  --display-name "Reg M-A Species @ Item" \
+  --type species_item \
+  --tau 90 \
+  --in-person-weight 2.0
+
 # After building all models, generate the manifest for webapp discovery
 python scripts/precompute.py --generate-manifest --default-model reg-m-a-species-item
 ```
@@ -158,6 +168,7 @@ The notebooks form a dependency chain. Explore in order, or jump into any standa
 | 8 | `energy_discrimination.ipynb` | Standalone: real-vs-null scoring, Bias Adjustment sweep, AUC analysis |
 | 9 | `regularization_sweep.ipynb` | Standalone: L2 regularization sweep behind the per-model lambda values |
 | 10 | `outcome_validation.ipynb` | Standalone: does Score/coherence predict tournament placement? (confirms the model captures meta typicality, not team quality) |
+| 11 | `weighting_sweep.ipynb` | Standalone: tunes the sample-weighting knobs (recency decay tau, in-person multiplier) on held-out future in-person events |
 
 ## Key concepts
 

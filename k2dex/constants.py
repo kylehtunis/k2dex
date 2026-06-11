@@ -24,6 +24,12 @@ PHASE2_MIN_TEAM_COUNT = 5      # vocab cutoff: feature must appear in >=5 teams
 SPECIES_LR_LAMBDA = 10.0       # L2 regularization strength for the species model
 SPECIES_ITEM_LR_LAMBDA = 1.0  # L2 regularization strength for the species+item model
 
+# --- Sample weighting (weighted base model) ---
+# Per-team fit weight: w = exp(-age_days / RECENCY_TAU_DAYS) * IN_PERSON_WEIGHT^[in-person],
+# normalized so the weights average to 1. Tuned by notebooks/weighting_sweep.ipynb.
+RECENCY_TAU_DAYS: float | None = None  # decay timescale in days; None = no recency decay
+IN_PERSON_WEIGHT = 1.0                 # multiplier on in-person teams; 1.0 = no upweight
+
 # --- Limitless ingest filter ---
 MIN_TEAMS_PER_TOURNAMENT = 32  # was 16; bump spreads corpus more temporally
                                # and indirectly filters small-tournament quirks

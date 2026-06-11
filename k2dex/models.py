@@ -20,6 +20,7 @@ def fit_pl_ising(
     *,
     C: float = 0.1,
     max_iter: int = 1000,
+    sample_weight: NDArray[np.floating] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Fit inverse Ising (J, h) via per-spin pseudo-likelihood on a binary
     team-indicator matrix.
@@ -28,6 +29,11 @@ def fit_pl_ising(
         X: (n_teams, V) integer matrix with X[t, i] = 1 iff feature i appears
            in team t. Any integer dtype is accepted; cast to int32 internally.
         C: sklearn L2 inverse-strength. Lower = stronger regularization.
+        sample_weight: optional (n_teams,) nonnegative per-team weights passed
+           to each per-spin regression. The degenerate-spin skip then also
+           requires >= 2 units of weighted mass in each class, so weights
+           should be normalized to mean ~1 (`loaders.team_weights` guarantees
+           this) to keep that threshold on the same scale as raw counts.
 
     Output:
         J: (V, V) symmetric float64 with zero diagonal.
@@ -48,16 +54,25 @@ def fit_pl_ising(
     """
     X = X.astype(np.int32, copy=False)
     n, V = X.shape
+    w: NDArray[np.float64] | None = None
+    if sample_weight is not None:
+        w = np.asarray(sample_weight, dtype=np.float64)
+        if w.shape != (n,):
+            raise ValueError(f"sample_weight shape {w.shape} != ({n},)")
+        if np.any(w < 0):
+            raise ValueError("sample_weight must be nonnegative")
     J_asym = np.zeros((V, V), dtype=np.float64)
     h = np.zeros(V, dtype=np.float64)
     for i in range(V):
         y = X[:, i]
         if y.sum() < 2 or (1 - y).sum() < 2:
             continue
+        if w is not None and (w[y == 1].sum() < 2.0 or w[y == 0].sum() < 2.0):
+            continue
         mask = np.ones(V, dtype=bool)
         mask[i] = False
         lr = LogisticRegression(penalty="l2", C=C, solver="lbfgs", max_iter=max_iter)
-        lr.fit(X[:, mask], y)
+        lr.fit(X[:, mask], y, sample_weight=w)
         h[i] = lr.intercept_[0]
         J_asym[i, mask] = lr.coef_[0]
     J = 0.5 * (J_asym + J_asym.T)
