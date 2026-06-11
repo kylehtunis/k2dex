@@ -14,7 +14,7 @@ const SIGNED_BAR_MAX = 2.5;
 
 export function PairwiseJTable({ rows }: PairwiseJTableProps) {
   return (
-    <table className="lab-comp-table">
+    <table className="lab-comp-table lab-table-pairs">
       <thead>
         <tr>
           <th className="num">#</th>
@@ -27,23 +27,16 @@ export function PairwiseJTable({ rows }: PairwiseJTableProps) {
         {rows.map((r) => (
           <tr key={r.rank}>
             <td className="rank">{r.rank.toString().padStart(2, "0")}</td>
-            <td>
+            <td className="pair">
               <PairCell nameA={r.nameA} nameB={r.nameB} />
             </td>
-            <td className="num">
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  justifyContent: "flex-end",
-                }}
-              >
+            <td className="num" data-label="coupling">
+              <div className="lab-coupling-val">
                 <SignedBar value={r.jValue} maxValue={SIGNED_BAR_MAX} width={80} />
                 <ScoreChip value={r.jValue} />
               </div>
             </td>
-            <td className="num">{(r.pctOfAbsSum * 100).toFixed(1)}%</td>
+            <td className="num" data-label="% of total">{(r.pctOfAbsSum * 100).toFixed(1)}%</td>
           </tr>
         ))}
       </tbody>

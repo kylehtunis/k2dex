@@ -221,8 +221,9 @@ export function CouplingGraph({
   }
 
   return (
-    <figure style={{ margin: 0 }}>
+    <figure className="lab-coupling-graph-fig" style={{ margin: 0 }}>
       <div
+        className="lab-coupling-graph-wrap"
         style={{
           position: "relative",
           width: "100%",

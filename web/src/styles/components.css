@@ -779,6 +779,14 @@
   font-size: 13px;
 }
 
+/* ----- Coupling value (bar + chip, used in pair tables) ----- */
+.lab-coupling-val {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 /* ----- Composed-cell layout classes (web-only; no rendering_html twin) ----- */
 
 /* Action button stack inside completion rows. */
@@ -872,6 +880,20 @@
   color: #fff;
 }
 
+/* ----- Coupling graph figure: override inline-flex figure in science
+ * sections so the fluid wrapper gets a real width context ----- */
+.lab-coupling-graph-fig {
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+.lab-coupling-graph-fig > figcaption {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
 /* ----- SVG widgets scale down to their container ----- */
 /* All four set width/height attributes (intrinsic size) plus viewBox,
  * so shrinking is a pure visual transform. */
@@ -953,10 +975,66 @@
   .lab-table-cards .lab-comp-freq {
     align-items: flex-start;
   }
+  /* Let completion mons flow as a 2-column grid when there's room. */
+  .lab-table-cards .lab-comp-pair {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
   .lab-comp-actions {
     flex-direction: row;
     flex-wrap: wrap;
     gap: 10px;
+  }
+
+  /* Pair tables (PairwiseJ / ExtremeCouplings): pair horizontal,
+   * stats stacked below. */
+  .lab-table-pairs {
+    display: block;
+  }
+  .lab-table-pairs thead {
+    display: none;
+  }
+  .lab-table-pairs tbody {
+    display: block;
+  }
+  .lab-table-pairs tr {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 12px;
+    padding: 12px 2px;
+    border-bottom: 1px solid var(--lab-rule);
+  }
+  .lab-table-pairs td {
+    display: block;
+    border-bottom: none;
+    padding: 0;
+  }
+  .lab-table-pairs td.rank {
+    width: auto;
+    grid-row: 1 / -1;
+    align-self: center;
+  }
+  .lab-table-pairs td.pair {
+    grid-column: 2;
+  }
+  .lab-table-pairs td.num {
+    grid-column: 2;
+    text-align: left;
+  }
+  .lab-table-pairs td[data-label]::before {
+    content: attr(data-label);
+    display: inline;
+    font-family: var(--lab-font-sans);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--lab-ink-muted);
+    margin-right: 8px;
+  }
+  .lab-table-pairs .lab-coupling-val {
+    display: inline-flex;
   }
 
   /* Long "Species @ Item" pair/swap cells may wrap. */

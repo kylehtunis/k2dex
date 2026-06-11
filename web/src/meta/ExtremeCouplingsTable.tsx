@@ -27,7 +27,7 @@ export function ExtremeCouplingsTable({
 }: ExtremeCouplingsTableProps) {
   return (
     <ScrollX>
-    <table className="lab-comp-table">
+    <table className="lab-comp-table lab-table-pairs">
       <thead>
         <tr>
           <th className="num">#</th>
@@ -39,18 +39,11 @@ export function ExtremeCouplingsTable({
         {rows.map((r, rank) => (
           <tr key={`${r.i}-${r.j}`}>
             <td className="rank">{(rank + 1).toString().padStart(2, "0")}</td>
-            <td>
+            <td className="pair">
               <PairCell nameA={model.vocab[r.i]} nameB={model.vocab[r.j]} />
             </td>
-            <td className="num">
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  justifyContent: "flex-end",
-                }}
-              >
+            <td className="num" data-label="coupling">
+              <div className="lab-coupling-val">
                 <SignedBar value={r.jValue} maxValue={maxJ} width={80} />
                 <ScoreChip value={r.jValue} />
               </div>
