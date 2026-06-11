@@ -31,7 +31,7 @@ export function ChainTable({
 }: ChainTableProps) {
   const startCorpus = nearestObserved(startingTeam, teamCounts);
   return (
-    <table className="lab-comp-table">
+    <table className="lab-comp-table lab-table-cards">
       <thead>
         <tr>
           <th className="num">#</th>
@@ -46,7 +46,7 @@ export function ChainTable({
       <tbody>
         <tr>
           <td className="rank">00</td>
-          <td>
+          <td className="swap">
             <span
               style={{
                 fontFamily: "var(--lab-font-serif)",
@@ -57,17 +57,17 @@ export function ChainTable({
               starting team
             </span>
           </td>
-          <td className="num">{formatSigned(startScoreAdj)}</td>
-          <td className="num">{formatSigned(startScoreRaw)}</td>
-          <td className="num">
+          <td className="num" data-label="score adj">{formatSigned(startScoreAdj)}</td>
+          <td className="num" data-label="score raw">{formatSigned(startScoreRaw)}</td>
+          <td className="num" data-label="coherence">
             <ScoreChip value={startSumJ} />
           </td>
-          <td className="num">
+          <td className="num" data-label="corpus">
             {startCorpus !== null && (
               <CorpusCell delta={startCorpus.delta} count={startCorpus.count} />
             )}
           </td>
-          <td>
+          <td className="team-after">
             <TeamMiniStrip names={startingTeam.map((i) => model.vocab[i])} />
           </td>
         </tr>
@@ -80,18 +80,18 @@ export function ChainTable({
           return (
             <tr key={ev.step}>
               <td className="rank">{ev.step.toString().padStart(2, "0")}</td>
-              <td>
+              <td className="swap">
                 <SwapCell
                   nameOut={model.vocab[ev.outIdx]}
                   nameIn={model.vocab[ev.inIdx]}
                 />
               </td>
-              <td className="num">{formatSigned(scoreAdj)}</td>
-              <td className="num">{formatSigned(scoreRaw)}</td>
-              <td className="num">
+              <td className="num" data-label="score adj">{formatSigned(scoreAdj)}</td>
+              <td className="num" data-label="score raw">{formatSigned(scoreRaw)}</td>
+              <td className="num" data-label="coherence">
                 <ScoreChip value={ev.sumJAfter} />
               </td>
-              <td className="num">
+              <td className="num" data-label="corpus">
                 {afterCorpus !== null && (
                   <CorpusCell
                     delta={afterCorpus.delta}
@@ -99,7 +99,7 @@ export function ChainTable({
                   />
                 )}
               </td>
-              <td>
+              <td className="team-after">
                 <TeamMiniStrip
                   names={ev.teamAfter.map((i) => model.vocab[i])}
                 />

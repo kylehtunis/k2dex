@@ -134,7 +134,7 @@
 .lab-model-picker-option-desc {
   font-family: var(--lab-font-sans);
   font-size: 10px;
-  color: var(--lab-ink);
+  color: var(--lab-ink-soft);
   font-style: italic;
 }
 .lab-model-picker-option-meta {
@@ -372,6 +372,82 @@
 .lab-select__menu {
   border: 1px solid var(--lab-rule) !important;
   box-shadow: 0 4px 12px rgba(0,0,0,0.06) !important;
+}
+
+/* ===== Press / keyboard feedback ===== */
+
+.lab-button-primary:focus-visible {
+  filter: brightness(1.05);
+}
+.lab-button-primary:active:not(:disabled) {
+  filter: brightness(0.95);
+}
+.lab-science-btn:focus-visible:not(:disabled) {
+  border-color: var(--lab-accent);
+  color: var(--lab-accent);
+}
+.lab-science-btn:active:not(:disabled) {
+  background: color-mix(in oklch, var(--lab-accent) 8%, var(--lab-panel));
+}
+.lab-model-picker-toggle:focus-visible {
+  border-color: var(--lab-accent);
+}
+
+/* ===== Responsive overrides ===== */
+
+@media (max-width: 640px) {
+  /* Keep the picker dropdown inside the viewport (anchored right at
+   * the container edge; 32px = 2 × container padding). */
+  .lab-model-picker-panel {
+    min-width: 0;
+    width: min(320px, calc(100vw - 32px));
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+  .lab-model-picker-label {
+    display: inline-block;
+    max-width: 60vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lab-model-picker-new-badge {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lab-expander > *:not(summary) {
+    padding: 14px 12px;
+  }
+  /* iOS Safari auto-zooms focused inputs under 16px. */
+  .lab-select__control,
+  .lab-select__input-container,
+  .lab-select__option {
+    font-size: 16px !important;
+  }
+}
+
+/* Touch devices: grow tap targets toward the ~44px guideline. */
+@media (pointer: coarse) {
+  .lab-segmented-option {
+    padding: 10px 16px;
+  }
+  .lab-model-picker-toggle {
+    padding: 9px 12px;
+  }
+  .lab-science-btn {
+    padding: 10px 16px;
+  }
+  /* Native slider: grow the hit area (thumb visual size unchanged). */
+  .lab-slider {
+    height: 32px;
+  }
+  .lab-select__control {
+    min-height: 44px !important;
+  }
+  .lab-select__multi-value__remove {
+    padding: 0 8px !important;
+  }
 }
 
 /* Lightweight ring spinner used while the coupling graph preloads sprites. */

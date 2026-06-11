@@ -462,14 +462,7 @@ export function CompleterPage() {
       <ExcludedRow names={excludedSpecies} />
 
       <SectionLabel num="02" title="Constraints" />
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 24,
-          marginBottom: 16,
-        }}
-      >
+      <div className="lab-form-grid" style={{ marginBottom: 16 }}>
         <div>
           <label className="lab-form-label">Starting Roster</label>
           <VocabSelect
@@ -510,12 +503,8 @@ export function CompleterPage() {
 
       <SectionLabel num="03" title="Sampler" />
       <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: usePT ? "1fr 1fr" : "1fr",
-          gap: 24,
-          marginBottom: 12,
-        }}
+        className={usePT ? "lab-form-grid" : "lab-form-grid lab-form-grid-1"}
+        style={{ marginBottom: 12 }}
       >
         <div>
           <label className="lab-form-label">
@@ -582,13 +571,7 @@ export function CompleterPage() {
       {usePT && (
         <details className="lab-expander" style={{ marginBottom: 12 }}>
           <summary>Advanced sampler parameters</summary>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "28px 32px",
-            }}
-          >
+          <div className="lab-form-grid lab-form-grid-airy">
             <div>
               <label className="lab-form-label">Runs · {ptRuns}</label>
               <div className="lab-form-caption">

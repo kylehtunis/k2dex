@@ -4,7 +4,6 @@
 //   PageTitle
 //   §01  Extreme couplings         (top META_TOP_PAIRS, both directions)
 //   §02  Extreme features by Bias  (top META_TOP_FEATURES, both directions)
-//   §03  Distributional diagnostics (J histogram + h line plot)
 
 import { useMemo } from "react";
 import { META_TOP_FEATURES, META_TOP_PAIRS } from "../constants";
@@ -65,14 +64,7 @@ export function MetaPage() {
         title="Extreme couplings"
         right={`top ${META_TOP_PAIRS} each direction · ranked by Coupling`}
       />
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 24,
-          marginBottom: 12,
-        }}
-      >
+      <div className="lab-split-pair">
         <div>
           <div className="lab-subheading lab-subheading-pos">
             Top Positive Coupling · synergies
@@ -100,14 +92,7 @@ export function MetaPage() {
         title="Extreme features by Bias"
         right={`top ${META_TOP_FEATURES} each direction · ranked by Bias`}
       />
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 24,
-          marginBottom: 12,
-        }}
-      >
+      <div className="lab-split-pair">
         <div>
           <div className="lab-subheading lab-subheading-pos">
             Top Positive Bias · most popular

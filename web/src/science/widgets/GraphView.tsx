@@ -85,7 +85,7 @@ export function GraphView({
   const maxAbs = edges.reduce((m, e) => Math.max(m, Math.abs(e.weight)), 1e-9);
   const byId = new Map(nodes.map((n) => [n.id, n] as const));
   return (
-    <svg width={width} height={height} className="lab-graphview">
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="lab-graphview">
       {edges.map((e, k) => {
         const a = byId.get(e.i);
         const b = byId.get(e.j);

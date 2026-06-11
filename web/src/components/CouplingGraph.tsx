@@ -225,8 +225,9 @@ export function CouplingGraph({
       <div
         style={{
           position: "relative",
-          width: viewSize,
-          height: viewSize,
+          width: "100%",
+          maxWidth: viewSize,
+          aspectRatio: "1 / 1",
         }}
       >
         <div

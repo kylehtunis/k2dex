@@ -138,16 +138,9 @@ export interface PairCellProps {
 
 export function PairCell({ nameA, nameB }: PairCellProps) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+    <div className="lab-pair-cell">
       <InlineMon name={nameA} />
-      <span
-        style={{
-          fontFamily: "var(--lab-font-mono)",
-          color: "var(--lab-ink-muted)",
-        }}
-      >
-        ×
-      </span>
+      <span className="lab-pair-sep">×</span>
       <InlineMon name={nameB} />
     </div>
   );
@@ -160,17 +153,9 @@ export interface SwapCellProps {
 
 export function SwapCell({ nameOut, nameIn }: SwapCellProps) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+    <div className="lab-swap-cell">
       <InlineMon name={nameOut} />
-      <span
-        style={{
-          fontFamily: "var(--lab-font-mono)",
-          fontSize: 14,
-          color: "var(--lab-accent)",
-        }}
-      >
-        →
-      </span>
+      <span className="lab-swap-arrow">→</span>
       <InlineMon name={nameIn} />
     </div>
   );
@@ -183,7 +168,7 @@ export interface TeamMiniStripProps {
 
 export function TeamMiniStrip({ names, size = 24 }: TeamMiniStripProps) {
   return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+    <div className="lab-mini-strip">
       {names.map((n) => (
         <SpriteBox key={n} name={n} size={size} />
       ))}

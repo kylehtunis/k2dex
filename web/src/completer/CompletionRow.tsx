@@ -63,15 +63,15 @@ export function CompletionRow({
   return (
     <tr className={isTopRow ? "top-row" : undefined}>
       {rank !== undefined && <td className="rank">{rank}</td>}
-      <td>
+      <td className="mons">
         <div className="lab-comp-pair">
           {sortedFree.map((i) => (
             <CompMonCell key={i} name={model.vocab[i]} />
           ))}
         </div>
       </td>
-      <td>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "start", gap: 4 }}>
+      <td className="actions">
+        <div className="lab-comp-actions">
           <Link to={analyzeUrl} className="lab-analyze-btn">
             Send to Analysis
           </Link>
@@ -85,22 +85,22 @@ export function CompletionRow({
         </div>
       </td>
       {freqPct !== undefined && (
-        <td className="num">
+        <td className="num" data-label="freq">
           <div className="lab-comp-freq">
             <div className="lab-comp-freq-pct">{freqPct.toFixed(1)}%</div>
           </div>
         </td>
       )}
-      <td className="num">
+      <td className="num" data-label="score adj">
         <ScoreChip value={scoreAdj} />
       </td>
-      <td className="num">
+      <td className="num" data-label="score raw">
         <ScoreChip value={scoreRaw} />
       </td>
-      <td className="num">
+      <td className="num" data-label="coherence">
         <ScoreChip value={coherence} />
       </td>
-      <td className="num">
+      <td className="num" data-label="corpus">
         {corpus !== null ? (
           <CorpusCell delta={corpus.delta} count={corpus.count} />
         ) : (
@@ -121,7 +121,7 @@ export function CompletionTable({
   includeRank?: boolean;
 }) {
   return (
-    <table className="lab-comp-table">
+    <table className="lab-comp-table lab-table-cards">
       <thead>
         <tr>
           {includeRank && <th>#</th>}

@@ -38,6 +38,7 @@ import { decodeCore, encodeCore } from "../render/shareLink";
 import { PairwiseJTable } from "../analysis/PairwiseJTable";
 import { SwapsTable } from "../analysis/SwapsTable";
 import { ChainTable } from "../analysis/ChainTable";
+import { ScrollX } from "../components/ScrollX";
 
 export function AnalysisPage() {
   const { model, teamCounts, status, modelId, setModelId } = useModel();
@@ -349,7 +350,9 @@ export function AnalysisPage() {
             title="Pairwise coupling decomposition"
             right={`C(${TEAM_SIZE}, 2) = ${diagnostics.pjRows.length} unordered pairs · sorted by |Coupling|`}
           />
-          <PairwiseJTable rows={diagnostics.pjRows} />
+          <ScrollX>
+            <PairwiseJTable rows={diagnostics.pjRows} />
+          </ScrollX>
 
           <SectionLabel
             num="04"

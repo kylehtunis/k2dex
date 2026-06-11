@@ -67,13 +67,22 @@ export function ModelPicker() {
 
   useEffect(() => {
     if (!open) return;
-    function onClickOutside(e: MouseEvent) {
+    function onClickOutside(e: MouseEvent | TouchEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false);
       }
     }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
     document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
+    document.addEventListener("touchstart", onClickOutside);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("touchstart", onClickOutside);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [open]);
 
   if (!manifest) return null;

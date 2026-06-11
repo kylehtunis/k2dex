@@ -778,3 +778,242 @@
   font-family: var(--lab-font-mono);
   font-size: 13px;
 }
+
+/* ----- Composed-cell layout classes (web-only; no rendering_html twin) ----- */
+
+/* Action button stack inside completion rows. */
+.lab-comp-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.lab-pair-cell,
+.lab-swap-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lab-pair-sep {
+  font-family: var(--lab-font-mono);
+  color: var(--lab-ink-muted);
+}
+.lab-swap-arrow {
+  font-family: var(--lab-font-mono);
+  font-size: 14px;
+  color: var(--lab-accent);
+}
+.lab-mini-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ----- Stat strip column count (set via CSS var so media queries can
+ * override; StatStrip passes --lab-stat-cols inline) ----- */
+.lab-stat-strip {
+  grid-template-columns: repeat(var(--lab-stat-cols, 1), 1fr);
+}
+
+/* The stat help "?" is a <button> (tap-to-toggle popover); neutralize
+ * button chrome on top of the shared circle styles above. */
+.lab-stat-help {
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+.lab-stat-help-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.lab-stat-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  width: min(280px, 78vw);
+  background: var(--lab-panel);
+  border: 1px solid var(--lab-rule);
+  border-radius: 3px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  padding: 10px 12px;
+  font-family: var(--lab-font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--lab-ink-soft);
+}
+
+/* ----- Horizontal-scroll wrapper for wide tables (ScrollX) ----- */
+/* Scroll shadows via the background-attachment trick: the covers
+ * (local) scroll with the content and reveal the shadows (scroll)
+ * pinned to the edges. Requires transparent row backgrounds. */
+.lab-scrollx {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background:
+    linear-gradient(to right, var(--lab-bg) 30%, transparent) left / 40px 100%,
+    linear-gradient(to left, var(--lab-bg) 30%, transparent) right / 40px 100%,
+    radial-gradient(farthest-side at 0 50%, rgba(26, 24, 21, 0.18), transparent) left / 14px 100%,
+    radial-gradient(farthest-side at 100% 50%, rgba(26, 24, 21, 0.18), transparent) right / 14px 100%;
+  background-repeat: no-repeat;
+  background-attachment: local, local, scroll, scroll;
+}
+
+/* ----- Keyboard / press parity for the analyze button ----- */
+.lab-analyze-btn:focus-visible {
+  background: var(--lab-accent);
+  color: #fff;
+}
+.lab-analyze-btn:active:not(:disabled) {
+  background: var(--lab-accent);
+  color: #fff;
+}
+
+/* ----- SVG widgets scale down to their container ----- */
+/* All four set width/height attributes (intrinsic size) plus viewBox,
+ * so shrinking is a pure visual transform. */
+.lab-graphview,
+.lab-lineplot,
+.lab-spingrid,
+.lab-landscape3d {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ===== Responsive overrides ===== */
+
+@media (max-width: 640px) {
+  /* Roster strip: 3 × 2 keeps all six slots visible. */
+  .lab-slot-strip {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .lab-slot,
+  .lab-slot-empty {
+    min-height: 148px;
+    padding: 10px 6px 8px;
+  }
+
+  .lab-stat-strip {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px 20px;
+  }
+
+  /* Card-row restructure for the wide interactive tables
+   * (CompletionTable / SwapsTable / ChainTable). Each <tr> becomes a
+   * two-column grid card; full-width cells opt in via semantic
+   * classes; numeric cells carry their column header in data-label. */
+  .lab-table-cards {
+    display: block;
+  }
+  .lab-table-cards thead {
+    display: none;
+  }
+  .lab-table-cards tbody {
+    display: block;
+  }
+  .lab-table-cards tr {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px 16px;
+    padding: 14px 2px;
+    border-bottom: 1px solid var(--lab-rule);
+  }
+  .lab-table-cards td {
+    display: block;
+    border-bottom: none;
+    padding: 0;
+  }
+  .lab-table-cards td.num {
+    text-align: left;
+  }
+  .lab-table-cards td.rank {
+    width: auto;
+  }
+  .lab-table-cards td.mons,
+  .lab-table-cards td.actions,
+  .lab-table-cards td.swap,
+  .lab-table-cards td.team-after {
+    grid-column: 1 / -1;
+  }
+  .lab-table-cards td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-family: var(--lab-font-sans);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--lab-ink-muted);
+    margin-bottom: 2px;
+  }
+  .lab-table-cards .lab-comp-freq {
+    align-items: flex-start;
+  }
+  .lab-comp-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  /* Long "Species @ Item" pair/swap cells may wrap. */
+  .lab-pair-cell,
+  .lab-swap-cell {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .lab-mini-strip {
+    flex-wrap: wrap;
+  }
+
+  /* Announcement banner */
+  .lab-announcement {
+    font-size: 13px;
+    text-align: left;
+    padding: 10px 36px 10px 12px;
+  }
+
+  /* /science grooming */
+  .lab-science-act {
+    font-size: 23px;
+  }
+  .lab-science-lede {
+    font-size: 17px;
+  }
+  .lab-science-row {
+    gap: 20px;
+  }
+  .lab-scotus-configs-head,
+  .lab-scotus-config-row {
+    grid-template-columns: 1fr 52px 52px 52px;
+    gap: 8px;
+  }
+  .lab-scotus-slot {
+    width: 30px;
+    height: 30px;
+  }
+}
+
+/* Touch devices: grow tap targets toward the ~44px guideline. */
+@media (pointer: coarse) {
+  .lab-analyze-btn {
+    padding: 8px 14px;
+  }
+  .lab-stat-help {
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+  }
+  .lab-t-btn {
+    padding: 9px 12px;
+  }
+  .lab-scotus-pin {
+    padding: 7px 14px;
+  }
+  .lab-announcement-close {
+    padding: 8px 12px;
+  }
+}

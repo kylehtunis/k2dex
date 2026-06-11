@@ -135,6 +135,7 @@ The app uses a "lab notebook" palette + type system delivered via CSS injection.
 - **Widget-scoping via marker divs + `:has()`.** Emit an invisible marker div before a widget's column, then target via `[data-testid="stColumn"]:has(.marker-class) ...`. Search styles.py for `:has(` to find all instances. Breaks if Streamlit changes its `data-testid` hierarchy.
 - **OS dark mode bleeds into widget internals** unless `--primary-color` / `--background-color` / `--text-color` are forced on `:root` AND on `html[data-theme="dark"]`. `.streamlit/config.toml` would be the idiomatic fix but is gitignored.
 - **Math typesetting**: `/science` uses KaTeX via `react-katex` (lazy-imported in `SciencePage`; wrapped by `science/widgets/Math.tsx`). Streamlit uses `st.latex`; no shared dependency.
+- **Responsive / mobile layout.** Desktop-first, two width breakpoints (`@media (max-width: 900px)` "narrow", `@media (max-width: 640px)` "phone") plus `@media (pointer: coarse)` for touch-target sizing. Convention is documented in a comment block at the top of `tokens.css`; breakpoint values are consistent literals across all four CSS files (media queries can't consume CSS vars). All responsive rules are additive overrides at the bottom of each stylesheet; **never rename existing `lab-*` classes** (they're mirrored in `rendering_html.py`), only add new ones. Key patterns: `.lab-form-grid` / `.lab-split-pair` utility classes replace inline grid styles so media queries can collapse them; `.lab-table-cards` modifier on the three wide interactive tables (Completion / Swaps / Chain) triggers a card-row restructure at phone width; `ScrollX` wrapper provides scroll-shadow affordance for simpler tables; all SVG widgets use `viewBox` so they scale down to container width via `max-width: 100%; height: auto`; the `CouplingGraph` wrapper is fluid-width with `aspect-ratio: 1/1` and `maxWidth` capped at the coordinate-space `viewSize` (no ResizeObserver relayout). The `Stat` help "?" is a `<button>` with a tap-to-toggle popover (`lab-stat-pop`), not a hover `title=` attribute.
 
 ## Conventions threaded through multiple files
 
@@ -187,7 +188,8 @@ web/
     state/manifest.ts       ModelSummary/Manifest types + loadManifest()
     state/ModelContext.tsx   manifest-driven model loader; caches (J, h, m, team_counts) per slug
     components/              Layout, ModelPicker, VocabSelect (react-select wrapper),
-                             CouplingGraph (shared force-directed coupling graph)
+                             CouplingGraph (shared force-directed coupling graph),
+                             ScrollX (horizontal-scroll wrapper with scroll-shadow)
     pages/{Completer,Analysis,Meta,Science}Page.tsx
     sampler/                 1:1 port of k2dex/sampling.py — see duplication register
       types.ts, rng.ts, model.ts, energy.ts,
@@ -204,7 +206,8 @@ web/
                              CompletionRow
     analysis/                Page-local tables: PairwiseJTable, SwapsTable, ChainTable
     meta/                    Page-local tables: FeatureBiasTable,
-                             ExtremeCouplingsTable, couplings, CouplingNetwork
+                             ExtremeCouplingsTable, couplings,
+                             CouplingNetwork (unused; retained for potential reuse)
     science/                 /science page — see dedicated section below
       primitives/            Toy lattice/graph/mcmc/mf/pt/landscape
       widgets/               Math, LinePlot, SpinGrid, GraphView, ChainStrip, Landscape3D

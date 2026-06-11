@@ -49,7 +49,7 @@ function makePath(
 export function LinePlot({ width, height, series, yDomain, xLabel, yLabel, hLines }: LinePlotProps) {
   const xMax = Math.max(0, ...series.map((s) => s.data.length - 1));
   return (
-    <svg width={width} height={height} role="img" className="lab-lineplot" overflow="visible">
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" className="lab-lineplot" overflow="visible">
       <line
         x1={PAD.left}
         x2={width - PAD.right}

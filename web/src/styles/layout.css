@@ -538,3 +538,127 @@
   color: var(--lab-accent);
   transform: translateX(4px);
 }
+
+/* ===== Keyboard parity for hover affordances ===== */
+
+.lab-home-model-card:focus-visible {
+  border-top-color: var(--lab-ink-muted);
+}
+.lab-home-tool-card:focus-visible {
+  border-top-color: var(--lab-accent);
+}
+.lab-home-tool-card:focus-visible .lab-home-tool-arrow {
+  color: var(--lab-accent);
+  transform: translateX(3px);
+}
+.lab-home-science-card:focus-visible {
+  background: color-mix(in oklch, var(--lab-accent) 5%, var(--lab-panel-alt));
+}
+.lab-home-science-card:focus-visible .lab-home-science-arrow {
+  color: var(--lab-accent);
+  transform: translateX(4px);
+}
+
+/* ===== Form-section grids =====
+ * Side-by-side panels that collapse to a single column on small
+ * screens. Inline grid styles can't be overridden by media queries,
+ * so the pages use these classes instead. */
+
+.lab-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.lab-form-grid-1 {
+  grid-template-columns: 1fr;
+}
+/* Airier variant for the advanced-PT parameter grid. */
+.lab-form-grid-airy {
+  gap: 28px 32px;
+}
+.lab-split-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 12px;
+}
+
+/* ===== Responsive overrides ===== */
+
+/* Short nav label for the Science tab; full label is the default. */
+.lab-tab-label-short {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .lab-container {
+    padding: 1.25rem 1.5rem 3rem;
+  }
+  .lab-tabs-group {
+    gap: 20px;
+  }
+  .lab-tab-label-full {
+    display: none;
+  }
+  .lab-tab-label-short {
+    display: inline;
+  }
+  .lab-split-pair {
+    grid-template-columns: 1fr;
+  }
+  .lab-home-tool-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .lab-container {
+    padding: 1rem 1rem 2.5rem;
+  }
+  .lab-header {
+    gap: 16px;
+  }
+  /* Tabs scroll horizontally rather than wrapping; the cut-off last
+   * tab plus the active underline is the scroll affordance. */
+  .lab-tabs-split {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .lab-tabs-split::-webkit-scrollbar {
+    display: none;
+  }
+  .lab-tab {
+    white-space: nowrap;
+    padding: 12px 6px 14px;
+  }
+  .lab-tabs-group {
+    gap: 16px;
+  }
+  .lab-page-title {
+    flex-wrap: wrap;
+    gap: 8px 32px;
+  }
+  .lab-corpus-caption {
+    text-align: left;
+  }
+  .lab-h1 {
+    font-size: 30px;
+  }
+  .lab-form-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  /* Home page */
+  .lab-home-hero {
+    padding: 36px 0 44px;
+  }
+  .lab-home-display {
+    font-size: 38px;
+  }
+  .lab-home-model-cards {
+    grid-template-columns: 1fr;
+  }
+  .lab-home-science-inner {
+    gap: 16px;
+  }
+}

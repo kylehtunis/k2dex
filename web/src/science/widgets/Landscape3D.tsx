@@ -104,7 +104,7 @@ export function Landscape3D({
   }, [grid, proj]);
 
   return (
-    <svg width={width} height={height} className="lab-landscape3d">
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="lab-landscape3d">
       <rect width={width} height={height} fill="#fafaf6" />
       {quads.map((q, k) => (
         <polygon

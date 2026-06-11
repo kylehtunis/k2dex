@@ -13,7 +13,8 @@
 // selector in web/src/styles/components.css. Don't rename one without
 // the other.
 
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
+import type React from "react";
 import { formatSigned, formatPct } from "./format";
 
 // ----- Stat / StatStrip -------------------------------------------------
@@ -26,18 +27,26 @@ export interface StatProps {
 }
 
 export function Stat({ label, value, sub, tooltip }: StatProps) {
+  const [helpOpen, setHelpOpen] = useState(false);
   return (
     <div>
       <div className="lab-stat-label">
         {label}
         {tooltip && (
-          <span
-            className="lab-stat-help"
-            title={tooltip}
-            role="img"
-            aria-label={`Help: ${label}`}
-          >
-            ?
+          <span className="lab-stat-help-wrap">
+            <button
+              type="button"
+              className="lab-stat-help"
+              aria-expanded={helpOpen}
+              aria-label={`Help: ${label}`}
+              onClick={() => setHelpOpen((o) => !o)}
+              onBlur={() => setHelpOpen(false)}
+            >
+              ?
+            </button>
+            {helpOpen && (
+              <span className="lab-stat-pop" role="tooltip">{tooltip}</span>
+            )}
           </span>
         )}
       </div>
@@ -57,7 +66,7 @@ export function StatStrip({ cells, columns }: StatStripProps) {
   return (
     <div
       className="lab-stat-strip"
-      style={{ gridTemplateColumns: `repeat(${n}, 1fr)` }}
+      style={{ "--lab-stat-cols": n } as React.CSSProperties}
     >
       {cells.map((c, i) => (
         <Stat key={i} {...c} />

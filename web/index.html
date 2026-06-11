@@ -6,7 +6,7 @@
     <title>k2dex — Competitive Pokemon Team Analysis</title>
     <meta name="description" content="Interactive tools and explainers applying inverse Ising models from statistical physics to competitive Pokemon (VGC) team composition data." />
     <link rel="canonical" href="https://kylehtunis.github.io/k2dex/" />
-    <meta name="theme-color" content="#1a1a2e" />
+    <meta name="theme-color" content="#faf7f0" />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
@@ -27,11 +27,13 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'" />
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" /></noscript>
 
-    <!-- Preload default model (species_item) so fetch starts during JS parse -->
-    <link rel="preload" href="/models/species_item/meta.json" as="fetch" crossorigin />
-    <link rel="preload" href="/models/species_item/J.bin" as="fetch" crossorigin />
-    <link rel="preload" href="/models/species_item/h.bin" as="fetch" crossorigin />
-    <link rel="preload" href="/models/species_item/m.bin" as="fetch" crossorigin />
+    <!-- Preload the manifest default model so fetch starts during JS parse.
+         Keep in sync with manifest.json default_model. -->
+    <link rel="preload" href="/models/manifest.json" as="fetch" crossorigin />
+    <link rel="preload" href="/models/reg-m-a-species-item/meta.json" as="fetch" crossorigin />
+    <link rel="preload" href="/models/reg-m-a-species-item/J.bin" as="fetch" crossorigin />
+    <link rel="preload" href="/models/reg-m-a-species-item/h.bin" as="fetch" crossorigin />
+    <link rel="preload" href="/models/reg-m-a-species-item/m.bin" as="fetch" crossorigin />
 
     <!-- Google Analytics -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-9MJWLXNKST"></script>

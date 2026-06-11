@@ -6,6 +6,7 @@
 
 import { ScoreChip, MiniBar } from "../render/atoms";
 import { InlineMon } from "../render/cells";
+import { ScrollX } from "../components/ScrollX";
 import type { IsingModel } from "../sampler/types";
 
 export interface FeatureBiasTableProps {
@@ -18,6 +19,7 @@ export interface FeatureBiasTableProps {
 
 export function FeatureBiasTable({ order, maxM, model }: FeatureBiasTableProps) {
   return (
+    <ScrollX>
     <table className="lab-comp-table">
       <thead>
         <tr>
@@ -52,5 +54,6 @@ export function FeatureBiasTable({ order, maxM, model }: FeatureBiasTableProps) 
         })}
       </tbody>
     </table>
+    </ScrollX>
   );
 }

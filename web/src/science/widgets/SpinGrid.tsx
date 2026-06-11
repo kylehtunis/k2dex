@@ -15,7 +15,7 @@ export function SpinGrid({ lattice, cell = 14, highlight = null }: SpinGridProps
   const W = C * cell;
   const H = R * cell;
   return (
-    <svg width={W} height={H} className="lab-spingrid" shapeRendering="crispEdges">
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="lab-spingrid" shapeRendering="crispEdges">
       {lattice.flatMap((row, i) =>
         row.map((s, j) => (
           <rect

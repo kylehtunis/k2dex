@@ -8,6 +8,7 @@
 
 import { ScoreChip, SignedBar } from "../render/atoms";
 import { PairCell } from "../render/cells";
+import { ScrollX } from "../components/ScrollX";
 import type { IsingModel } from "../sampler/types";
 import type { CouplingPair } from "./couplings";
 
@@ -25,6 +26,7 @@ export function ExtremeCouplingsTable({
   model,
 }: ExtremeCouplingsTableProps) {
   return (
+    <ScrollX>
     <table className="lab-comp-table">
       <thead>
         <tr>
@@ -57,5 +59,6 @@ export function ExtremeCouplingsTable({
         ))}
       </tbody>
     </table>
+    </ScrollX>
   );
 }

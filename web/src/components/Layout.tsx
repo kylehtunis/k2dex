@@ -52,7 +52,8 @@ export function Layout() {
             to={SCIENCE_TAB.path}
             className={({ isActive }) => `lab-tab${isActive ? " active" : ""}`}
           >
-            {SCIENCE_TAB.label}
+            <span className="lab-tab-label-full">{SCIENCE_TAB.label}</span>
+            <span className="lab-tab-label-short">Science</span>
           </NavLink>
         </div>
       </nav>
