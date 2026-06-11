@@ -169,6 +169,38 @@
   color: var(--lab-ink);
 }
 
+/* "New" badge — red pill used in model picker toggle, options, and home cards. */
+.lab-new-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #e02020;
+  color: #fff;
+  font-family: var(--lab-font-sans);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.lab-model-picker-new-badge {
+  position: absolute;
+  top: -7px;
+  left: -7px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.lab-model-picker-option-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* Form labels (uppercase eyebrow style). */
 .lab-form-label {
   font-family: var(--lab-font-sans);

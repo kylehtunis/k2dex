@@ -141,6 +141,7 @@ def write_model(
     in_person_weight: float = IN_PERSON_WEIGHT,
     skip_team_counts: bool = False,
     force: bool = False,
+    is_new: bool = False,
 ) -> None:
     model_dir = out_dir / slug
     if model_dir.exists() and not force:
@@ -203,6 +204,8 @@ def write_model(
     }
     if description:
         meta["description"] = description
+    if is_new:
+        meta["new"] = True
     with open(model_dir / "meta.json", "w") as f:
         json.dump(meta, f, indent=None, separators=(",", ":"))
     print(f"  meta.json: {(model_dir / 'meta.json').stat().st_size:,} bytes")
@@ -238,6 +241,8 @@ def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> Non
         }
         if "description" in meta:
             entry["description"] = meta["description"]
+        if meta.get("new"):
+            entry["new"] = True
         models.append(entry)
 
     if not models:
@@ -341,6 +346,12 @@ def main() -> int:
         action="store_true",
         help="Overwrite an existing model directory.",
     )
+    group.add_argument(
+        "--new",
+        action="store_true",
+        dest="is_new",
+        help="Mark this model as new in the manifest (shows a 'New' badge in the webapp).",
+    )
 
     manifest_group = parser.add_argument_group("manifest generation")
     manifest_group.add_argument(
@@ -379,6 +390,7 @@ def main() -> int:
         in_person_weight=args.in_person_weight,
         skip_team_counts=args.skip_team_counts,
         force=args.force,
+        is_new=args.is_new,
     )
 
     print("\nDone. Inspect artifacts before committing.")

@@ -37,8 +37,9 @@ function ModelOption({
       className={`lab-model-picker-option${isActive ? " active" : ""}`}
       onClick={onSelect}
     >
-      <span className="lab-model-picker-option-name">
-        {m.displayName}
+      <span className="lab-model-picker-option-name-row">
+        <span className="lab-model-picker-option-name">{m.displayName}</span>
+        {m.isNew && <span className="lab-new-badge">New</span>}
       </span>
       {m.description && (
         <span className="lab-model-picker-option-desc">
@@ -78,6 +79,8 @@ export function ModelPicker() {
   if (!manifest) return null;
 
   const current = manifest.models.find((m) => m.id === modelId);
+  const anyNew = manifest.models.some((m) => m.isNew);
+  const currentIsNew = current?.isNew ?? false;
 
   const currentModels: ModelSummary[] = [];
   const legacyGrouped = new Map<string, ModelSummary[]>();
@@ -104,6 +107,11 @@ export function ModelPicker() {
 
   return (
     <div className="lab-model-picker" ref={ref}>
+      {anyNew && (
+        <span className="lab-new-badge lab-model-picker-new-badge" aria-label={currentIsNew ? "New model" : "New model available"}>
+          {currentIsNew ? "New" : "New model available"}
+        </span>
+      )}
       <button
         type="button"
         className="lab-model-picker-toggle"

@@ -8,6 +8,7 @@ export interface ModelSummary {
   nCorpusTeams: number;
   latestTournamentDate: string;
   teamSize: number;
+  isNew?: boolean;
 }
 
 export interface Manifest {
@@ -29,6 +30,7 @@ interface ManifestJson {
     n_corpus_teams: number;
     latest_tournament_date: string;
     team_size: number;
+    new?: boolean;
   }>;
 }
 
@@ -53,6 +55,7 @@ export async function loadManifest(): Promise<Manifest> {
       nCorpusTeams: m.n_corpus_teams,
       latestTournamentDate: m.latest_tournament_date,
       teamSize: m.team_size,
+      ...(m.new && { isNew: true }),
     })),
   };
   return cached;

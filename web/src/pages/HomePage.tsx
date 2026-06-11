@@ -39,6 +39,7 @@ function ModelCard({
       className={`lab-home-model-card${isActive ? " is-active" : ""}`}
       aria-pressed={isActive}
     >
+      {m.isNew && <span className="lab-new-badge lab-home-model-new-badge">New</span>}
       <div className="lab-home-model-card-header">
         <span className="lab-home-model-card-label">{m.displayName}</span>
         <span className="lab-home-model-card-tag">{dimTag(m.featureDimensions)}</span>
