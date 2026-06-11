@@ -1018,6 +1018,16 @@
   .lab-table-pairs td.pair {
     grid-column: 2;
   }
+  /* Force the pair to always stack vertically so rows are consistent
+   * regardless of name length. Hide the × separator. */
+  .lab-table-pairs .lab-pair-cell {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .lab-table-pairs .lab-pair-sep {
+    display: none;
+  }
   .lab-table-pairs td.num {
     grid-column: 2;
     text-align: left;
