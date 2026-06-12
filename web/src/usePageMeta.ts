@@ -10,7 +10,7 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 
-import { canonicalUrl, metaForPath, normalizePath } from "./siteMeta";
+import { SITE_NAME, canonicalUrl, metaForPath, normalizePath } from "./siteMeta";
 
 /** Find a matching <head> element (creating it if absent) and apply `mutate`. */
 function upsertHeadEl<T extends HTMLElement>(
@@ -46,6 +46,7 @@ export function usePageMeta(): void {
 
     document.title = meta.title;
     setMeta("name", "description", meta.description);
+    setMeta("property", "og:site_name", SITE_NAME);
     setMeta("property", "og:title", meta.title);
     setMeta("property", "og:description", meta.description);
     setMeta("property", "og:url", url);

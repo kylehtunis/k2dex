@@ -19,6 +19,7 @@
  *  build's base path (local builds use "/"); canonicals must always point at
  *  the real public host. */
 export const SITE_URL = "https://kylehtunis.github.io/k2dex";
+export const SITE_NAME = "k2dex";
 
 export interface RouteMeta {
   /** Path relative to the app base, no slashes. "" is the home page. */
@@ -30,33 +31,33 @@ export interface RouteMeta {
 export const ROUTE_META: readonly RouteMeta[] = [
   {
     path: "",
-    title: "k2dex — Competitive Pokemon Team Analysis",
+    title: "k2dex | Competitive Pokemon Team Analysis",
     description:
-      "Interactive tools and explainers applying inverse Ising models from statistical physics to competitive Pokemon (VGC) team composition data.",
+      "k2dex learns teambuilding patterns from thousands of real VGC tournament teams using a statistical physics model. Explore which Pokemon pair well, complete partial teams, and analyze metagame trends.",
   },
   {
     path: "completer",
-    title: "Team Completer — k2dex",
+    title: "Team Completer | k2dex",
     description:
-      "Suggest the strongest completions for a partial competitive Pokemon (VGC) team, or sample full teams, using a pairwise maximum-entropy model fit to tournament data.",
+      "Complete a partial competitive Pokemon (VGC) team or generate full teams. Suggestions are driven by a model trained on thousands of real tournament rosters.",
   },
   {
     path: "analysis",
-    title: "Team Analysis — k2dex",
+    title: "Team Analysis | k2dex",
     description:
-      "Per-team diagnostics for competitive Pokemon (VGC): pairwise coupling strengths, coherence scores, and nearest observed teams from tournament data.",
+      "Analyze a competitive Pokemon (VGC) team: see pairwise synergy strengths, overall coherence score, and the closest teams from real tournament results.",
   },
   {
     path: "meta",
-    title: "Metagame Statistics — k2dex",
+    title: "Metagame Statistics | k2dex",
     description:
-      "Format-wide competitive Pokemon (VGC) metagame statistics: usage biases and the strongest positive and negative species couplings from tournament data.",
+      "Explore the VGC metagame at a glance: Pokemon usage rates, the strongest synergies and anti-synergies between species, and format-wide coupling statistics.",
   },
   {
     path: "science",
     title: "The Science of k2dex",
     description:
-      "An interactive explainer for the statistical-physics methods behind k2dex: Ising models, Metropolis sampling, parallel tempering, mean field, and the inverse problem.",
+      "An interactive explainer on the statistical physics behind k2dex. Walk through Ising models, Metropolis sampling, parallel tempering, and mean field with live simulations.",
   },
 ];
 
