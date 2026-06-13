@@ -165,7 +165,7 @@ web/
   index.html
   package.json              Vite + React 18 + TS + Vitest + react-select + react-router-dom
   tsconfig.json
-  vite.config.ts            base path from VITE_BASE_PATH (production: /k2dex/)
+  vite.config.ts            base path from VITE_BASE_PATH (production: / — custom domain root)
   scripts/
     emit-parity-baseline.ts  Node script that emits tests/parity_baseline.json
     prerender-routes.ts      Post-build: writes per-route dist/<route>/index.html
@@ -175,6 +175,7 @@ web/
     assets/missingno.svg     also copied into web/src/assets/ for ?url import
     404.html                 GH Pages SPA fallback (humans only — see SEO note)
     robots.txt               Allow all + Sitemap: line (sitemap itself generated)
+    CNAME                    custom domain (k2dex.kyletunis.com) — see deploy note
     models/manifest.json    ← model discovery index (precompute.py --generate-manifest)
     models/<slug>/           ← per-model artifacts (precompute.py), committed to git
     scotus/{votes,fits}.json ← scotus_precompute.py output, committed to git
@@ -228,6 +229,8 @@ web/
 3. Inspect `web/public/models/<slug>/{meta.json,J.bin,...}` and `manifest.json` for sanity (vocab size, n_corpus_teams, file sizes).
 4. Commit the artifacts. CI is not allowed to regenerate them (the user wants manual eyeballing of every refresh).
 5. `npm run build` reads the artifacts as static files (Vite copies `public/` into `dist/`).
+
+**Deployment domain.** The site is served at the root of the custom subdomain **`k2dex.kyletunis.com`** (a CNAME of `kylehtunis.github.io`), not the old `kylehtunis.github.io/k2dex` subdirectory. Three things keep this consistent and must move together if the domain ever changes: `web/public/CNAME` (the custom-domain marker GitHub Pages reads from the built artifact), `VITE_BASE_PATH` in `.github/workflows/deploy.yml` (set to `/` so assets resolve at the domain root — local/dev also default to `/`), and `SITE_URL` in `src/siteMeta.ts` (drives every canonical, OG URL, and the sitemap). The github.io subdirectory URLs 301-redirect to the custom domain automatically once the domain is set in repo Settings → Pages. The subdomain (vs. a subdirectory) is what lets Google honor the declared site name (`og:site_name` + `WebSite` JSON-LD in `index.html`); Google only attributes site names at the domain/subdomain level. The `404.html` SPA-fallback `base` is `""` (root) to match. GA (`gtag.js`, measurement id in `index.html`) is domain-agnostic and unaffected by the move.
 
 **SEO / indexability (per-route static HTML).** `scripts/prerender-routes.ts` runs as the last step of `npm run build` and writes a real `dist/<route>/index.html` per route (HTTP 200, unique title/description, self-referencing canonical) plus `dist/sitemap.xml`, all driven from `src/siteMeta.ts`. **Adding a route means adding one entry to `src/siteMeta.ts`** — it feeds the prerendered HTML, the runtime head, and the sitemap together. `public/sitemap.xml` does **not** exist; it's generated (don't reintroduce a static one).
 
