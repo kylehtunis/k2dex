@@ -21,8 +21,8 @@ PHASE1_RIDGE_EPS = 0.01        # ridge for precision-matrix inversion
 # --- Phase 2 / 3 (PL inverse Ising on Limitless teams) ---
 LIMITLESS_MAX_TEAMS = 25000    # Limitless API fetch limit: stop walking after this many teams
 PHASE2_MIN_TEAM_COUNT = 5      # vocab cutoff: feature must appear in >=5 teams
-SPECIES_LR_LAMBDA = 10.0       # L2 regularization strength for the species model
-SPECIES_ITEM_LR_LAMBDA = 1.0  # L2 regularization strength for the species+item model
+SPECIES_LR_LAMBDA = 25.0       # L2 regularization strength for the species model
+SPECIES_ITEM_LR_LAMBDA = 4.5   # L2 regularization strength for the species+item model
 
 # --- Sample weighting (weighted base model) ---
 # Per-team fit weight: w = exp(-age_days / RECENCY_TAU_DAYS) * IN_PERSON_WEIGHT^[in-person],
