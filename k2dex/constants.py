@@ -31,7 +31,7 @@ RECENCY_TAU_DAYS: float | None = None  # decay timescale in days; None = no rece
 IN_PERSON_WEIGHT = 1.0                 # multiplier on in-person teams; 1.0 = no upweight
 
 # --- Limitless ingest filter ---
-MIN_TEAMS_PER_TOURNAMENT = 32  # was 16; bump spreads corpus more temporally
+MIN_TEAMS_PER_TOURNAMENT = 16  # was 16; bump spreads corpus more temporally
                                # and indirectly filters small-tournament quirks
 
 # --- In-person tournament data ---
