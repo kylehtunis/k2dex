@@ -1041,7 +1041,7 @@ def _render_meta(phase_key: str, model: PhaseModel) -> None:
     if phase_key == "phase1":
         fit_label = f"Gaussian · ridge ε={PHASE1_RIDGE_EPS}"
     else:
-        fit_label = f"sklearn LogReg · L2 · PL"
+        fit_label = f"L2 logistic · PL"
     summary_cols = st.columns(6)
     summary_cols[0].metric("Model", phase_key)
     summary_cols[1].metric("Vocab size", f"{V:,}")

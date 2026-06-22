@@ -82,5 +82,73 @@ class TestFitPLIsingSampleWeight(unittest.TestCase):
             fit_pl_ising(X, sample_weight=-np.ones(10))
 
 
+class TestFitPLIsingPrior(unittest.TestCase):
+    @staticmethod
+    def _random_prior(V: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
+        rng = np.random.default_rng(seed)
+        A = rng.normal(scale=0.5, size=(V, V))
+        prior_J = 0.5 * (A + A.T)
+        np.fill_diagonal(prior_J, 0.0)
+        prior_h = rng.normal(scale=0.5, size=V)
+        return prior_J, prior_h
+
+    def test_requires_both_prior_arrays(self) -> None:
+        X = (np.random.default_rng(0).random((50, 5)) < 0.3).astype(np.int8)
+        with self.assertRaises(ValueError):
+            fit_pl_ising(X, prior_J=np.zeros((5, 5)))
+        with self.assertRaises(ValueError):
+            fit_pl_ising(X, prior_h=np.zeros(5))
+
+    def test_prior_shape_validation(self) -> None:
+        X = (np.random.default_rng(1).random((50, 5)) < 0.3).astype(np.int8)
+        with self.assertRaises(ValueError):
+            fit_pl_ising(X, prior_J=np.zeros((4, 4)), prior_h=np.zeros(5))
+        with self.assertRaises(ValueError):
+            fit_pl_ising(X, prior_J=np.zeros((5, 5)), prior_h=np.zeros(4))
+
+    def test_empty_evidence_feature_retains_prior(self) -> None:
+        # Feature 0 never appears in X -> its spin is degenerate (falls back to
+        # the prior row) and other spins pull its all-zero column's coefficient
+        # to the prior under the re-centered penalty. After symmetrization the
+        # whole row, and h[0], equal the prior exactly (to solver tolerance).
+        rng = np.random.default_rng(2)
+        V = 6
+        X = (rng.random((400, V)) < 0.35).astype(np.int8)
+        X[:, 0] = 0
+        prior_J, prior_h = self._random_prior(V, seed=3)
+        J, h = fit_pl_ising(X, C=1.0 / 25.0, prior_J=prior_J, prior_h=prior_h)
+        np.testing.assert_allclose(J[0, :], prior_J[0, :], atol=1e-4)
+        np.testing.assert_allclose(h[0], prior_h[0], atol=1e-6)
+
+    def test_well_sampled_feature_overrules_prior(self) -> None:
+        # Two perfectly correlated features get J > 0 even when the prior says
+        # they should be strongly negative: enough data overrules the prior.
+        rng = np.random.default_rng(4)
+        co = (rng.random(1500) < 0.4).astype(np.int8)
+        indep = (rng.random((1500, 3)) < 0.3).astype(np.int8)
+        X = np.column_stack([co, co, indep]).astype(np.int8)
+        V = X.shape[1]
+        prior_J = np.zeros((V, V))
+        prior_J[0, 1] = prior_J[1, 0] = -3.0
+        J, _ = fit_pl_ising(X, C=1.0 / 1.0, prior_J=prior_J, prior_h=np.zeros(V))
+        self.assertGreater(J[0, 1], 0.0)
+
+    def test_zero_prior_matches_no_prior(self) -> None:
+        # A zero prior with a free intercept must reproduce the base fit.
+        rng = np.random.default_rng(5)
+        X = (rng.random((300, 7)) < 0.3).astype(np.int8)
+        V = X.shape[1]
+        J0, h0 = fit_pl_ising(X, C=1.0 / 25.0)
+        J1, h1 = fit_pl_ising(
+            X,
+            C=1.0 / 25.0,
+            prior_J=np.zeros((V, V)),
+            prior_h=np.zeros(V),
+            intercept_prior_weight=0.0,
+        )
+        np.testing.assert_allclose(J1, J0, atol=1e-6)
+        np.testing.assert_allclose(h1, h0, atol=1e-6)
+
+
 if __name__ == "__main__":
     unittest.main()
