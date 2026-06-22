@@ -4,7 +4,7 @@
 // touch). Phase 2/3 fit-time constants live in the per-model
 // meta.json instead (loaded at runtime via loadModel).
 
-export const CURRENT_REGULATION = "M-A";
+export const CURRENT_REGULATION = "M-B";
 
 export const TEAM_SIZE = 6;
 
