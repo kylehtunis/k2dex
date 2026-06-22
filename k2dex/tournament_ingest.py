@@ -62,10 +62,10 @@ from .constants import (
     LIMITLESS_MAX_TEAMS as DEFAULT_MAX_TEAMS,
     MIN_TEAMS_PER_TOURNAMENT,
     TEAM_SIZE,
+    CURRENT_REGULATION as DEFAULT_REGULATION,
 )
 
 API_BASE = "https://play.limitlesstcg.com/api"
-DEFAULT_REGULATION = "M-A"
 DEFAULT_GAME = "VGC"
 DEFAULT_CACHE_DIR = Path("tournaments_cache")
 MIN_PROTECT_PER_PLAYER = 1.0
