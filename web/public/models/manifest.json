@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "default_model": "regulation-m-b-experimental",
+  "default_model": "reg-m-b-experimental",
   "models": [
     {
-      "id": "regulation-m-b-experimental",
-      "display_name": "Regulation M-B (Experimental)",
+      "id": "reg-m-b-experimental",
+      "display_name": "Reg. M-B (Experimental)",
       "regulation": "M-B",
       "feature_dimensions": 2,
-      "V": 243,
-      "n_corpus_teams": 2203,
-      "latest_tournament_date": "2026-06-22T01:00:00.000Z",
+      "V": 350,
+      "n_corpus_teams": 2702,
+      "latest_tournament_date": "2026-06-22T23:30:00.000Z",
       "team_size": 6,
       "description": "A new model for M-B. Vocabulary is currently small due to the limited data, will improve over time.",
       "new": true
