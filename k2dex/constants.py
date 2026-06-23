@@ -27,7 +27,7 @@ SPECIES_ITEM_LR_LAMBDA = 4.5   # L2 regularization strength for the species+item
 # --- Sample weighting (weighted base model) ---
 # Per-team fit weight: w = exp(-age_days / RECENCY_TAU_DAYS) * IN_PERSON_WEIGHT^[in-person],
 # normalized so the weights average to 1. Tuned by notebooks/weighting_sweep.ipynb.
-RECENCY_TAU_DAYS: float | None = None  # decay timescale in days; None = no recency decay
+RECENCY_TAU_DAYS = 30.0                # decay timescale in days; None = no recency decay
 IN_PERSON_WEIGHT = 1.0                 # multiplier on in-person teams; 1.0 = no upweight
 
 # --- Limitless ingest filter ---
