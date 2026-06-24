@@ -43,7 +43,8 @@ jobs:
       - name: Build
         working-directory: web
         env:
-          VITE_BASE_PATH: /k2dex/
+          # Custom domain (k2dex.kyletunis.com) serves the site at the root.
+          VITE_BASE_PATH: /
         run: npm run build
 
       - uses: actions/configure-pages@v5

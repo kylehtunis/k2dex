@@ -1,40 +1,51 @@
 {
   "schema_version": 1,
-  "default_model": "reg-m-a-species-item",
+  "default_model": "reg-m-b-experimental",
   "models": [
     {
-      "id": "reg-m-a-species-item",
-      "display_name": "Reg. M-A Species @ Item",
-      "regulation": "M-A",
+      "id": "reg-m-b-experimental",
+      "display_name": "Reg. M-B (Experimental)",
+      "regulation": "M-B",
       "feature_dimensions": 2,
-      "V": 779,
-      "n_corpus_teams": 20160,
-      "latest_tournament_date": "2026-06-10T17:00:00.000Z",
+      "V": 350,
+      "n_corpus_teams": 2702,
+      "latest_tournament_date": "2026-06-22T23:30:00.000Z",
       "team_size": 6,
-      "description": "Used for creating teams of Pok\u00e9mon with their held items. This is the recommended model."
+      "description": "A new model for M-B. Vocabulary is currently small due to the limited data, will improve over time.",
+      "new": true
     },
     {
       "id": "reg-m-a-species",
       "display_name": "Reg. M-A Species",
       "regulation": "M-A",
       "feature_dimensions": 1,
-      "V": 193,
-      "n_corpus_teams": 21916,
-      "latest_tournament_date": "2026-06-10T17:00:00.000Z",
+      "V": 194,
+      "n_corpus_teams": 23661,
+      "latest_tournament_date": "2026-06-15T01:00:00.000Z",
       "team_size": 6,
       "description": "Used for creating teams of Pok\u00e9mon, considering only the species. Lower resolution than the Species @ Item model."
+    },
+    {
+      "id": "reg-m-a-species-item",
+      "display_name": "Reg. M-A Species @ Item",
+      "regulation": "M-A",
+      "feature_dimensions": 2,
+      "V": 797,
+      "n_corpus_teams": 21879,
+      "latest_tournament_date": "2026-06-15T01:00:00.000Z",
+      "team_size": 6,
+      "description": "Used for creating teams of Pok\u00e9mon with their held items. This is the recommended model."
     },
     {
       "id": "reg-m-a-species-item-weighted",
       "display_name": "Reg. M-A Species @ Item (Weighted)",
       "regulation": "M-A",
       "feature_dimensions": 2,
-      "V": 635,
-      "n_corpus_teams": 19522,
-      "latest_tournament_date": "2026-06-10T17:00:00.000Z",
+      "V": 659,
+      "n_corpus_teams": 21280,
+      "latest_tournament_date": "2026-06-15T01:00:00.000Z",
       "team_size": 6,
-      "description": "Experimental model that places higher emphasis on recent teams and those brought to in-person tournaments.",
-      "new": true
+      "description": "Experimental model that places higher emphasis on recent teams and those brought to in-person tournaments."
     }
   ]
 }

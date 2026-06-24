@@ -1,7 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// GH Pages serves under /k2dex/. Dev / local-preview default to /.
+// Production serves at the root of the custom domain (k2dex.kyletunis.com),
+// so the deploy workflow sets VITE_BASE_PATH=/. Dev / local-preview default to /.
 // Override with VITE_BASE_PATH for non-standard deploys.
 export default defineConfig({
   plugins: [react()],

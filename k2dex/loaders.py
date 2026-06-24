@@ -80,6 +80,34 @@ def team_weights(
     return w * (n / w.sum())
 
 
+def _align_prior(
+    vocab: list[str],
+    prior_vocab: Sequence[str],
+    prior_J: NDArray[np.float64],
+    prior_h: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Scatter a previous model's (J, h) onto `vocab`'s index order.
+
+    Features shared between `vocab` and `prior_vocab` (matched by vocab string)
+    carry their prior values; features new to `vocab` get zeros. The result is
+    fed to `fit_pl_ising(prior_J=..., prior_h=...)`, which re-centers the L2
+    penalty on it. Matching by string means it works identically for the
+    species vocab ('Incineroar') and the pair vocab ('Incineroar @ ...').
+    """
+    V = len(vocab)
+    idx = {name: i for i, name in enumerate(vocab)}
+    pidx = {name: i for i, name in enumerate(prior_vocab)}
+    shared = [name for name in vocab if name in pidx]
+    new_pos = np.array([idx[name] for name in shared], dtype=np.intp)
+    old_pos = np.array([pidx[name] for name in shared], dtype=np.intp)
+    J_aligned = np.zeros((V, V), dtype=np.float64)
+    h_aligned = np.zeros(V, dtype=np.float64)
+    if len(shared):
+        J_aligned[np.ix_(new_pos, new_pos)] = prior_J[np.ix_(old_pos, old_pos)]
+        h_aligned[new_pos] = prior_h[old_pos]
+    return J_aligned, h_aligned
+
+
 def format_pair(species: str, item: str | None) -> str:
     """Display form for Phase 3 vocab strings: bare species when itemless,
     'Species @ Item' otherwise."""
@@ -95,6 +123,8 @@ def build_species_model(
     lam: float = SPECIES_LR_LAMBDA,
     recency_tau: float | None = RECENCY_TAU_DAYS,
     in_person_multiplier: float = IN_PERSON_WEIGHT,
+    prior_regulation: str | None = None,
+    intercept_prior_weight: float = 1.0,
 ) -> SpeciesModel:
     """Species-only PL inverse Ising over the cached tournament corpus.
 
@@ -105,6 +135,16 @@ def build_species_model(
     single highly-weighted team can push a one-off feature into the vocab,
     weighted support so features whose evidence is all heavily decayed drop
     out instead of hitting the degenerate-spin path.
+
+    `prior_regulation` warm-starts the fit from another regulation (assumed a
+    legality superset, so every prior feature stays valid here). That prior
+    model is fit on its own corpus with default knobs, its full vocab is folded
+    into this one unconditionally (a prior feature absent from `regulation` just
+    hits the degenerate-spin skip and keeps its prior value), and its (J, h)
+    re-centers the L2 penalty so thin features relax toward the prior instead of
+    zero. `intercept_prior_weight` tunes how hard the bias is pulled to the
+    prior (see `fit_pl_ising`). With `prior_regulation=None` this is an ordinary
+    zero-centered fit.
     """
     tournaments = tournament_ingest.load_cached_tournaments(regulation=regulation)
     latest_date = max(t.meta.date for t in tournaments)
@@ -118,15 +158,22 @@ def build_species_model(
     teams = tournament_ingest.species_only_teams([o.members for o in observations])
     team_counts: Counter[frozenset[str]] = Counter(teams)
 
+    prior: SpeciesModel | None = None
+    if prior_regulation is not None:
+        prior = build_species_model(regulation=prior_regulation)
+
     raw_counts = Counter(name for team in teams for name in team)
     weighted_counts: dict[str, float] = {}
     for ti, team in enumerate(teams):
         for name in team:
             weighted_counts[name] = weighted_counts.get(name, 0.0) + w[ti]
-    vocab = sorted(
+    native_vocab = {
         name for name, c in weighted_counts.items()
         if c >= min_team_count and raw_counts[name] >= min_team_count
-    )
+    }
+    if prior is not None:
+        native_vocab |= set(prior[0])  # prior vocab folded in unconditionally
+    vocab = sorted(native_vocab)
     name_to_i = {name: i for i, name in enumerate(vocab)}
     V = len(vocab)
 
@@ -138,7 +185,18 @@ def build_species_model(
                 X[ti, j] = 1
     m = (w @ X) / w.sum()
 
-    J, h = fit_pl_ising(X, C=1.0 / lam, sample_weight=w)
+    prior_J = prior_h = None
+    if prior is not None:
+        prior_J, prior_h = _align_prior(vocab, prior[0], prior[2], prior[3])
+
+    J, h = fit_pl_ising(
+        X,
+        C=1.0 / lam,
+        sample_weight=w,
+        prior_J=prior_J,
+        prior_h=prior_h,
+        intercept_prior_weight=intercept_prior_weight,
+    )
     species_of = list(vocab)
     item_of: list[str | None] = [None] * len(vocab)
     return vocab, m, J, h, team_counts, species_of, item_of, latest_date
@@ -151,11 +209,15 @@ def build_species_item_model(
     lam: float = SPECIES_ITEM_LR_LAMBDA,
     recency_tau: float | None = RECENCY_TAU_DAYS,
     in_person_multiplier: float = IN_PERSON_WEIGHT,
+    prior_regulation: str | None = None,
+    intercept_prior_weight: float = 1.0,
 ) -> SpeciesModel:
     """(species, item)-pair PL inverse Ising over the cached tournament corpus.
 
     Weighting semantics match `build_species_model`: weighted marginals, vocab
     cutoff on BOTH raw and weighted counts, raw `team_counts` for display.
+    `prior_regulation` / `intercept_prior_weight` warm-start the fit exactly as
+    in `build_species_model`, here over the (species, item) pair vocabulary.
     """
     tournaments = tournament_ingest.load_cached_tournaments(regulation=regulation)
     latest_date = max(t.meta.date for t in tournaments)
@@ -168,16 +230,22 @@ def build_species_item_model(
     )
     teams = [o.members for o in observations]
 
+    prior: SpeciesModel | None = None
+    if prior_regulation is not None:
+        prior = build_species_item_model(regulation=prior_regulation)
+
     raw_counts = Counter(pair for team in teams for pair in team)
     weighted_counts: dict[tuple[str, str | None], float] = {}
     for ti, team in enumerate(teams):
         for pair in team:
             weighted_counts[pair] = weighted_counts.get(pair, 0.0) + w[ti]
-    pair_list_above_cutoff = [
+    pair_set = {
         p for p, c in weighted_counts.items()
         if c >= min_team_count and raw_counts[p] >= min_team_count
-    ]
-    pair_list = sorted(pair_list_above_cutoff, key=lambda p: format_pair(p[0], p[1]))
+    }
+    if prior is not None:
+        pair_set |= set(zip(prior[5], prior[6]))  # prior (species, item) pairs
+    pair_list = sorted(pair_set, key=lambda p: format_pair(p[0], p[1]))
     vocab = [format_pair(s, i) for s, i in pair_list]
     pair_to_idx = {p: i for i, p in enumerate(pair_list)}
     V = len(vocab)
@@ -198,5 +266,16 @@ def build_species_item_model(
         if all(pair in pair_to_idx for pair in team):
             team_counts[frozenset(format_pair(s, i) for s, i in team)] += 1
 
-    J, h = fit_pl_ising(X, C=1.0 / lam, sample_weight=w)
+    prior_J = prior_h = None
+    if prior is not None:
+        prior_J, prior_h = _align_prior(vocab, prior[0], prior[2], prior[3])
+
+    J, h = fit_pl_ising(
+        X,
+        C=1.0 / lam,
+        sample_weight=w,
+        prior_J=prior_J,
+        prior_h=prior_h,
+        intercept_prior_weight=intercept_prior_weight,
+    )
     return vocab, m, J, h, team_counts, species_of, item_of, latest_date

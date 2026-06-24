@@ -142,6 +142,8 @@ def write_model(
     skip_team_counts: bool = False,
     force: bool = False,
     is_new: bool = False,
+    prior_regulation: str | None = None,
+    intercept_prior_weight: float = 1.0,
 ) -> None:
     model_dir = out_dir / slug
     if model_dir.exists() and not force:
@@ -157,6 +159,9 @@ def write_model(
     print(f"  lambda: {lam}")
     print(f"  recency_tau_days: {recency_tau if recency_tau is not None else '(no decay)'}")
     print(f"  in_person_weight: {in_person_weight}")
+    if prior_regulation is not None:
+        print(f"  prior_regulation: {prior_regulation} "
+              f"(intercept_prior_weight={intercept_prior_weight})")
 
     builder = MODEL_BUILDERS[model_type]
     vocab, m, J, h, team_counts, species_of, item_of, latest_date = builder(
@@ -165,6 +170,8 @@ def write_model(
         lam=lam,
         recency_tau=recency_tau,
         in_person_multiplier=in_person_weight,
+        prior_regulation=prior_regulation,
+        intercept_prior_weight=intercept_prior_weight,
     )
     V = len(vocab)
     n_teams = int(sum(team_counts.values()))
@@ -199,6 +206,14 @@ def write_model(
             "min_team_count": min_team_count,
             "recency_tau_days": recency_tau,
             "in_person_weight": in_person_weight,
+            **(
+                {
+                    "prior_regulation": prior_regulation,
+                    "intercept_prior_weight": intercept_prior_weight,
+                }
+                if prior_regulation is not None
+                else {}
+            ),
         },
         "schema_version": 2,
     }
@@ -249,12 +264,11 @@ def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> Non
         print(f"No models found in {out_dir}")
         return
 
-    resolved_default = default_model
-    if resolved_default is None:
-        resolved_default = models[0]["id"]
-    if not any(m["id"] == resolved_default for m in models):
-        print(f"warn: default_model {resolved_default!r} not found; using {models[0]['id']!r}")
-        resolved_default = models[0]["id"]
+    if default_model is not None and not any(m["id"] == default_model for m in models):
+        valid = ", ".join(m["id"] for m in models)
+        print(f"error: --default-model {default_model!r} not found. Valid slugs: {valid}")
+        sys.exit(1)
+    resolved_default = default_model if default_model is not None else models[0]["id"]
 
     models.sort(key=lambda m: m["id"] != resolved_default)
 
@@ -271,6 +285,64 @@ def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> Non
         default_marker = " [default]" if m["id"] == resolved_default else ""
         print(f"  {m['id']}: V={m['V']}, teams={m['n_corpus_teams']:,}, "
               f"regulation={m['regulation']}{default_marker}")
+
+
+def recompute_all(out_dir: Path, *, default_model: str | None = None) -> None:
+    """Rebuild every model in `out_dir` from its own stored `meta.json`
+    parameters, then refresh the manifest.
+
+    Used after a change to the fit (e.g. a fitter swap or a constant bump) to
+    regenerate all committed artifacts without re-specifying each model's CLI
+    flags by hand. Each model is rebuilt with exactly the parameters it was
+    last built with: lambda, weighting knobs, min-team-count, warm-start prior,
+    description and 'new' badge all come from its `fit` block. `team_counts`
+    are recomputed only for models that already had them.
+    """
+    meta_paths = sorted(out_dir.glob("*/meta.json"))
+    if not meta_paths:
+        print(f"No models found in {out_dir}")
+        return
+
+    type_by_dim = {1: "species", 2: "species_item"}
+    print(f"Output root: {out_dir}")
+    print(f"Recomputing {len(meta_paths)} model(s) from stored parameters.\n")
+    for meta_path in meta_paths:
+        with open(meta_path) as f:
+            meta = json.load(f)
+        model_type = type_by_dim.get(meta.get("feature_dimensions", 1))
+        if model_type is None:
+            print(f"  skip {meta_path.parent.name}: unknown feature_dimensions")
+            continue
+        fit = meta.get("fit", {})
+        slug = meta.get("id", meta_path.parent.name)
+        has_team_counts = (meta_path.parent / "team_counts.json").exists()
+        write_model(
+            slug=slug,
+            display_name=meta.get("display_name", slug),
+            regulation=meta.get("regulation", CURRENT_REGULATION),
+            model_type=model_type,
+            lam=fit.get("lambda", DEFAULT_LAMBDA[model_type]),
+            out_dir=out_dir,
+            description=meta.get("description"),
+            min_team_count=fit.get("min_team_count", PHASE2_MIN_TEAM_COUNT),
+            recency_tau=fit.get("recency_tau_days", RECENCY_TAU_DAYS),
+            in_person_weight=fit.get("in_person_weight", IN_PERSON_WEIGHT),
+            skip_team_counts=not has_team_counts,
+            force=True,
+            is_new=bool(meta.get("new", False)),
+            prior_regulation=fit.get("prior_regulation"),
+            intercept_prior_weight=fit.get("intercept_prior_weight", 1.0),
+        )
+
+    # V / n_corpus_teams can move, so refresh the manifest. Preserve the
+    # existing default unless one was passed explicitly.
+    if default_model is None:
+        manifest_path = out_dir / "manifest.json"
+        if manifest_path.exists():
+            with open(manifest_path) as f:
+                default_model = json.load(f).get("default_model")
+    print()
+    generate_manifest(out_dir, default_model=default_model)
 
 
 def main() -> int:
@@ -312,7 +384,7 @@ def main() -> int:
         dest="lam",
         default=None,
         help="L2 regularization strength (default: 10.0 for species, 1.0 for species_item). "
-             "Converted to sklearn C = 1/lambda internally.",
+             "Converted to the logistic inverse-strength C = 1/lambda internally.",
     )
     group.add_argument(
         "--tau",
@@ -335,6 +407,22 @@ def main() -> int:
         type=int,
         default=PHASE2_MIN_TEAM_COUNT,
         help=f"Vocab cutoff: feature must appear in >= N teams (default: {PHASE2_MIN_TEAM_COUNT}).",
+    )
+    group.add_argument(
+        "--prior-regulation",
+        default=None,
+        help="Warm-start the fit from another regulation's model (a legality "
+             "superset). Its full vocab is folded in and its (J, h) re-centers "
+             "the L2 penalty, so thin features relax toward the prior instead "
+             "of zero. Recorded in meta.json:fit.",
+    )
+    group.add_argument(
+        "--intercept-prior-weight",
+        type=float,
+        default=1.0,
+        help="With --prior-regulation, how hard the bias h is pulled toward "
+             "the prior, as a multiple of the coupling-penalty strength "
+             "(1.0 = same as couplings; 0.0 = bias free). Default: 1.0.",
     )
     group.add_argument(
         "--skip-team-counts",
@@ -360,6 +448,12 @@ def main() -> int:
         help="Scan model directories and write manifest.json. No model build.",
     )
     manifest_group.add_argument(
+        "--recompute",
+        action="store_true",
+        help="Rebuild every existing model from its stored meta.json parameters "
+             "and refresh the manifest. No per-model flags needed.",
+    )
+    manifest_group.add_argument(
         "--default-model",
         help="Model slug to mark as default in the manifest.",
     )
@@ -368,6 +462,11 @@ def main() -> int:
 
     if args.generate_manifest:
         generate_manifest(out_dir, default_model=args.default_model)
+        return 0
+
+    if args.recompute:
+        recompute_all(out_dir, default_model=args.default_model)
+        print("\nDone. Inspect artifacts before committing.")
         return 0
 
     if not args.display_name or not args.model_type:
@@ -391,6 +490,8 @@ def main() -> int:
         skip_team_counts=args.skip_team_counts,
         force=args.force,
         is_new=args.is_new,
+        prior_regulation=args.prior_regulation,
+        intercept_prior_weight=args.intercept_prior_weight,
     )
 
     print("\nDone. Inspect artifacts before committing.")

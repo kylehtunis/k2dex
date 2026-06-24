@@ -63,7 +63,7 @@ import urllib.request
 import warnings
 from collections import Counter
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 logger = logging.getLogger("tournament_ingest")
@@ -73,10 +73,10 @@ from .constants import (
     LIMITLESS_MAX_TEAMS as DEFAULT_MAX_TEAMS,
     MIN_TEAMS_PER_TOURNAMENT,
     TEAM_SIZE,
+    CURRENT_REGULATION as DEFAULT_REGULATION,
 )
 
 API_BASE = "https://play.limitlesstcg.com/api"
-DEFAULT_REGULATION = "M-A"
 DEFAULT_GAME = "VGC"
 DEFAULT_CACHE_DIR = Path("tournaments_cache")
 MIN_PROTECT_PER_PLAYER = 1.0
@@ -208,7 +208,113 @@ _ILLEGAL_ITEMS_BY_REGULATION: dict[str, frozenset[str]] = {
         "Assault Vest",
         "Safety Goggles",
     }),
+    "M-B": frozenset({
+        "Covert Cloak",
+        "Assault Vest",
+        "Safety Goggles",
+    }),
 }
+
+
+@dataclass(frozen=True)
+class RegulationRelabel:
+    """Recovers a regulation's true label when the Limitless catalog has not
+    been updated to tag it yet.
+
+    Limitless has been observed to keep serving a superseded format label (or
+    ``CUSTOM``) for events that, by date and roster content, belong to a newer
+    regulation. A tournament is relabeled to ``target`` when all three hold:
+
+    - its catalog date is on or after ``start_date`` (day resolution),
+    - its catalog label is one of ``from_labels`` (the stale labels), and
+    - at least one roster runs a species in ``marker_species`` or item in
+      ``marker_items`` -- picks that are legal only in ``target`` and illegal
+      in every ``from_labels`` format, so a single appearance rules the stale
+      label out.
+
+    Marker presence is necessary and sufficient: a date/label candidate whose
+    rosters carry no marker keeps its original label.
+    """
+
+    target: str
+    start_date: str            # inclusive lower bound, ISO YYYY-MM-DD
+    from_labels: frozenset[str]
+    marker_species: frozenset[str]
+    marker_items: frozenset[str]
+
+
+# Limitless had not tagged Regulation M-B as of its 2026-06-17 start: events
+# that are truly M-B still carry the M-A or CUSTOM label. Recover them by date
+# window plus a roster content check. Each marker species/item is legal in M-B
+# but illegal in M-A, so any single appearance identifies the event as M-B.
+_REGULATION_RELABELS: tuple[RegulationRelabel, ...] = (
+    RegulationRelabel(
+        target="M-B",
+        start_date="2026-06-17",
+        from_labels=frozenset({"M-A", "CUSTOM"}),
+        marker_species=frozenset({"Gholdengo", "Metagross", "Grimmsnarl"}),
+        marker_items=frozenset({"Life Orb", "Light Clay"}),
+    ),
+)
+
+
+def _day(date_str: str) -> str:
+    """Day-resolution key for a catalog date. Limitless dates are full ISO
+    timestamps, in-person dates bare YYYY-MM-DD; both share a sortable
+    YYYY-MM-DD prefix, so a string compare orders them at day resolution."""
+    return (date_str or "")[:10]
+
+
+def _roster_has_marker(teams: list[Team], rule: RegulationRelabel) -> bool:
+    """True when any team runs one of the rule's marker species or items."""
+    return any(
+        species in rule.marker_species
+        or (item is not None and item in rule.marker_items)
+        for team in teams
+        for species, item in team.members
+    )
+
+
+def resolve_regulation(meta: TournamentMeta, teams: list[Team]) -> str:
+    """The tournament's true regulation, correcting stale Limitless labels.
+
+    Returns ``meta.regulation`` unchanged unless a relabel rule's date window,
+    source label, and roster-marker conditions all match, in which case the
+    rule's target is returned. The marker scan runs on ``teams``, so this must
+    be called only after standings are parsed. Label/date are checked first,
+    so non-candidates short-circuit without touching the rosters.
+    """
+    for rule in _REGULATION_RELABELS:
+        if meta.regulation in rule.from_labels and _day(meta.date) >= rule.start_date:
+            if _roster_has_marker(teams, rule):
+                return rule.target
+    return meta.regulation
+
+
+def could_match_regulation(meta: TournamentMeta, target: str) -> bool:
+    """Cheap, standings-free pre-filter: could this tournament resolve to
+    ``target``? True when it already carries that label, or when a relabel
+    rule could promote it (date window + source label match). The roster-marker
+    confirmation happens later, once standings are fetched.
+    """
+    if meta.regulation == target:
+        return True
+    return any(
+        rule.target == target
+        and meta.regulation in rule.from_labels
+        and _day(meta.date) >= rule.start_date
+        for rule in _REGULATION_RELABELS
+    )
+
+
+def _has_pending_relabel(meta: TournamentMeta) -> bool:
+    """Whether any relabel rule's label/date precondition matches, i.e. the
+    roster must be inspected before this event's regulation can be trusted."""
+    return any(
+        meta.regulation in rule.from_labels and _day(meta.date) >= rule.start_date
+        for rule in _REGULATION_RELABELS
+    )
+
 
 _BRACKET_RE = re.compile(r"^(.+?)\s*\[(.+)]\s*$")
 
@@ -677,7 +783,7 @@ def fetch_limitless_tournaments(
             if tm.id in seen_ids:
                 continue
             seen_ids.add(tm.id)
-            if tm.regulation != regulation:
+            if not could_match_regulation(tm, regulation):
                 continue
             new_in_regulation += 1
             if is_likely_singles_by_name(tm.name):
@@ -693,7 +799,13 @@ def fetch_limitless_tournaments(
                 )
                 continue
             cached = _load_tournament(cache_dir, tm.id)
-            if cached is not None:
+            # Trust the cache only when its stored label still matches what the
+            # roster resolves to -- a stale entry cached under an old label
+            # (e.g. an M-B event cached as M-A by a prior run) is re-fetched so
+            # its items are stripped under the correct regulation.
+            if cached is not None and (
+                resolve_regulation(cached.meta, cached.teams) == cached.meta.regulation
+            ):
                 ttd = cached
                 source = "cached "
             else:
@@ -706,11 +818,35 @@ def fetch_limitless_tournaments(
                     logger.info("[skip protect] %s '%s'", tm.id, tm.name)
                     time.sleep(POLITE_SLEEP_SEC)
                     continue
-                teams = extract_teams(standings, regulation=tm.regulation)
-                ttd = TournamentTeams(meta=tm, teams=teams, tournament_type="limitless")
+                # Detect the true regulation on an unstripped parse (markers
+                # survive any item filter), then extract under that regulation
+                # so its illegal-item filter -- not the stale label's -- applies.
+                if _has_pending_relabel(tm):
+                    true_reg = resolve_regulation(
+                        tm, extract_teams(standings, regulation=None)
+                    )
+                else:
+                    true_reg = tm.regulation
+                if true_reg != tm.regulation:
+                    logger.info(
+                        "[relabel %-5s] %s '%s' (catalog=%s, date=%s)",
+                        true_reg, tm.id, tm.name, tm.regulation, _day(tm.date),
+                    )
+                teams = extract_teams(standings, regulation=true_reg)
+                meta = replace(tm, regulation=true_reg)
+                ttd = TournamentTeams(meta=meta, teams=teams, tournament_type="limitless")
                 _save_tournament(cache_dir, ttd)
                 source = "fetched"
                 time.sleep(POLITE_SLEEP_SEC)
+            # A relabel can resolve a candidate to a regulation other than the
+            # one being ingested (e.g. a post-cutoff event that stayed genuinely
+            # M-A): it is cached under its true label but excluded from this run.
+            if ttd.meta.regulation != regulation:
+                logger.info(
+                    "[skip reg]     %s '%s' (resolved=%s != %s)",
+                    tm.id, tm.name, ttd.meta.regulation, regulation,
+                )
+                continue
             # Post-extract size check: catches cached tournaments under a
             # newly-tightened threshold and high-dropout events where
             # extract_teams trimmed below the limit.

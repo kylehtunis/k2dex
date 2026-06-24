@@ -18,7 +18,7 @@
 /** Production origin + base path, no trailing slash. Fixed regardless of the
  *  build's base path (local builds use "/"); canonicals must always point at
  *  the real public host. */
-export const SITE_URL = "https://kylehtunis.github.io/k2dex";
+export const SITE_URL = "https://k2dex.kyletunis.com";
 export const SITE_NAME = "k2dex";
 
 export interface RouteMeta {
