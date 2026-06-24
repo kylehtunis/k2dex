@@ -10,11 +10,15 @@ from pathlib import Path
 
 from k2dex.tournament_ingest import (
     CACHE_VERSION,
+    Match,
     TournamentMeta,
     TournamentTeams,
     Team,
     _save_tournament,
+    all_match_observations,
     all_team_observations,
+    extract_matches,
+    extract_teams,
     load_cached_tournaments,
     import_in_person_tournaments,
     normalize_bracket_forme,
@@ -236,6 +240,221 @@ class TestImportInPerson(unittest.TestCase):
             result = import_in_person_tournaments(local_dir=local_dir, cache_dir=cache_dir)
             self.assertEqual(len(result), 1)
             self.assertEqual(result[0].meta.date, "2026-05-30")
+
+
+def _standings_entry(
+    name: str,
+    rounds: dict[str, dict] | None = None,
+    *,
+    n_mons: int = 6,
+    placing: int | None = None,
+) -> dict:
+    """One raw standings entry with a valid (or deliberately short) decklist."""
+    return {
+        "name": name,
+        "placing": placing,
+        "record": {"wins": 0, "losses": 0, "ties": 0},
+        "rounds": rounds or {},
+        "decklist": [
+            {"name": f"Mon{j}", "item": f"Item{j}"} for j in range(n_mons)
+        ],
+    }
+
+
+class TestExtractMatches(unittest.TestCase):
+    def test_basic_reciprocal_match(self):
+        standings = [
+            _standings_entry("Alice", {"1": {"name": "Bob", "result": "W"}}),
+            _standings_entry("Bob", {"1": {"name": "Alice", "result": "L"}}),
+        ]
+        matches = extract_matches(standings)
+        self.assertEqual(matches, [Match(round=1, winner=0, loser=1)])
+
+    def test_match_emitted_once_despite_two_views(self):
+        standings = [
+            _standings_entry("Alice", {"1": {"name": "Bob", "result": "L"}}),
+            _standings_entry("Bob", {"1": {"name": "Alice", "result": "W"}}),
+        ]
+        matches = extract_matches(standings)
+        self.assertEqual(matches, [Match(round=1, winner=1, loser=0)])
+
+    def test_bye_and_late_skipped(self):
+        standings = [
+            _standings_entry("Alice", {
+                "1": {"name": "BYE", "result": "W"},
+                "2": {"name": "LATE", "result": "W"},
+                "3": {"name": "Bob", "result": "W"},
+            }),
+            _standings_entry("Bob", {"3": {"name": "Alice", "result": "L"}}),
+        ]
+        matches = extract_matches(standings)
+        self.assertEqual(matches, [Match(round=3, winner=0, loser=1)])
+
+    def test_duplicate_player_name_drops_their_matches(self):
+        standings = [
+            _standings_entry("Noah", {"1": {"name": "Alice", "result": "W"}}),
+            _standings_entry("Noah", {"1": {"name": "Bob", "result": "W"}}),
+            _standings_entry("Alice", {
+                "1": {"name": "Noah", "result": "L"},
+                "2": {"name": "Bob", "result": "W"},
+            }),
+            _standings_entry("Bob", {
+                "1": {"name": "Noah", "result": "L"},
+                "2": {"name": "Alice", "result": "L"},
+            }),
+        ]
+        matches = extract_matches(standings)
+        # Only the Alice-vs-Bob round 2 game survives: every match touching
+        # the duplicated "Noah" is ambiguous and dropped.
+        self.assertEqual(matches, [Match(round=2, winner=2, loser=3)])
+
+    def test_double_loss_skipped(self):
+        standings = [
+            _standings_entry("Alice", {"1": {"name": "Bob", "result": "L"}}),
+            _standings_entry("Bob", {"1": {"name": "Alice", "result": "L"}}),
+        ]
+        self.assertEqual(extract_matches(standings), [])
+
+    def test_tie_result_skipped(self):
+        standings = [
+            _standings_entry("Alice", {"1": {"name": "Bob", "result": "T"}}),
+            _standings_entry("Bob", {"1": {"name": "Alice", "result": "T"}}),
+        ]
+        self.assertEqual(extract_matches(standings), [])
+
+    def test_non_reciprocal_report_skipped(self):
+        standings = [
+            _standings_entry("Alice", {"1": {"name": "Bob", "result": "W"}}),
+            _standings_entry("Bob", {}),  # Bob never reports round 1
+        ]
+        self.assertEqual(extract_matches(standings), [])
+
+    def test_invalid_roster_drops_match_and_shifts_indices(self):
+        standings = [
+            _standings_entry("Carol", {"1": {"name": "Dave", "result": "W"}},
+                             n_mons=5),  # invalid decklist -> no team
+            _standings_entry("Dave", {
+                "1": {"name": "Carol", "result": "L"},
+                "2": {"name": "Erin", "result": "W"},
+            }),
+            _standings_entry("Erin", {"2": {"name": "Dave", "result": "L"}}),
+        ]
+        matches = extract_matches(standings)
+        # Carol's match vanishes (no roster); Dave/Erin get indices 0/1 in
+        # the post-filter team list, matching extract_teams output.
+        self.assertEqual(matches, [Match(round=2, winner=0, loser=1)])
+        teams = extract_teams(standings)
+        self.assertEqual(len(teams), 2)
+
+    def test_limitless_standings_without_rounds(self):
+        standings = [
+            {k: v for k, v in _standings_entry("Alice").items() if k != "rounds"},
+            {k: v for k, v in _standings_entry("Bob").items() if k != "rounds"},
+        ]
+        self.assertEqual(extract_matches(standings), [])
+
+
+class TestMatchRoundTrip(unittest.TestCase):
+    def test_matches_survive_save_and_load(self):
+        with tempfile.TemporaryDirectory() as td:
+            cache_dir = Path(td)
+            matches = (Match(round=1, winner=0, loser=1),
+                       Match(round=2, winner=1, loser=2))
+            tt = TournamentTeams(
+                meta=TournamentMeta(id="m1", name="Match Event", date="2026-05-30",
+                                    regulation="M-A", players=len(SAMPLE_TEAMS)),
+                teams=SAMPLE_TEAMS,
+                tournament_type="in-person",
+                matches=matches,
+            )
+            _save_tournament(cache_dir, tt)
+            loaded = load_cached_tournaments(cache_dir=cache_dir, regulation="M-A")
+            self.assertEqual(len(loaded), 1)
+            self.assertEqual(loaded[0].matches, matches)
+
+    def test_all_match_observations_resolves_rosters(self):
+        tt = TournamentTeams(
+            meta=TournamentMeta(id="m2", name="Match Event", date="2026-05-30",
+                                regulation="M-A", players=len(SAMPLE_TEAMS)),
+            teams=SAMPLE_TEAMS,
+            tournament_type="in-person",
+            matches=(Match(round=3, winner=4, loser=7),),
+        )
+        obs = all_match_observations([tt])
+        self.assertEqual(len(obs), 1)
+        self.assertEqual(obs[0].winner, SAMPLE_TEAMS[4].members)
+        self.assertEqual(obs[0].loser, SAMPLE_TEAMS[7].members)
+        self.assertEqual(obs[0].round, 3)
+        self.assertEqual(obs[0].date, "2026-05-30")
+        self.assertEqual(obs[0].tournament_id, "m2")
+
+    def test_limitless_entries_have_no_matches(self):
+        obs = all_match_observations([
+            _make_tournament("t", "Online Cup", "2026-02-01", "M-A", SAMPLE_TEAMS),
+        ])
+        self.assertEqual(obs, [])
+
+
+class TestPerTypeCacheVersion(unittest.TestCase):
+    """v3 added match lists, which only in-person sources have: v2 limitless
+    entries stay valid (identical payload either way), v2 in-person entries
+    are stale and must be re-imported."""
+
+    def _v2_payload(self, entry_type: str) -> dict:
+        return {
+            "version": 2,
+            "type": entry_type,
+            "meta": {"id": f"v2-{entry_type}", "name": "Old Event",
+                     "date": "2026-01-01", "regulation": "M-A", "players": 40},
+            "teams": [
+                {"members": [list(m) for m in sorted(t.members, key=lambda m: m[0])],
+                 "placing": t.placing, "record": [t.wins, t.losses, t.ties]}
+                for t in SAMPLE_TEAMS
+            ],
+        }
+
+    def test_v2_limitless_still_loads(self):
+        with tempfile.TemporaryDirectory() as td:
+            cache_dir = Path(td)
+            with (cache_dir / "old.json").open("w") as f:
+                json.dump(self._v2_payload("limitless"), f)
+            loaded = load_cached_tournaments(cache_dir=cache_dir, regulation="M-A")
+            self.assertEqual([t.meta.id for t in loaded], ["v2-limitless"])
+            self.assertEqual(loaded[0].matches, ())
+
+    def test_v2_in_person_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            cache_dir = Path(td)
+            with (cache_dir / "old.json").open("w") as f:
+                json.dump(self._v2_payload("in-person"), f)
+            loaded = load_cached_tournaments(cache_dir=cache_dir, regulation="M-A")
+            self.assertEqual(loaded, [])
+
+    def test_outdated_in_person_reimported(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            local_dir = base / "local"
+            cache_dir = base / "cache"
+            cache_dir.mkdir()
+            reg_dir = local_dir / "M-A"
+            reg_dir.mkdir(parents=True)
+
+            standings = [
+                _standings_entry("Alice", {"1": {"name": "Bob", "result": "W"}}),
+                _standings_entry("Bob", {"1": {"name": "Alice", "result": "L"}}),
+            ]
+            with (reg_dir / "ev9_2026-05-30.json").open("w") as f:
+                json.dump(standings, f)
+
+            stale = self._v2_payload("in-person")
+            stale["meta"]["id"] = "local_ev9_2026-05-30"
+            with (cache_dir / "local_ev9_2026-05-30.json").open("w") as f:
+                json.dump(stale, f)
+
+            result = import_in_person_tournaments(local_dir=local_dir, cache_dir=cache_dir)
+            self.assertEqual(len(result), 1)
+            self.assertEqual(result[0].matches,
+                             (Match(round=1, winner=0, loser=1),))
 
 
 class TestNormalizeBracketForme(unittest.TestCase):

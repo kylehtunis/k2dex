@@ -34,11 +34,21 @@ cache is write-once / read-many. Each cache entry carries a ``type`` field
 (``"limitless"`` or ``"in-person"``) for provenance tracking; old cache
 files without this field default to ``"limitless"`` on read.
 
+In-person entries additionally carry per-round **match results**: each
+standings entry's ``rounds`` dict (opponent name + W/L result per round)
+is resolved to ``Match(round, winner, loser)`` records whose winner/loser
+are indices into the cached team list. Player names are used only during
+parsing for opponent resolution and are still discarded. The Limitless API
+exposes no match-level data, so limitless entries have an empty match list.
+
 Cache format versioning: each payload includes a ``version`` field. Loading
-a cached file at version < CACHE_VERSION returns None, forcing a re-fetch;
-old formats are not upgraded in place. Bump CACHE_VERSION whenever the
-parsing logic changes in a way that would yield different team rosters than
-what's in cached files.
+a cached file below the minimum version for its type returns None, forcing
+a re-fetch / re-import; old formats are not upgraded in place. Bump
+CACHE_VERSION whenever the parsing logic changes in a way that would yield
+different payloads than what's in cached files. The minimum is per-type
+(``_MIN_CACHE_VERSION``) so that a bump which only adds in-person data
+(e.g. v3's match lists) does not force a multi-hour re-walk of the
+Limitless API for entries whose payload would be byte-identical.
 """
 
 from __future__ import annotations
@@ -51,6 +61,7 @@ import time
 import urllib.error
 import urllib.request
 import warnings
+from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -70,8 +81,15 @@ DEFAULT_GAME = "VGC"
 DEFAULT_CACHE_DIR = Path("tournaments_cache")
 MIN_PROTECT_PER_PLAYER = 1.0
 POLITE_SLEEP_SEC = 2.0
-CACHE_VERSION = 2  # bumped when team payload schema changes; see module docstring
+CACHE_VERSION = 3  # bumped when payload schema changes; see module docstring
                    # v2: each team carries placing + win/loss/tie record
+                   # v3: in-person entries carry per-round match results
+
+# Minimum acceptable cached version per entry type. v3 only added match
+# lists, which the Limitless API cannot provide -- a v2 limitless entry is
+# byte-equivalent to what a v3 re-fetch would write, so v2 stays valid
+# there. In-person entries must be re-imported to pick up their matches.
+_MIN_CACHE_VERSION: dict[str, int] = {"limitless": 2, "in-person": 3}
 
 
 @dataclass(frozen=True)
@@ -108,16 +126,35 @@ class Team:
 
 
 @dataclass(frozen=True)
+class Match:
+    """A decisive game between two teams of the same tournament.
+
+    `winner` / `loser` index into the parent `TournamentTeams.teams` list
+    (the post-filter order produced by `extract_teams`). `round` is the
+    1-based round number across the whole event -- day-1 swiss, day-2 swiss,
+    and top cut share one numbering, so notebooks can filter phases by
+    round range. Only decisive results are kept: byes, ties, and irregular
+    reports (e.g. double losses) are dropped at parse time."""
+
+    round: int
+    winner: int
+    loser: int
+
+
+@dataclass(frozen=True)
 class TournamentTeams:
     """A tournament's parsed teams (rosters + outcomes) and identifying metadata.
 
     `tournament_type` is the provenance of the entry: `"limitless"` (online,
     fetched from the API) or `"in-person"` (imported from tournament_json/).
+    `matches` holds per-round match results when the source exposes them
+    (in-person exports only; empty for limitless entries).
     """
 
     meta: TournamentMeta
     teams: list[Team]
     tournament_type: str = "limitless"
+    matches: tuple[Match, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -132,6 +169,22 @@ class TeamObservation:
     members: frozenset[tuple[str, str | None]]
     date: str             # parent tournament date, ISO YYYY-MM-DD
     tournament_type: str  # "limitless" or "in-person"
+
+
+@dataclass(frozen=True)
+class MatchObservation:
+    """A decisive match resolved to its two rosters, plus provenance.
+
+    The flattened counterpart of `Match`: winner/loser indices are resolved
+    to the actual roster frozensets, and the parent tournament's date and id
+    are kept. The input for Bradley-Terry fitting and match-level outcome
+    analysis."""
+
+    winner: frozenset[tuple[str, str | None]]
+    loser: frozenset[tuple[str, str | None]]
+    round: int
+    date: str
+    tournament_id: str
 
 
 _MEGA_FORME_SUFFIXES = (" X", " Y", " Z")
@@ -455,6 +508,40 @@ def passes_doubles_protect_check(
     return protect_count / len(standings) >= min_ratio
 
 
+def _parse_members(
+    decklist: list[dict],
+    illegal_items: frozenset[str],
+) -> frozenset[tuple[str, str | None]] | None:
+    """Parse one standings entry's decklist into a roster frozenset.
+
+    Returns None when the decklist isn't exactly TEAM_SIZE entries with
+    distinct species (incomplete submissions, drops before lock-in, or the
+    game's no-duplicate-species rule violated by malformed data). Shared by
+    `extract_teams` and `extract_matches` so both produce the same valid-entry
+    filtering -- match winner/loser indices stay aligned with the team list.
+    """
+    members: list[tuple[str, str | None]] = []
+    for mon in decklist:
+        raw_name = mon.get("name") or ""
+        name = normalize_name(normalize_bracket_forme(raw_name))
+        if not name:
+            continue
+        name = strip_mega_prefix(name)
+        name = _SPECIES_ALIASES.get(name, name)
+        item = normalize_name(mon.get("item"))
+        if item:
+            item = _ITEM_ALIASES.get(item, item)
+            if item in illegal_items:
+                item = None
+        members.append((name, item))
+    if len(members) != TEAM_SIZE:
+        return None
+    # Reject teams with duplicate species (game rule)
+    if len({species for species, _ in members}) != TEAM_SIZE:
+        return None
+    return frozenset(members)
+
+
 def extract_teams(
     standings: list[dict],
     *,
@@ -462,14 +549,13 @@ def extract_teams(
 ) -> list[Team]:
     """Parse standings into a list of `Team` records (roster + outcome).
 
-    Drops players whose decklist isn't exactly TEAM_SIZE entries with distinct
-    species (incomplete submissions, drops before lock-in, or the game's
-    no-duplicate-species rule violated by malformed data). Names come from
-    the `name` field of each decklist entry; items from `item` (None when
-    missing/null). Both species and item are passed through `normalize_name`
-    so case/whitespace variants of the same name collapse to one vocab entry
-    -- the Limitless API has been observed to return e.g. 'Sitrus Berry',
-    'Sitrus berry', and 'sitrus berry' for the same item across tournaments.
+    Drops players whose decklist fails `_parse_members` validation. Names
+    come from the `name` field of each decklist entry; items from `item`
+    (None when missing/null). Both species and item are passed through
+    `normalize_name` so case/whitespace variants of the same name collapse
+    to one vocab entry -- the Limitless API has been observed to return
+    e.g. 'Sitrus Berry', 'Sitrus berry', and 'sitrus berry' for the same
+    item across tournaments.
 
     When ``regulation`` is provided, items banned in that regulation are
     stripped from the team member (the mon is kept with ``item=None``).
@@ -481,36 +567,104 @@ def extract_teams(
     illegal_items = _ILLEGAL_ITEMS_BY_REGULATION.get(regulation or "", frozenset())
     teams: list[Team] = []
     for entry in standings:
-        decklist = entry.get("decklist") or []
-        members: list[tuple[str, str | None]] = []
-        for mon in decklist:
-            raw_name = mon.get("name") or ""
-            name = normalize_name(normalize_bracket_forme(raw_name))
-            if not name:
-                continue
-            name = strip_mega_prefix(name)
-            name = _SPECIES_ALIASES.get(name, name)
-            item = normalize_name(mon.get("item"))
-            if item:
-                item = _ITEM_ALIASES.get(item, item)
-                if item in illegal_items:
-                    item = None
-            members.append((name, item))
-        if len(members) != TEAM_SIZE:
-            continue
-        # Reject teams with duplicate species (game rule)
-        if len({species for species, _ in members}) != TEAM_SIZE:
+        members = _parse_members(entry.get("decklist") or [], illegal_items)
+        if members is None:
             continue
         placing = entry.get("placing")
         record = entry.get("record") or {}
         teams.append(Team(
-            members=frozenset(members),
+            members=members,
             placing=placing if isinstance(placing, int) else None,
             wins=int(record.get("wins", 0)),
             losses=int(record.get("losses", 0)),
             ties=int(record.get("ties", 0)),
         ))
     return teams
+
+
+def extract_matches(
+    standings: list[dict],
+    *,
+    regulation: str | None = None,
+) -> list[Match]:
+    """Parse per-round match results from standings into `Match` records.
+
+    Each standings entry may carry a ``rounds`` dict: round number (string)
+    -> ``{"name": opponent, "result": "W"/"L", ...}``. In-person tournament
+    exports have it; the Limitless API does not (those standings yield an
+    empty list). Winner/loser are indices into the team list produced by
+    `extract_teams` on the same standings (both share `_parse_members`
+    validation, so the indices line up).
+
+    A match is kept only when every check passes; each guard below drops a
+    known artifact of the export format rather than a real game:
+
+    - opponent resolves to a unique player name in the standings (drops
+      ``BYE`` / ``LATE`` pseudo-opponents and players whose name appears
+      more than once -- with a duplicated name the opponent pointer is
+      ambiguous, so all matches touching it are dropped);
+    - both players' rosters survived `_parse_members`;
+    - the two entries report the same pairing reciprocally for that round,
+      with complementary results (one W, one L) -- this drops double-loss
+      rounds and one-sided reports;
+    - each match is emitted once even though the data states it twice.
+    """
+    illegal_items = _ILLEGAL_ITEMS_BY_REGULATION.get(regulation or "", frozenset())
+
+    team_index: list[int | None] = []
+    n_valid = 0
+    for entry in standings:
+        members = _parse_members(entry.get("decklist") or [], illegal_items)
+        if members is None:
+            team_index.append(None)
+        else:
+            team_index.append(n_valid)
+            n_valid += 1
+
+    name_counts = Counter((entry.get("name") or "") for entry in standings)
+    pos_by_name = {
+        (entry.get("name") or ""): pos
+        for pos, entry in enumerate(standings)
+        if name_counts[entry.get("name") or ""] == 1
+    }
+
+    matches: list[Match] = []
+    seen: set[tuple[int, int, int]] = set()
+    for pos, entry in enumerate(standings):
+        my_idx = team_index[pos]
+        if my_idx is None:
+            continue
+        my_name = entry.get("name") or ""
+        if name_counts[my_name] != 1:
+            continue
+        for round_key, played in (entry.get("rounds") or {}).items():
+            played = played or {}
+            result = played.get("result")
+            if result not in ("W", "L"):
+                continue
+            opp_pos = pos_by_name.get(played.get("name") or "")
+            if opp_pos is None or opp_pos == pos:
+                continue
+            opp_idx = team_index[opp_pos]
+            if opp_idx is None:
+                continue
+            back = (standings[opp_pos].get("rounds") or {}).get(round_key) or {}
+            if back.get("name") != my_name:
+                continue
+            if {result, back.get("result")} != {"W", "L"}:
+                continue
+            try:
+                round_no = int(round_key)
+            except (TypeError, ValueError):
+                logger.warning("non-numeric round key %r -- skipping match", round_key)
+                continue
+            key = (round_no, min(pos, opp_pos), max(pos, opp_pos))
+            if key in seen:
+                continue
+            seen.add(key)
+            winner, loser = (my_idx, opp_idx) if result == "W" else (opp_idx, my_idx)
+            matches.append(Match(round=round_no, winner=winner, loser=loser))
+    return matches
 
 
 def _cache_path(cache_dir: Path, tournament_id: str) -> Path:
@@ -542,24 +696,42 @@ def _save_tournament(cache_dir: Path, t: TournamentTeams) -> None:
             }
             for team in t.teams
         ],
+        # Each match: [round, winner, loser] with winner/loser indexing
+        # into the teams list above. Empty for limitless entries.
+        "matches": [[m.round, m.winner, m.loser] for m in t.matches],
     }
     with _cache_path(cache_dir, t.meta.id).open("w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False)
 
 
+def _payload_version_ok(payload: dict) -> bool:
+    """True when a cached payload meets the minimum version for its type."""
+    entry_type = payload.get("type", "limitless")
+    minimum = _MIN_CACHE_VERSION.get(entry_type, CACHE_VERSION)
+    return payload.get("version", 1) >= minimum
+
+
+def _matches_from_payload(payload: dict) -> tuple[Match, ...]:
+    return tuple(
+        Match(round=r, winner=w, loser=l)
+        for r, w, l in payload.get("matches", [])
+    )
+
+
 def _load_tournament(cache_dir: Path, tournament_id: str) -> TournamentTeams | None:
     """Load a cached tournament, or return None if missing / outdated schema.
 
-    Returning None signals the caller to re-fetch from the API. Older cached
-    files (v1: no placing/record; pre-v1: no items) are incompatible with the
-    current schema, so we treat them as cache misses.
+    Returning None signals the caller to re-fetch / re-import. Older cached
+    files (v1: no placing/record; pre-v1: no items; in-person v2: no
+    matches) are incompatible with the current schema for their type, so we
+    treat them as cache misses.
     """
     p = _cache_path(cache_dir, tournament_id)
     if not p.exists():
         return None
     with p.open("r", encoding="utf-8") as f:
         payload = json.load(f)
-    if payload.get("version", 1) < CACHE_VERSION:
+    if not _payload_version_ok(payload):
         return None  # outdated schema; force re-fetch
     meta = TournamentMeta(**payload["meta"])
     teams = [
@@ -574,6 +746,7 @@ def _load_tournament(cache_dir: Path, tournament_id: str) -> TournamentTeams | N
     ]
     return TournamentTeams(
         meta=meta, teams=teams, tournament_type=payload.get("type", "limitless"),
+        matches=_matches_from_payload(payload),
     )
 
 
@@ -741,6 +914,28 @@ def all_team_observations(tournaments: list[TournamentTeams]) -> list[TeamObserv
     ]
 
 
+def all_match_observations(tournaments: list[TournamentTeams]) -> list[MatchObservation]:
+    """Flatten ingested tournaments into per-match `MatchObservation` records.
+
+    Resolves each match's winner/loser team indices to roster frozensets and
+    keeps the parent tournament's date and id. Limitless entries contribute
+    nothing (no match data), so this is effectively the in-person match
+    corpus -- the input for Bradley-Terry fitting and match-level outcome
+    ceilings.
+    """
+    return [
+        MatchObservation(
+            winner=t.teams[m.winner].members,
+            loser=t.teams[m.loser].members,
+            round=m.round,
+            date=t.meta.date,
+            tournament_id=t.meta.id,
+        )
+        for t in tournaments
+        for m in t.matches
+    ]
+
+
 def chronological_split(
     tournaments: list[TournamentTeams],
     train_frac: float,
@@ -804,7 +999,7 @@ def load_cached_tournaments(
             logger.warning("skipping unreadable cache file %s: %s", p.name, err)
             continue
 
-        if payload.get("version", 1) < CACHE_VERSION:
+        if not _payload_version_ok(payload):
             continue
 
         entry_type = payload.get("type", "limitless")
@@ -831,7 +1026,10 @@ def load_cached_tournaments(
         if len(teams) < min_teams_per_tournament:
             continue
 
-        out.append(TournamentTeams(meta=meta, teams=teams, tournament_type=entry_type))
+        out.append(TournamentTeams(
+            meta=meta, teams=teams, tournament_type=entry_type,
+            matches=_matches_from_payload(payload),
+        ))
 
     out.sort(key=lambda t: t.meta.date)
     logger.info(
@@ -852,9 +1050,10 @@ def import_in_person_tournaments(
     """Import in-person tournament JSON files into the cache.
 
     Scans ``local_dir/[format]/[id]_[date].json`` for raw Limitless-format
-    standings exports. Each file is normalized via ``extract_teams()`` and
-    written to ``cache_dir`` with ``type="in-person"``. Existing cache
-    entries are skipped (idempotent).
+    standings exports. Each file is normalized via ``extract_teams()`` +
+    ``extract_matches()`` and written to ``cache_dir`` with
+    ``type="in-person"``. Cache entries already at the current schema are
+    skipped (idempotent); outdated ones are re-imported in place.
 
     The parent directory name is used as the regulation (e.g. ``M-A``).
     The date is parsed from the filename suffix (``[id]_YYYY-MM-DD.json``).
@@ -876,7 +1075,7 @@ def import_in_person_tournaments(
             stem = json_file.stem
             tournament_id = f"local_{stem}"
 
-            if _cache_path(cache_dir, tournament_id).exists():
+            if _load_tournament(cache_dir, tournament_id) is not None:
                 logger.info("[skip cached]  %s (already imported)", stem)
                 continue
 
@@ -895,6 +1094,7 @@ def import_in_person_tournaments(
                 continue
 
             teams = extract_teams(standings, regulation=regulation)
+            matches = extract_matches(standings, regulation=regulation)
 
             meta = TournamentMeta(
                 id=tournament_id,
@@ -903,12 +1103,16 @@ def import_in_person_tournaments(
                 regulation=regulation,
                 players=len(standings),
             )
-            tt = TournamentTeams(meta=meta, teams=teams, tournament_type="in-person")
+            tt = TournamentTeams(
+                meta=meta, teams=teams, tournament_type="in-person",
+                matches=tuple(matches),
+            )
             _save_tournament(cache_dir, tt)
             imported.append(tt)
             logger.info(
-                "[imported]     %s -> %s (%d teams, regulation=%s, date=%s)",
-                json_file.name, tournament_id, len(teams), regulation, date or "(none)",
+                "[imported]     %s -> %s (%d teams, %d matches, regulation=%s, date=%s)",
+                json_file.name, tournament_id, len(teams), len(matches),
+                regulation, date or "(none)",
             )
 
     logger.info("imported %d in-person tournaments", len(imported))
@@ -990,6 +1194,7 @@ def main() -> None:
     teams = all_teams(all_t)
     print(f"Tournaments in cache: {len(all_t)}")
     print(f"Total teams: {len(teams)}")
+    print(f"Total matches: {sum(len(t.matches) for t in all_t)}")
     if teams:
         sample = next(iter(teams))
         print(f"Sample team:")
