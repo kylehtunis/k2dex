@@ -706,3 +706,75 @@ def rank_single_swaps(
 
     results.sort(key=lambda r: r["delta_E_adj"])
     return results[:top_n]
+
+
+# ---------- Model-moment estimation (for Boltzmann learning) ----------
+
+def estimate_moments(
+    J: np.ndarray,
+    h: np.ndarray,
+    team_size: int,
+    *,
+    species_of: list[str] | None = None,
+    item_of: list[str | None] | None = None,
+    field_weight: float = 1.0,
+    t_ladder: np.ndarray | None = None,
+    n_steps: int = 100_000,
+    burn_in: int = 10_000,
+    swap_interval: int = 10,
+    thin: int = 25,
+    n_runs: int = 25,
+    seed: int = 0,
+) -> tuple[np.ndarray, np.ndarray, dict] | None:
+    """Estimate the model's first and second moments under free generation.
+
+    Runs `n_runs` independent parallel-tempered chains over the *unconstrained*
+    team ensemble (`fixed=[]`, `excluded=[]`) at `field_weight`, pools the
+    thinned post-burn-in cold-chain samples, and returns the sample marginals
+    `<s_i>` and raw pair moments `<s_i s_j>`. These are the model side of the
+    Boltzmann moment-matching gradient; compare against `models.empirical_moments`.
+
+    The swap sampler's stationary distribution is exactly the constrained Gibbs
+    measure `P(s) ∝ exp(-H(s))` restricted to valid teams (fixed size +
+    species/item uniqueness), so these estimates and the empirical moments live
+    on the same support. Generalizes the `sample_model` prototype in
+    `notebooks/three_body_check.ipynb` (same default sampler budget).
+
+    `t_ladder` defaults to `geomspace(1.0, 3.0, 8)` -- the cold chain (index 0,
+    the one sampled) is at T=1 so it samples the model `P ∝ exp(-H)`; hotter
+    rungs only assist mixing via replica exchange. Returns `(m, C, diag)` where
+    `diag` carries `n_samples`, `local_accept`, `swap_accept`, or `None` if the
+    ensemble is over-constrained (`team_size` exceeds the available features).
+    """
+    if t_ladder is None:
+        # Cold chain MUST be at T=1 to sample the model distribution
+        # P ∝ exp(-H); hotter rungs only aid mixing via replica exchange.
+        t_ladder = np.geomspace(1.0, 3.0, 8)
+    rng = np.random.default_rng(seed)
+    pooled: list[np.ndarray] = []
+    local_rates: list[float] = []
+    swap_rates: list[float] = []
+    for _ in range(n_runs):
+        result = parallel_tempered_mcmc(
+            J, h, team_size, [], [], field_weight,
+            t_ladder, n_steps, burn_in, swap_interval,
+            int(rng.integers(2**31)),
+            species_of=species_of, item_of=item_of,
+        )
+        if result is None:
+            return None
+        samples, local_rate, swap_rate = result
+        pooled.append(samples[::thin])
+        local_rates.append(local_rate)
+        swap_rates.append(swap_rate)
+
+    S = np.concatenate(pooled).astype(np.float64)
+    n_samples = S.shape[0]
+    m = S.mean(axis=0)
+    C = (S.T @ S) / n_samples
+    diag = {
+        "n_samples": int(n_samples),
+        "local_accept": float(np.mean(local_rates)),
+        "swap_accept": float(np.mean(swap_rates)),
+    }
+    return m, C, diag

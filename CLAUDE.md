@@ -43,7 +43,7 @@ k2dex/                  Python package (constants, helpers, loaders, models, sam
 tournament_json/        In-person tournament raw JSON (committed dir, JSON gitignored)
 tournaments_cache/      Unified cache (gitignored)
 scripts/                app.py (Streamlit), precompute.py, scotus_precompute.py
-notebooks/              Analysis pipeline (numbered dependency chain 1-10)
+notebooks/              Analysis pipeline (numbered chain 1-10 + standalone diagnostics: pl_three_body_check, outcome_ceiling, boltzmann_learning)
 tests/                  unittest + parity_baseline.json
 web/                    Static React/TS webapp (Vite + React 18)
   src/sampler/          1:1 port of k2dex/sampling.py
@@ -58,8 +58,8 @@ Promote-when-stable convention: new functions live in notebooks until stable, th
 
 Read the code for full APIs. These are the non-obvious parts:
 
-- **`models.py`** — `fit_pl_ising` uses `scipy.optimize.minimize` (L-BFGS-B), not sklearn. Degenerate spins (< 2 units weighted mass) are skipped and fall back to prior or zero. Prior support enables cross-regulation warm-starting.
-- **`sampling.py`** — All MCMC variants share `_local_swap_step`. All accept `species_of`/`item_of` for uniqueness constraints. **Mirrored 1:1 in `web/src/sampler/`**, gated by `tests/test_parity.py`.
+- **`models.py`** — `fit_pl_ising` uses `scipy.optimize.minimize` (L-BFGS-B), not sklearn. Degenerate spins (< 2 units weighted mass) are skipped and fall back to prior or zero. Prior support enables cross-regulation warm-starting. `fit_boltzmann_ising` is the alternative **moment-matching** fit (constrained-MaxEnt / Boltzmann learning): warm-starts from the PL fit, then ascends the regularized log-likelihood with model moments from a persistent batched swap-chain bank (PCD). `empirical_moments(X, w)` returns the weighted 1-pt/2-pt targets.
+- **`sampling.py`** — All MCMC variants share `_local_swap_step`. All accept `species_of`/`item_of` for uniqueness constraints. **Mirrored 1:1 in `web/src/sampler/`**, gated by `tests/test_parity.py`. `estimate_moments` (free PT generation → 1-pt/2-pt model moments) is **training-only Python — NOT ported to TS, no parity row** (the webapp consumes the resulting `(J,h)`, never the training loop). Same for `fit_boltzmann_ising` and the `_batched_*` swap/moment helpers in `models.py`.
 - **`loaders.py`** — `build_species_model()` / `build_species_item_model()` accept `prior_regulation`/`intercept_prior_weight` for warm-start. `team_weights` computes `w = exp(-dt/tau) * m^[in-person]`, normalized to mean 1.
 - **`tournament_ingest.py`** — Cache schema versioned (`CACHE_VERSION`); bump when parsing changes. Limitless dates are ISO timestamps, in-person dates bare `YYYY-MM-DD`; consumers must parse at day resolution.
 
@@ -69,6 +69,7 @@ Read the code for full APIs. These are the non-obvious parts:
 - **Regulation relabeling** — `tournament_ingest._REGULATION_RELABELS` promotes mis-labeled Limitless events using marker species/items. Current rule covers **M-B** (start `2026-06-17`, from `{M-A, CUSTOM}`, markers Gholdengo/Metagross/Grimmsnarl + Life Orb/Light Clay). `_ILLEGAL_ITEMS_BY_REGULATION[target]` governs item-stripping for promoted events. Add marker rules when starting a new regulation Limitless hasn't tagged; remove once tagged.
 - **Cross-regulation warm-start** — `prior_regulation` (loaders) / `--prior-regulation` (precompute). Assumes prior is a legality superset. Donor vocab folded in unconditionally; `_align_prior` scatters `(J, h)` onto new vocab. Features with no new data keep prior exactly; features with data relax off it. `intercept_prior_weight` (default 1.0) controls bias anchoring.
 - **Regularization** — `SPECIES_LR_LAMBDA = 25.0`; `SPECIES_ITEM_LR_LAMBDA = 4.5`. Lambda is canonical L2 penalty, converted to `C = 1/lambda` internally. `meta.json` records `fit.lambda`.
+- **Boltzmann learning** (`fit_boltzmann_ising`, `notebooks/boltzmann_learning.ipynb`) — the moment-matching alternative to PL, motivated by the `pl_three_body_check` finding (the renamed, historical `three_body_check`) that PL matches conditionals not moments. On the M-A corpus it cuts the worst-feature marginal error from ~0.34 (PL over-concentration) to ~0.05. Gotchas: (1) **the model is sampled at T=1** — `estimate_moments`' cold chain (ladder index 0) MUST be at T=1 to sample `P ∝ exp(-H)`; a cold rung below 1 samples a sharper distribution (note: `pl_three_body_check`'s ladder starts at 0.5, a latent bug there — the new notebook fixes it). (2) **Reg fixes the gauge** — on the fixed-size manifold `(J,h)` is gauge-degenerate (`h→h+c·1`, `J_ij→J_ij+a_i+a_j`); the non-gauge-invariant L1/L2 penalty toward zero picks the min-norm representative, so keep `reg_lambda>0` (small for tightest moment match — larger deliberately shrinks `(J,h)`). (3) **Read `mean_resid_*`, not `max_resid_*`** — the per-iteration max residual is a single `n_chains`-sample snapshot and is mostly Monte-Carlo noise (max over V features); confirm true convergence by re-estimating the fitted model with many samples via `estimate_moments`. The PCD bank is batched across chains in pure NumPy with sparse on-bit moment accumulation (cost independent of V). Parallel tempering (`n_temps>1`, cold T=1 → hot `t_max`) is implemented but **defaults off** — single-T PCD sufficed on this corpus and tempering didn't improve it (not mode-trapped) at several times the cost; reserve it for genuinely multimodal models. (4) **Species ensemble passes `species_of=None`** (species distinct per vocab entry → no uniqueness needed); species+item passes the real lookups + a co-occurrence `support_mask`.
 - **Sample weighting** — `RECENCY_TAU_DAYS` / `IN_PERSON_WEIGHT` in `constants.py`. Vocab cutoff requires `min_team_count` in **both** raw and weighted counts.
 - **Energy formulas** — raw `H(s) = -h*s - 0.5 s'Js`. Adjusted uses `field_weight*h`. At `field_weight=0` only pairwise term remains.
 - **Swap-move MH** — energy diff `dH = h_eff[out] - h_eff[in] + (J[out] - J[in]) * s + J[in, out]`. Last term corrects for swapped pair's mutual coupling.
@@ -98,7 +99,7 @@ Read the code for full APIs. These are the non-obvious parts:
 
 ## Build and deploy
 
-**Build artifacts pipeline**: ingest -> precompute per model -> generate manifest -> inspect -> commit. CI does **not** regenerate artifacts.
+**Build artifacts pipeline**: ingest -> precompute per model -> generate manifest -> inspect -> commit. CI does **not** regenerate artifacts. `precompute.py --method boltzmann` (with `--bz-*` knobs) builds a Boltzmann-fit artifact instead of PL — **same artifact format, no TS/parity changes** (only the fitted numbers + `meta.fit.method`/`meta.fit.boltzmann` differ); `--recompute` reads the boltzmann block back. This is an experimentation convenience, not a production path; if you ever make one the webapp default, recheck `field_weight` (moment-matched `h` wants `field_weight ≈ 1`, unlike PL's down-weighted `h`).
 
 **Domain**: `k2dex.kyletunis.com` (CNAME of `kylehtunis.github.io`). Three things must move together: `web/public/CNAME`, `VITE_BASE_PATH` in deploy workflow, `SITE_URL` in `src/siteMeta.ts`.
 

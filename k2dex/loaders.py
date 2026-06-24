@@ -22,9 +22,64 @@ from .constants import (
     RECENCY_TAU_DAYS,
     SPECIES_ITEM_LR_LAMBDA,
     SPECIES_LR_LAMBDA,
+    TEAM_SIZE,
 )
-from .models import fit_pl_ising
+from .models import fit_boltzmann_ising, fit_pl_ising
 from .tournament_ingest import TeamObservation
+
+
+def _fit_jh(
+    X: NDArray[np.int8],
+    *,
+    method: str,
+    lam: float,
+    w: NDArray[np.float64],
+    species_of: list[str] | None,
+    item_of: list[str | None] | None,
+    prior_J: NDArray[np.float64] | None,
+    prior_h: NDArray[np.float64] | None,
+    intercept_prior_weight: float,
+    boltzmann_opts: dict | None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Fit (J, h) by the requested method.
+
+    `pseudo_likelihood` is the per-spin PL fit (the production path).
+    `boltzmann` warm-starts from that PL fit and refines it by constrained-
+    MaxEnt moment matching (`fit_boltzmann_ising`). `species_of`/`item_of` define
+    the uniqueness constraints of the ensemble the model is sampled from (pass
+    `None`/`None` for the species model, the real lookups for species+item).
+    `boltzmann_opts` is forwarded to `fit_boltzmann_ising`; a `support_min_count`
+    key (popped here) builds a co-occurrence support mask so only pairs seen
+    together at least that many times in the corpus are fit.
+    """
+    if method == "pseudo_likelihood":
+        return fit_pl_ising(
+            X, C=1.0 / lam, sample_weight=w,
+            prior_J=prior_J, prior_h=prior_h,
+            intercept_prior_weight=intercept_prior_weight,
+        )
+    if method != "boltzmann":
+        raise ValueError(f"unknown fit method {method!r}")
+
+    # PL fit is the warm start; Boltzmann then matches moments under reg→0.
+    init_J, init_h = fit_pl_ising(
+        X, C=1.0 / lam, sample_weight=w,
+        prior_J=prior_J, prior_h=prior_h,
+        intercept_prior_weight=intercept_prior_weight,
+    )
+    opts = dict(boltzmann_opts or {})
+    support_min = opts.pop("support_min_count", None)
+    support_mask = None
+    if support_min is not None:
+        cooc = X.astype(np.int64).T @ X.astype(np.int64)
+        support_mask = cooc >= int(support_min)
+    J, h, _hist = fit_boltzmann_ising(
+        X, team_size=TEAM_SIZE, sample_weight=w,
+        init_J=init_J, init_h=init_h,
+        species_of=species_of, item_of=item_of,
+        support_mask=support_mask, **opts,
+    )
+    return J, h
 
 
 SpeciesModel = tuple[
@@ -125,6 +180,8 @@ def build_species_model(
     in_person_multiplier: float = IN_PERSON_WEIGHT,
     prior_regulation: str | None = None,
     intercept_prior_weight: float = 1.0,
+    method: str = "pseudo_likelihood",
+    boltzmann_opts: dict | None = None,
 ) -> SpeciesModel:
     """Species-only PL inverse Ising over the cached tournament corpus.
 
@@ -189,13 +246,14 @@ def build_species_model(
     if prior is not None:
         prior_J, prior_h = _align_prior(vocab, prior[0], prior[2], prior[3])
 
-    J, h = fit_pl_ising(
-        X,
-        C=1.0 / lam,
-        sample_weight=w,
-        prior_J=prior_J,
-        prior_h=prior_h,
+    # Species are distinct per vocab entry, so the species model's ensemble
+    # needs no uniqueness lookups (the Phase 2 case) -- pass None/None.
+    J, h = _fit_jh(
+        X, method=method, lam=lam, w=w,
+        species_of=None, item_of=None,
+        prior_J=prior_J, prior_h=prior_h,
         intercept_prior_weight=intercept_prior_weight,
+        boltzmann_opts=boltzmann_opts,
     )
     species_of = list(vocab)
     item_of: list[str | None] = [None] * len(vocab)
@@ -211,6 +269,8 @@ def build_species_item_model(
     in_person_multiplier: float = IN_PERSON_WEIGHT,
     prior_regulation: str | None = None,
     intercept_prior_weight: float = 1.0,
+    method: str = "pseudo_likelihood",
+    boltzmann_opts: dict | None = None,
 ) -> SpeciesModel:
     """(species, item)-pair PL inverse Ising over the cached tournament corpus.
 
@@ -270,12 +330,13 @@ def build_species_item_model(
     if prior is not None:
         prior_J, prior_h = _align_prior(vocab, prior[0], prior[2], prior[3])
 
-    J, h = fit_pl_ising(
-        X,
-        C=1.0 / lam,
-        sample_weight=w,
-        prior_J=prior_J,
-        prior_h=prior_h,
+    # species+item has features sharing a species or item, so the ensemble
+    # enforces no-duplicate-species and no-duplicate-item -- pass the lookups.
+    J, h = _fit_jh(
+        X, method=method, lam=lam, w=w,
+        species_of=species_of, item_of=item_of,
+        prior_J=prior_J, prior_h=prior_h,
         intercept_prior_weight=intercept_prior_weight,
+        boltzmann_opts=boltzmann_opts,
     )
     return vocab, m, J, h, team_counts, species_of, item_of, latest_date

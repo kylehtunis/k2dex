@@ -144,6 +144,8 @@ def write_model(
     is_new: bool = False,
     prior_regulation: str | None = None,
     intercept_prior_weight: float = 1.0,
+    method: str = "pseudo_likelihood",
+    boltzmann_opts: dict | None = None,
 ) -> None:
     model_dir = out_dir / slug
     if model_dir.exists() and not force:
@@ -156,7 +158,10 @@ def write_model(
         print(f"  description: {description}")
     print(f"  regulation: {regulation}")
     print(f"  type: {model_type}")
+    print(f"  method: {method}")
     print(f"  lambda: {lam}")
+    if method == "boltzmann" and boltzmann_opts:
+        print(f"  boltzmann: {boltzmann_opts}")
     print(f"  recency_tau_days: {recency_tau if recency_tau is not None else '(no decay)'}")
     print(f"  in_person_weight: {in_person_weight}")
     if prior_regulation is not None:
@@ -172,6 +177,8 @@ def write_model(
         in_person_multiplier=in_person_weight,
         prior_regulation=prior_regulation,
         intercept_prior_weight=intercept_prior_weight,
+        method=method,
+        boltzmann_opts=boltzmann_opts,
     )
     V = len(vocab)
     n_teams = int(sum(team_counts.values()))
@@ -201,7 +208,7 @@ def write_model(
         "species_of": species_of,
         "item_of": item_of,
         "fit": {
-            "method": "pseudo_likelihood",
+            "method": method,
             "lambda": lam,
             "min_team_count": min_team_count,
             "recency_tau_days": recency_tau,
@@ -212,6 +219,11 @@ def write_model(
                     "intercept_prior_weight": intercept_prior_weight,
                 }
                 if prior_regulation is not None
+                else {}
+            ),
+            **(
+                {"boltzmann": boltzmann_opts}
+                if method == "boltzmann" and boltzmann_opts
                 else {}
             ),
         },
@@ -332,6 +344,8 @@ def recompute_all(out_dir: Path, *, default_model: str | None = None) -> None:
             is_new=bool(meta.get("new", False)),
             prior_regulation=fit.get("prior_regulation"),
             intercept_prior_weight=fit.get("intercept_prior_weight", 1.0),
+            method=fit.get("method", "pseudo_likelihood"),
+            boltzmann_opts=fit.get("boltzmann"),
         )
 
     # V / n_corpus_teams can move, so refresh the manifest. Preserve the
@@ -384,7 +398,15 @@ def main() -> int:
         dest="lam",
         default=None,
         help="L2 regularization strength (default: 10.0 for species, 1.0 for species_item). "
-             "Converted to the logistic inverse-strength C = 1/lambda internally.",
+             "Converted to the logistic inverse-strength C = 1/lambda internally. "
+             "For --method boltzmann this is the PL warm-start's lambda.",
+    )
+    group.add_argument(
+        "--method",
+        choices=["pseudo_likelihood", "boltzmann"],
+        default="pseudo_likelihood",
+        help="Fit method. 'boltzmann' warm-starts from the PL fit and refines it "
+             "by constrained-MaxEnt moment matching. Recorded in meta.json:fit.",
     )
     group.add_argument(
         "--tau",
@@ -441,6 +463,39 @@ def main() -> int:
         help="Mark this model as new in the manifest (shows a 'New' badge in the webapp).",
     )
 
+    bz_group = parser.add_argument_group(
+        "boltzmann options (only used with --method boltzmann)")
+    bz_group.add_argument("--bz-iters", type=int, default=500,
+                          help="Gradient steps (default: 500).")
+    bz_group.add_argument("--bz-lr", type=float, default=0.05,
+                          help="Adam learning rate (default: 0.05).")
+    bz_group.add_argument("--bz-chains", type=int, default=400,
+                          help="PCD chain-bank size (default: 400).")
+    bz_group.add_argument("--bz-sweeps", type=int, default=100,
+                          help="Swaps per chain per gradient step (default: 100). "
+                               "Higher = better mixing on sharp real models.")
+    bz_group.add_argument("--bz-n-burn", type=int, default=200,
+                          help="Initial bank-mixing swaps per chain (default: 200).")
+    bz_group.add_argument("--bz-temps", type=int, default=1,
+                          help="Parallel-tempering replicas per chain (default: 1 = "
+                               "off; single-T PCD sufficed on the M-A corpus). >1 only "
+                               "for genuinely multimodal models.")
+    bz_group.add_argument("--bz-t-max", type=float, default=3.0,
+                          help="Hot temperature for tempering (default: 3.0; unused if "
+                               "--bz-temps 1).")
+    bz_group.add_argument("--bz-swap-interval", type=int, default=10,
+                          help="Sweeps between replica-exchange attempts (default: 10).")
+    bz_group.add_argument("--bz-reg", choices=["l1", "l2"], default="l2",
+                          help="Regularizer toward zero (default: l2).")
+    bz_group.add_argument("--bz-reg-lambda", type=float, default=1e-3,
+                          help="Regularization strength (default: 1e-3).")
+    bz_group.add_argument("--bz-support-min-count", type=int, default=None,
+                          help="If set, only fit couplings for feature pairs that "
+                               "co-occur >= N times in the corpus (freezes the rest "
+                               "at the PL warm-start). Recommended for species_item.")
+    bz_group.add_argument("--bz-seed", type=int, default=0,
+                          help="RNG seed for the PCD sampler (default: 0).")
+
     manifest_group = parser.add_argument_group("manifest generation")
     manifest_group.add_argument(
         "--generate-manifest",
@@ -475,6 +530,24 @@ def main() -> int:
     slug = slugify(args.display_name)
     lam = args.lam if args.lam is not None else DEFAULT_LAMBDA[args.model_type]
 
+    boltzmann_opts: dict | None = None
+    if args.method == "boltzmann":
+        boltzmann_opts = {
+            "n_iters": args.bz_iters,
+            "lr": args.bz_lr,
+            "n_chains": args.bz_chains,
+            "n_sweeps": args.bz_sweeps,
+            "n_burn": args.bz_n_burn,
+            "n_temps": args.bz_temps,
+            "t_max": args.bz_t_max,
+            "swap_interval": args.bz_swap_interval,
+            "reg": args.bz_reg,
+            "reg_lambda": args.bz_reg_lambda,
+            "seed": args.bz_seed,
+        }
+        if args.bz_support_min_count is not None:
+            boltzmann_opts["support_min_count"] = args.bz_support_min_count
+
     print(f"Output root: {out_dir}")
     write_model(
         slug=slug,
@@ -492,6 +565,8 @@ def main() -> int:
         is_new=args.is_new,
         prior_regulation=args.prior_regulation,
         intercept_prior_weight=args.intercept_prior_weight,
+        method=args.method,
+        boltzmann_opts=boltzmann_opts,
     )
 
     print("\nDone. Inspect artifacts before committing.")
