@@ -469,11 +469,17 @@ def main() -> int:
                           help="Gradient steps (default: 500).")
     bz_group.add_argument("--bz-lr", type=float, default=0.05,
                           help="Adam learning rate (default: 0.05).")
+    bz_group.add_argument("--bz-lr-final", type=float, default=None,
+                          help="Cosine-anneal the step size to this value (shrinks the "
+                               "stochastic-gradient noise ball -- the dominant error). "
+                               "Default: lr/20. Set equal to --bz-lr to disable decay.")
+    bz_group.add_argument("--bz-avg-last", type=int, default=0,
+                          help="Polyak iterate-averaging window: average (J,h) over the "
+                               "last N steps (0 = off; alternative to lr decay, comparable).")
     bz_group.add_argument("--bz-chains", type=int, default=400,
                           help="PCD chain-bank size (default: 400).")
     bz_group.add_argument("--bz-sweeps", type=int, default=100,
-                          help="Swaps per chain per gradient step (default: 100). "
-                               "Higher = better mixing on sharp real models.")
+                          help="Swaps per chain per gradient step (default: 100).")
     bz_group.add_argument("--bz-n-burn", type=int, default=200,
                           help="Initial bank-mixing swaps per chain (default: 200).")
     bz_group.add_argument("--bz-temps", type=int, default=1,
@@ -535,6 +541,11 @@ def main() -> int:
         boltzmann_opts = {
             "n_iters": args.bz_iters,
             "lr": args.bz_lr,
+            # Cosine-decay the step size by default (kills the noise ball, ~7x
+            # lower moment bias); set --bz-lr-final == --bz-lr to disable.
+            "lr_final": (args.bz_lr_final if args.bz_lr_final is not None
+                         else args.bz_lr / 20.0),
+            "avg_last": args.bz_avg_last,
             "n_chains": args.bz_chains,
             "n_sweeps": args.bz_sweeps,
             "n_burn": args.bz_n_burn,

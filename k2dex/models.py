@@ -446,6 +446,8 @@ def fit_boltzmann_ising(
     support_mask: NDArray[np.bool_] | None = None,
     n_iters: int = 500,
     lr: float = 0.05,
+    lr_final: float | None = None,
+    avg_last: int = 0,
     n_chains: int = 200,
     n_sweeps: int = 50,
     n_burn: int = 200,
@@ -492,6 +494,16 @@ def fit_boltzmann_ising(
            are fit; the rest stay at `init_J` (typically used to fit only pairs
            with enough corpus co-occurrence). Default: all off-diagonal pairs.
         n_iters, lr: gradient steps and Adam step size.
+        lr_final: if set, cosine-anneal the step size from `lr` to `lr_final`
+           over the run. Shrinks the stochastic-gradient "noise ball" near the
+           optimum -- the dominant source of residual error here is that ball
+           (gradient noise scales ~1/n_chains; a fixed lr orbits the optimum
+           rather than settling), so decay tightens the fit. None = constant lr.
+        avg_last: if > 0, return the **iterate average** of `(J, h)` over the
+           last `avg_last` gradient steps instead of the final snapshot. Polyak
+           averaging cancels the zero-mean orbit directly and is the cheapest
+           large win against gradient noise; combine with `lr_final` and a large
+           `n_chains`. 0 = return the final iterate.
         n_chains, n_sweeps: cold-level bank size (= cold samples per snapshot)
            and local swaps per chain per step. The bank is stepped fully
            vectorized (batched NumPy) and moments are accumulated sparsely over
@@ -571,6 +583,8 @@ def fit_boltzmann_ising(
     m_h = np.zeros(V); v_h = np.zeros(V)
     m_J = np.zeros((V, V)); v_J = np.zeros((V, V))
     b1, b2 = adam_betas
+    # Polyak iterate-average accumulators (the returned estimate when avg_last>0).
+    J_acc = np.zeros((V, V)); h_acc = np.zeros(V); n_acc = 0
     history: dict[str, list[float]] = {
         "max_resid_m": [], "max_resid_C": [],
         "mean_resid_m": [], "mean_resid_C": [],
@@ -580,6 +594,8 @@ def fit_boltzmann_ising(
     iters = range(1, n_iters + 1)
     bar = _tqdm(iters, desc="boltzmann fit") if (progress and _tqdm is not None) else None
     for it in (bar if bar is not None else iters):
+        lr_t = lr if lr_final is None else (
+            lr_final + 0.5 * (lr - lr_final) * (1.0 + np.cos(np.pi * (it - 1) / max(n_iters - 1, 1))))
         h_eff = field_weight * h
         acc, swap_acc = _advance_bank(
             team, J, h_eff, temps, species_id, item_id, rng,
@@ -606,10 +622,13 @@ def fit_boltzmann_ising(
         v_J = b2 * v_J + (1 - b2) * g_J**2
         bc1 = 1 - b1**it
         bc2 = 1 - b2**it
-        h = h + lr * (m_h / bc1) / (np.sqrt(v_h / bc2) + adam_eps)
-        J = J + lr * (m_J / bc1) / (np.sqrt(v_J / bc2) + adam_eps)
+        h = h + lr_t * (m_h / bc1) / (np.sqrt(v_h / bc2) + adam_eps)
+        J = J + lr_t * (m_J / bc1) / (np.sqrt(v_J / bc2) + adam_eps)
         J = 0.5 * (J + J.T)
         np.fill_diagonal(J, 0.0)
+
+        if avg_last and it > n_iters - avg_last:
+            J_acc += J; h_acc += h; n_acc += 1
 
         # Residual diagnostics over the fit entries only.
         rm = m_data - m_model
@@ -629,4 +648,7 @@ def fit_boltzmann_ising(
         if callback is not None:
             callback(it, {key: val[-1] for key, val in history.items()})
 
+    if n_acc:
+        J = J_acc / n_acc
+        h = h_acc / n_acc
     return J, h, history
