@@ -17,9 +17,13 @@ and items aren't tracked).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from tqdm import tqdm
 
 import numpy as np
+
+try:  # progress bar is optional; sampling runs fine without it
+    from tqdm.auto import tqdm as _tqdm
+except ImportError:  # pragma: no cover
+    _tqdm = None
 
 
 # ---------- Uniqueness helpers ----------
@@ -756,7 +760,10 @@ def estimate_moments(
     pooled: list[np.ndarray] = []
     local_rates: list[float] = []
     swap_rates: list[float] = []
-    for _ in tqdm(range(n_runs), desc="PT runs", disable=not progress, leave=False):
+    runs = range(n_runs)
+    if progress and _tqdm is not None:
+        runs = _tqdm(runs, desc="PT runs", leave=False)
+    for _ in runs:
         result = parallel_tempered_mcmc(
             J, h, team_size, [], [], field_weight,
             t_ladder, n_steps, burn_in, swap_interval,
