@@ -17,6 +17,7 @@ and items aren't tracked).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from tqdm import tqdm
 
 import numpy as np
 
@@ -725,6 +726,7 @@ def estimate_moments(
     thin: int = 25,
     n_runs: int = 25,
     seed: int = 0,
+    progress: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, dict] | None:
     """Estimate the model's first and second moments under free generation.
 
@@ -754,7 +756,7 @@ def estimate_moments(
     pooled: list[np.ndarray] = []
     local_rates: list[float] = []
     swap_rates: list[float] = []
-    for _ in range(n_runs):
+    for _ in tqdm(range(n_runs), desc="PT runs", disable=not progress, leave=False):
         result = parallel_tempered_mcmc(
             J, h, team_size, [], [], field_weight,
             t_ladder, n_steps, burn_in, swap_interval,
