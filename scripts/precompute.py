@@ -299,16 +299,24 @@ def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> Non
               f"regulation={m['regulation']}{default_marker}")
 
 
-def recompute_all(out_dir: Path, *, default_model: str | None = None) -> None:
-    """Rebuild every model in `out_dir` from its own stored `meta.json`
-    parameters, then refresh the manifest.
+def recompute_all(
+    out_dir: Path,
+    *,
+    default_model: str | None = None,
+    regulation_filter: str | None = None,
+) -> None:
+    """Rebuild models in `out_dir` from their stored `meta.json` parameters,
+    then refresh the manifest.
 
     Used after a change to the fit (e.g. a fitter swap or a constant bump) to
-    regenerate all committed artifacts without re-specifying each model's CLI
-    flags by hand. Each model is rebuilt with exactly the parameters it was
-    last built with: lambda, weighting knobs, min-team-count, warm-start prior,
-    description and 'new' badge all come from its `fit` block. `team_counts`
-    are recomputed only for models that already had them.
+    regenerate committed artifacts without re-specifying each model's CLI flags
+    by hand. Each model is rebuilt with exactly the parameters it was last built
+    with: lambda, weighting knobs, min-team-count, warm-start prior, description
+    and 'new' badge all come from its `fit` block. `team_counts` are recomputed
+    only for models that already had them.
+
+    If `regulation_filter` is set, only models whose stored regulation matches
+    it are rebuilt; the manifest is still refreshed for all models.
     """
     meta_paths = sorted(out_dir.glob("*/meta.json"))
     if not meta_paths:
@@ -317,10 +325,17 @@ def recompute_all(out_dir: Path, *, default_model: str | None = None) -> None:
 
     type_by_dim = {1: "species", 2: "species_item"}
     print(f"Output root: {out_dir}")
-    print(f"Recomputing {len(meta_paths)} model(s) from stored parameters.\n")
+    if regulation_filter is not None:
+        print(f"Regulation filter: {regulation_filter!r} (skipping others)\n")
+    else:
+        print(f"Recomputing {len(meta_paths)} model(s) from stored parameters.\n")
     for meta_path in meta_paths:
         with open(meta_path) as f:
             meta = json.load(f)
+        reg = meta.get("regulation", CURRENT_REGULATION)
+        if regulation_filter is not None and reg != regulation_filter:
+            print(f"  skip {meta_path.parent.name}: regulation {reg!r} != {regulation_filter!r}")
+            continue
         model_type = type_by_dim.get(meta.get("feature_dimensions", 1))
         if model_type is None:
             print(f"  skip {meta_path.parent.name}: unknown feature_dimensions")
@@ -510,9 +525,14 @@ def main() -> int:
     )
     manifest_group.add_argument(
         "--recompute",
-        action="store_true",
-        help="Rebuild every existing model from its stored meta.json parameters "
-             "and refresh the manifest. No per-model flags needed.",
+        nargs="?",
+        const=True,
+        default=None,
+        metavar="REGULATION",
+        help="Rebuild existing models from their stored meta.json parameters and "
+             "refresh the manifest. No per-model flags needed. Optionally pass a "
+             "regulation string (e.g. 'M-A') to rebuild only models for that "
+             "regulation; omit the value to rebuild all.",
     )
     manifest_group.add_argument(
         "--default-model",
@@ -525,8 +545,9 @@ def main() -> int:
         generate_manifest(out_dir, default_model=args.default_model)
         return 0
 
-    if args.recompute:
-        recompute_all(out_dir, default_model=args.default_model)
+    if args.recompute is not None:
+        regulation_filter = None if args.recompute is True else args.recompute
+        recompute_all(out_dir, default_model=args.default_model, regulation_filter=regulation_filter)
         print("\nDone. Inspect artifacts before committing.")
         return 0
 
