@@ -15,6 +15,21 @@ export function teamKey(team: readonly number[]): string {
   return [...team].sort((a, b) => a - b).join("-");
 }
 
+/** Inverse of teamKey: parse a sorted-index "-"-joined roster key into its
+ * integer vocab indices. Shared by nearestObserved, meta/topTeams, and
+ * render/featureDetail (the single canonical roster-key parser). */
+export function parseTeamKey(key: string): number[] {
+  const out: number[] = [];
+  let start = 0;
+  while (start < key.length) {
+    let end = key.indexOf("-", start);
+    if (end < 0) end = key.length;
+    out.push(+key.slice(start, end));
+    start = end + 1;
+  }
+  return out;
+}
+
 interface NearestObservedResult {
   delta: number;
   count: number;
@@ -46,13 +61,8 @@ export function nearestObserved(
     // Parse roster key once per entry. For ~6000 entries × team_size=6
     // this is ~36k integer parses per call, well under 5ms in V8.
     let intersection = 0;
-    let start = 0;
-    while (start < k.length) {
-      let end = k.indexOf("-", start);
-      if (end < 0) end = k.length;
-      const idx = +k.slice(start, end);
+    for (const idx of parseTeamKey(k)) {
       if (teamSet.has(idx)) intersection++;
-      start = end + 1;
     }
     const delta = teamSize - intersection;
     if (

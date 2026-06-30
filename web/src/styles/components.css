@@ -958,7 +958,8 @@
   .lab-table-cards td.mons,
   .lab-table-cards td.actions,
   .lab-table-cards td.swap,
-  .lab-table-cards td.team-after {
+  .lab-table-cards td.team-after,
+  .lab-table-cards td.team {
     grid-column: 1 / -1;
   }
   .lab-table-cards td[data-label]::before {
@@ -1103,5 +1104,284 @@
   }
   .lab-announcement-close {
     padding: 8px 12px;
+  }
+  /* Feature modal trigger affordances grow toward the touch guideline. */
+  .lab-feature-swap-target {
+    padding: 8px 12px 8px 8px;
+  }
+}
+
+/* ===== Feature detail modal ===== */
+
+/* Clickable affordance for named feature cells (InlineMon / CompMonCell) and
+ * opted-in sprite-strip buttons. Resets button chrome, then signals
+ * interactivity on hover. */
+.lab-feature-link {
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.lab-feature-link:hover {
+  background: var(--lab-rule-soft);
+}
+.lab-feature-link:hover .lab-comp-mon-name {
+  color: var(--lab-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Whole-card clickable (SlotCard) — keeps its block layout, adds hover. */
+.lab-feature-clickable {
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+.lab-feature-clickable:hover {
+  border-color: var(--lab-accent);
+}
+
+/* Generic modal shell (portal). */
+.lab-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(26, 24, 21, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 6vh 16px 16px;
+  overflow-y: auto;
+}
+.lab-modal {
+  background: var(--lab-bg);
+  border: 1px solid var(--lab-rule);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+  width: 100%;
+  max-width: 560px;
+}
+
+.lab-feature-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+}
+.lab-feature-modal-head {
+  flex: 0 0 auto;
+  padding: 14px 20px 14px;
+  border-bottom: 1px solid var(--lab-rule);
+}
+.lab-feature-modal-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.lab-feature-modal-back,
+.lab-feature-modal-close {
+  appearance: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--lab-font-sans);
+  color: var(--lab-ink-muted);
+  padding: 4px;
+}
+.lab-feature-modal-back {
+  font-size: 13px;
+}
+.lab-feature-modal-close {
+  font-size: 15px;
+  line-height: 1;
+}
+.lab-feature-modal-back:hover,
+.lab-feature-modal-close:hover {
+  color: var(--lab-accent);
+}
+.lab-feature-modal-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.lab-feature-modal-title {
+  margin: 0;
+  font-family: var(--lab-font-serif);
+  font-size: 20px;
+  color: var(--lab-ink);
+}
+.lab-feature-modal-item {
+  margin-top: 2px;
+  font-family: var(--lab-font-mono);
+  font-size: 12px;
+  color: var(--lab-ink-soft);
+}
+
+.lab-feature-modal-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 20px 20px;
+}
+.lab-feature-modal-section {
+  margin-bottom: 18px;
+}
+.lab-feature-modal-empty {
+  margin: 6px 0 0;
+  color: var(--lab-ink-muted);
+  font-style: italic;
+  font-size: 12px;
+}
+
+/* Synergy / antisynergy two-up, collapsing to one column on phones. */
+.lab-feature-modal-couplings {
+  display: grid;
+  /* auto-fit: two columns in the wide centered modal, one full-width column in
+   * the narrower dock (where two would crush the names). */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 24px;
+}
+.lab-feature-coupling-list,
+.lab-feature-corpus-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lab-feature-coupling-row,
+.lab-feature-corpus-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+/* Let the partner label shrink + wrap so long "Species @ Item" names never
+ * force the two-up grid wider than the modal (would cause horizontal scroll). */
+.lab-feature-coupling-row .lab-feature-link {
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+.lab-feature-coupling-row .lab-comp-mon-name,
+.lab-feature-coupling-row .lab-comp-mon-item {
+  overflow-wrap: break-word;
+}
+.lab-feature-coupling-val,
+.lab-feature-corpus-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.lab-feature-corpus-share {
+  min-width: 48px;
+  text-align: right;
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  color: var(--lab-ink-muted);
+}
+
+/* Route-aware quick actions. */
+.lab-feature-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--lab-rule-soft);
+}
+.lab-feature-action {
+  flex: 0 0 auto;
+}
+.lab-feature-modal-note {
+  font-family: var(--lab-font-sans);
+  font-size: 12px;
+  color: var(--lab-ink-soft);
+}
+.lab-feature-modal-swap {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.lab-feature-swap-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lab-feature-swap-target {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 6px;
+  background: var(--lab-panel);
+  border: 1px solid var(--lab-rule);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--lab-font-serif);
+  font-size: 12px;
+  color: var(--lab-ink);
+}
+.lab-feature-swap-target:hover {
+  border-color: var(--lab-accent);
+}
+
+@media (max-width: 640px) {
+  .lab-feature-modal-couplings {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
+/* Docked inspector variant (wide screens). The panel is a fixed right-hand
+ * column; the page content slides left because body reserves the gutter and
+ * .lab-container is margin:auto-centered. Only applied at the dock breakpoint
+ * (matches DOCK_QUERY in FeatureModal.tsx); narrower screens get the modal. */
+.lab-feature-dock {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 1000;
+  width: 460px;
+  max-width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--lab-bg);
+  border-left: 1px solid var(--lab-rule);
+  box-shadow: -8px 0 28px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  animation: lab-dock-in 200ms ease;
+}
+.lab-feature-dock .lab-feature-modal {
+  max-height: none;
+  height: 100%;
+}
+@keyframes lab-dock-in {
+  from {
+    transform: translateX(16px);
+    opacity: 0.5;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@media (min-width: 1200px) {
+  body {
+    transition: padding-right 200ms ease;
+  }
+  body.feature-docked {
+    padding-right: 460px;
   }
 }

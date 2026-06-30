@@ -30,7 +30,7 @@ export function TopTeamsTable({
 }: TopTeamsTableProps) {
   return (
     <ScrollX>
-      <table className="lab-comp-table">
+      <table className="lab-comp-table lab-table-cards">
         <thead>
           <tr>
             <th className="num">#</th>
@@ -51,22 +51,23 @@ export function TopTeamsTable({
             return (
               <tr key={r.team.join("-")} className={rank === 0 ? "top-row" : undefined}>
                 <td className="rank">{(rank + 1).toString().padStart(2, "0")}</td>
-                <td>
+                <td className="team">
                   <TeamMiniStrip
                     names={r.team.map((i) => model.vocab[i])}
                     size={40}
+                    interactive
                   />
                 </td>
-                <td className="num">
+                <td className="num" data-label="score (raw)">
                   <ScoreChip value={obs.scoreRaw} />
                 </td>
-                <td className="num">
+                <td className="num" data-label="coherence">
                   <ScoreChip value={obs.coherence} />
                 </td>
-                <td className="num">
+                <td className="num" data-label="count">
                   <ScoreChip value={r.count} fmt="count" />
                 </td>
-                <td className="num">
+                <td className="num" data-label="share">
                   <div className="lab-comp-freq">
                     <span className="lab-comp-freq-pct">
                       {(share * 100).toFixed(2)}%

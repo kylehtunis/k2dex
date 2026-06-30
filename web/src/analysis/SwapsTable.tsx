@@ -16,6 +16,8 @@ export interface SwapsTableProps {
   teamIdx: readonly number[];
   model: IsingModel;
   teamCounts: TeamCounts | null;
+  /** When provided, each row gets an Accept button that applies the swap. */
+  onAcceptSwap?: (outIdx: number, inIdx: number) => void;
 }
 
 export function SwapsTable({
@@ -23,6 +25,7 @@ export function SwapsTable({
   teamIdx,
   model,
   teamCounts,
+  onAcceptSwap,
 }: SwapsTableProps) {
   const teamSet = new Set(teamIdx);
   return (
@@ -36,6 +39,7 @@ export function SwapsTable({
           <th className="num">Δ Coherence</th>
           <th className="num">corpus</th>
           <th>team after</th>
+          {onAcceptSwap && <th></th>}
         </tr>
       </thead>
       <tbody>
@@ -70,6 +74,17 @@ export function SwapsTable({
               <td className="team-after">
                 <TeamMiniStrip names={afterIdx.map((i) => model.vocab[i])} />
               </td>
+              {onAcceptSwap && (
+                <td className="actions">
+                  <button
+                    type="button"
+                    className="lab-analyze-btn"
+                    onClick={() => onAcceptSwap(sw.outIdx, sw.inIdx)}
+                  >
+                    Accept
+                  </button>
+                </td>
+              )}
             </tr>
           );
         })}

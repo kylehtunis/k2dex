@@ -369,6 +369,11 @@ export function AnalysisPage() {
               teamIdx={teamSorted}
               model={model}
               teamCounts={teamCounts}
+              onAcceptSwap={(out, inn) =>
+                setAnalysis({
+                  teamIdxs: teamSorted.filter((i) => i !== out).concat(inn),
+                })
+              }
             />
           )}
 

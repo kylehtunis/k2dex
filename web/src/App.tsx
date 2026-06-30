@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ModelProvider } from "./state/ModelContext";
 import { PageStateProvider } from "./state/PageStateContext";
+import { FeatureModalProvider } from "./components/FeatureModal";
 import { Layout } from "./components/Layout";
 import { HomePage } from "./pages/HomePage";
 import { CompleterPage } from "./pages/CompleterPage";
@@ -15,6 +16,7 @@ export default function App() {
     <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
       <ModelProvider>
         <PageStateProvider>
+          <FeatureModalProvider>
           <Suspense fallback={null}>
             <Routes>
               <Route path="/" element={<Layout />}>
@@ -27,6 +29,7 @@ export default function App() {
               </Route>
             </Routes>
           </Suspense>
+          </FeatureModalProvider>
         </PageStateProvider>
       </ModelProvider>
     </BrowserRouter>

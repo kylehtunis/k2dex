@@ -7,6 +7,7 @@
 // loaded for `nearestObserved`; here we just rank it by raw occurrence.
 
 import type { TeamCounts } from "../sampler/types";
+import { parseTeamKey } from "../render/corpus";
 
 export interface TopTeam {
   /** Vocab indices of the roster (in display order — most-popular
@@ -14,19 +15,6 @@ export interface TopTeam {
   team: number[];
   /** Raw occurrence count of this exact roster in the corpus. */
   count: number;
-}
-
-/** Parse a sorted-index team key ("3-7-12-…") into its integer indices. */
-function parseTeamKey(key: string): number[] {
-  const out: number[] = [];
-  let start = 0;
-  while (start < key.length) {
-    let end = key.indexOf("-", start);
-    if (end < 0) end = key.length;
-    out.push(+key.slice(start, end));
-    start = end + 1;
-  }
-  return out;
 }
 
 /** Top-`k` exact rosters by occurrence count, descending.

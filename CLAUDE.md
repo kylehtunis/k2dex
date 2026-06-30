@@ -49,6 +49,7 @@ web/                    Static React/TS webapp (Vite + React 18)
   src/sampler/          1:1 port of k2dex/sampling.py
   src/render/           1:1 port of k2dex/rendering.py + rendering_html.py
   src/science/          /science page (toy primitives independent of production sampler)
+  src/components/       Shared UI incl. FeatureModal (global feature-detail modal)
   public/models/        Precomputed model artifacts (committed)
 ```
 
@@ -87,6 +88,7 @@ Read the code for full APIs. These are the non-obvious parts:
 - **Widget-scoping** via marker divs + `:has()` in `styles.py`. Breaks if Streamlit changes `data-testid` hierarchy.
 - **Responsive**: desktop-first, breakpoints `900px` (narrow) and `640px` (phone) + `pointer: coarse`. **Never rename existing `lab-*` classes** (mirrored in `rendering_html.py`).
 - **`/science` controls** use `.lab-science-btn` from `widgets.css`. No bare `<button>` elements.
+- **Feature detail modal** (webapp-only, no Streamlit/Python counterpart, no parity row): `components/FeatureModal.tsx` (provider + body) + `components/FeatureModalContext.ts` (`useFeatureModal` hook, split out to avoid a cycle with `render/cells.tsx`) + generic `components/Modal.tsx` (portal/backdrop/focus-trap). `openFeature(name)` resolves a vocab string via `model.indexOf`. The shared cells `InlineMon`/`CompMonCell`/`SlotCard` are clickable wherever a provider is mounted; `TeamMiniStrip` is inert unless passed `interactive` (the `/meta` §03 TopTeamsTable and the modal's own corpus-appearance rows opt in; inside the panel those clicks drill via the nested context). Per-feature data: `render/featureDetail.ts` (`featureCouplings`/`featureCorpusAppearances`/`featureRanks`), reusing `meta/couplings.ts:isStructuralPair` and `render/corpus.ts:parseTeamKey` (the now-canonical roster-key parser, also used by `meta/topTeams.ts`). Modal actions are route-gated (completer pin/exclude, analysis add/swap, meta none). New `lab-feature-*` / `lab-modal*` / `lab-feature-dock` classes join the "never rename" set. `SwapsTable` takes an optional `onAcceptSwap(out,in)` to apply a swap to the analysis team. **Two presentation variants** (`Modal.tsx` `variant` prop, chosen by `useMediaQuery(DOCK_QUERY=min-width:1200px)`): centered `modal` (backdrop + scroll-lock + focus-trap) on narrow screens, and a non-blocking right-hand `dock` inspector on wide screens (page stays interactive; body gets `feature-docked` → `padding-right` reserves the gutter and the margin:auto `.lab-container` slides left). The panel re-provides a nested `FeatureModalContext` whose `openFeature` *pushes* (drill-through + Back), while the outer page context *resets* the stack (fresh select) — same `InlineMon`, behavior decided by render location.
 
 ## /science page gotchas
 

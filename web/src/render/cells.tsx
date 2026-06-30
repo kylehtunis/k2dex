@@ -7,8 +7,10 @@
 //   inline_mon      -> <InlineMon />
 //   team_mini_strip -> <TeamMiniStrip />
 
+import { type KeyboardEvent } from "react";
 import { extractItem, extractSpecies } from "./format";
 import { SpriteBox } from "./Sprite";
+import { useFeatureModal } from "../components/FeatureModalContext";
 
 // ----- Slot card / strip ----------------------------------------------
 
@@ -20,8 +22,23 @@ export interface SlotCardProps {
 export function SlotCard({ name, indicator = "s=1" }: SlotCardProps) {
   const species = extractSpecies(name);
   const item = extractItem(name);
+  const fm = useFeatureModal();
+  const wrapProps = fm
+    ? {
+        className: "lab-slot lab-feature-clickable",
+        role: "button" as const,
+        tabIndex: 0,
+        onClick: () => fm.openFeature(name),
+        onKeyDown: (e: KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            fm.openFeature(name);
+          }
+        },
+      }
+    : { className: "lab-slot" };
   return (
-    <div className="lab-slot">
+    <div {...wrapProps}>
       <div className="lab-slot-indicator">{indicator}</div>
       <SpriteBox name={name} size={72} className="lab-slot-sprite" />
       <div className="lab-slot-name">{species}</div>
@@ -99,15 +116,28 @@ export interface CompMonCellProps {
 export function CompMonCell({ name }: CompMonCellProps) {
   const species = extractSpecies(name);
   const item = extractItem(name);
-  return (
-    <div className="lab-comp-mon">
+  const fm = useFeatureModal();
+  const inner = (
+    <>
       <SpriteBox name={name} size={36} />
       <div>
         <div className="lab-comp-mon-name">{species}</div>
         {item && <div className="lab-comp-mon-item">@ {item}</div>}
       </div>
-    </div>
+    </>
   );
+  if (fm) {
+    return (
+      <button
+        type="button"
+        className="lab-comp-mon lab-feature-link"
+        onClick={() => fm.openFeature(name)}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return <div className="lab-comp-mon">{inner}</div>;
 }
 
 export interface InlineMonProps {
@@ -118,8 +148,10 @@ export interface InlineMonProps {
 export function InlineMon({ name, size = 32 }: InlineMonProps) {
   const species = extractSpecies(name);
   const item = extractItem(name);
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+  const fm = useFeatureModal();
+  const style = { display: "inline-flex", alignItems: "center", gap: 6 } as const;
+  const inner = (
+    <>
       <SpriteBox name={name} size={size} />
       <span className="lab-comp-mon-name">{species}</span>
       {item && (
@@ -127,8 +159,21 @@ export function InlineMon({ name, size = 32 }: InlineMonProps) {
           @ {item}
         </span>
       )}
-    </span>
+    </>
   );
+  if (fm) {
+    return (
+      <button
+        type="button"
+        className="lab-feature-link"
+        style={style}
+        onClick={() => fm.openFeature(name)}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return <span style={style}>{inner}</span>;
 }
 
 export interface PairCellProps {
@@ -164,14 +209,35 @@ export function SwapCell({ nameOut, nameIn }: SwapCellProps) {
 export interface TeamMiniStripProps {
   names: readonly string[];
   size?: number;
+  /** Opt-in: wrap each sprite in a button that opens the feature modal. Off by
+   * default so bare strips stay hover-only; only callers that want per-mon
+   * drill-in (e.g. the /meta top-teams table) pass this. */
+  interactive?: boolean;
 }
 
-export function TeamMiniStrip({ names, size = 24 }: TeamMiniStripProps) {
+export function TeamMiniStrip({
+  names,
+  size = 24,
+  interactive = false,
+}: TeamMiniStripProps) {
+  const fm = useFeatureModal();
+  const clickable = interactive && fm;
   return (
     <div className="lab-mini-strip">
-      {names.map((n) => (
-        <SpriteBox key={n} name={n} size={size} />
-      ))}
+      {names.map((n) =>
+        clickable ? (
+          <button
+            key={n}
+            type="button"
+            className="lab-feature-link"
+            onClick={() => fm.openFeature(n)}
+          >
+            <SpriteBox name={n} size={size} />
+          </button>
+        ) : (
+          <SpriteBox key={n} name={n} size={size} />
+        ),
+      )}
     </div>
   );
 }

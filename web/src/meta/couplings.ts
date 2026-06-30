@@ -13,20 +13,29 @@ export interface CouplingPair {
   jValue: number;
 }
 
-/** Iterate the strict upper triangle of J, optionally dropping same-
- * species and same-item pairs (Species @ Item only — those couplings
- * exist purely from mechanical mutual exclusion in VGC and don't
- * reflect model structure). */
+/** True when (i, j) is a *structural* coupling worth surfacing — i.e. not a
+ * mechanical mutual exclusion. Same-species pairs, and same-item pairs on
+ * Species @ Item vocab, couple purely because the two builds can't co-exist on
+ * a team, so they carry no metagame signal. On Species-only vocab (unique
+ * species, all-null items) both checks are no-ops, so every off-diagonal pair
+ * is structural. Shared by filteredCouplings and render/featureDetail. */
+export function isStructuralPair(model: IsingModel, i: number, j: number): boolean {
+  const { speciesOf, itemOf } = model;
+  if (speciesOf[i] === speciesOf[j]) return false;
+  const itI = itemOf[i];
+  const itJ = itemOf[j];
+  if (itI !== null && itJ !== null && itI === itJ) return false;
+  return true;
+}
+
+/** Iterate the strict upper triangle of J, dropping non-structural pairs
+ * (see isStructuralPair). */
 export function filteredCouplings(model: IsingModel): CouplingPair[] {
-  const { V, J, speciesOf, itemOf } = model;
+  const { V, J } = model;
   const out: CouplingPair[] = [];
   for (let i = 0; i < V; i++) {
-    const spI = speciesOf[i];
-    const itI = itemOf[i];
     for (let j = i + 1; j < V; j++) {
-      if (speciesOf[j] === spI) continue;
-      const itJ = itemOf[j];
-      if (itI !== null && itJ !== null && itI === itJ) continue;
+      if (!isStructuralPair(model, i, j)) continue;
       out.push({ i, j, jValue: J[i * V + j] });
     }
   }
