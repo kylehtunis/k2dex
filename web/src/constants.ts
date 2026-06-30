@@ -21,6 +21,7 @@ export const TOP_SINGLE_SWAPS = 10;
 export const GREEDY_MAX_SWAPS = 10;
 export const META_TOP_FEATURES = 25;
 export const META_TOP_PAIRS = 25;
+export const META_TOP_TEAMS = 20;
 
 export const PT_HOT_T = 3.0;
 export const PT_LADDER_LEVELS = 7;
