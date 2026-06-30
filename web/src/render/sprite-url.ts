@@ -53,6 +53,11 @@ const REGIONAL_ADJECTIVE: Record<string, string> = {
 // Limitless stores Rotom formes as "Forme Rotom" (e.g. "Wash Rotom").
 const ROTOM_FORME_NAMES = new Set(["wash", "heat", "frost", "mow", "fan"]);
 
+// Limitless stores Lycanroc formes as "Lycanroc Forme" (e.g. "Lycanroc Dusk").
+// Showdown's home folder uses base "lycanroc" for Midday and a hyphen suffix
+// for the others ("lycanroc-dusk", "lycanroc-midnight").
+const LYCANROC_FORME_NAMES = new Set(["dusk", "midnight", "midday"]);
+
 /** Convert a display species name to Showdown's home-sprite slug.
  *
  * Rules (parity with rendering_html.species_to_slug):
@@ -80,6 +85,10 @@ export function speciesToSlug(name: string): string {
     // "Wash Rotom" → "rotom-wash", "Heat Rotom" → "rotom-heat"
     if (words.length === 2 && words[1] === "rotom" && ROTOM_FORME_NAMES.has(words[0])) {
       return `rotom-${words[0]}`;
+    }
+    // "Lycanroc Dusk" → "lycanroc-dusk"; "Lycanroc Midday" → "lycanroc" (base).
+    if (words.length === 2 && words[0] === "lycanroc" && LYCANROC_FORME_NAMES.has(words[1])) {
+      return words[1] === "midday" ? "lycanroc" : `lycanroc-${words[1]}`;
     }
   }
   // Whitespace collapses to nothing.

@@ -73,6 +73,11 @@ _REGIONAL_ADJECTIVE: dict[str, str] = {
 # Limitless stores Rotom formes as "Forme Rotom" (e.g. "Wash Rotom").
 _ROTOM_FORMES: frozenset[str] = frozenset({"wash", "heat", "frost", "mow", "fan"})
 
+# Limitless stores Lycanroc formes as "Lycanroc Forme" (e.g. "Lycanroc Dusk").
+# Showdown's home folder uses base "lycanroc" for Midday and a hyphen suffix
+# for the others ("lycanroc-dusk", "lycanroc-midnight").
+_LYCANROC_FORMES: frozenset[str] = frozenset({"dusk", "midnight", "midday"})
+
 
 def _load_fallback_sprite() -> str:
     """Embed ``assets/missingno.{svg,png}`` as a ``data:`` URI used when a sprite 404s.
@@ -157,6 +162,9 @@ def species_to_slug(name: str) -> str:
         # "Wash Rotom" → "rotom-wash", "Heat Rotom" → "rotom-heat"
         if len(words) == 2 and words[1] == "rotom" and words[0] in _ROTOM_FORMES:
             return f"rotom-{words[0]}"
+        # "Lycanroc Dusk" → "lycanroc-dusk"; "Lycanroc Midday" → "lycanroc" (base).
+        if len(words) == 2 and words[0] == "lycanroc" and words[1] in _LYCANROC_FORMES:
+            return "lycanroc" if words[1] == "midday" else f"lycanroc-{words[1]}"
     # Spaces collapse to nothing per Showdown convention.
     no_spaces = re.sub(r"\s+", "", cleaned)
     if "-" not in no_spaces:
@@ -409,7 +417,7 @@ def excluded_row(names: list[str], note: str | None = None) -> str:
     return f'<div class="lab-excluded-row">{label}{tags}{note_html}</div>'
 
 
-def stat_strip(cells: list[tuple], columns: int | None = None) -> str:
+def stat_strip(cells: list[tuple[str, ...]], columns: int | None = None) -> str:
     """Render a 1×N grid of ``stat`` cells inside a panel.
 
     Each cell is ``(label, value, sub)`` or ``(label, value, sub, tooltip)``.

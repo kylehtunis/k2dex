@@ -894,6 +894,14 @@
     {
       "input": "Eternal Flower Floette",
       "expected": "floette"
+    },
+    {
+      "input": "Lycanroc Dusk",
+      "expected": "lycanroc-dusk"
+    },
+    {
+      "input": "Lycanroc Midday",
+      "expected": "lycanroc"
     }
   ],
   "obs": [
