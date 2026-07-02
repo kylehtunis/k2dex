@@ -431,6 +431,256 @@ def _batched_moments(
     return m, C
 
 
+# ---------- Potts (separate species / item) sampler for the PCD bank ----------
+#
+# The species+item model is a Potts model in lattice-gas encoding: each team
+# slot is a site (a species), and a site's state is one of {absent, item_1..}.
+# The atomic swap sampler above moves a whole (species, item) feature at once;
+# this sampler instead separates the two decisions into two move types that
+# target the SAME constrained Gibbs measure P(s) ∝ exp(-H(s)) over valid teams:
+#
+#   * Metropolized-Gibbs species swap -- propose an off-team species B for an
+#     on-team species A, accept on the local free-energy ratio Z_B / Z_A, then
+#     draw B's item from the exact conditional. Z_P = Σ_{i in valid items of P
+#     given the rest R} exp(-E_slot(feat(P,i) | R)) is P's item-partition given
+#     the other five members; the shared exp(-H(R)) cancels in the ratio, and
+#     because every valid team has exactly `team_size` distinct species the
+#     off-team-species count is S - team_size in both directions, so the uniform
+#     proposal factors cancel too, leaving exactly min(1, Z_B / Z_A).
+#   * Gibbs item reroll -- resample one on-team species' item from that same
+#     conditional, species roster fixed. Exact Gibbs on one site's state space;
+#     always accepted (the item-exclusion constraint is baked into the support).
+#
+# The bank stays as flat feature indices ((n_temps, n_chains, team_size)); the
+# species of a slot is `species_id[feat]`, and each species' candidate item
+# features come from the padded site tables built once by `_build_site_tables`.
+# So `_batched_moments` / `_bank_energies` / `_replica_exchange` are unchanged.
+
+
+def _build_site_tables(
+    species_id: NDArray[np.int64], item_id: NDArray[np.int64], V: int,
+) -> tuple[int, NDArray[np.int64], NDArray[np.bool_], NDArray[np.int64]]:
+    """Group flat feature indices by species into padded (S, max_items) tables.
+
+    Returns (S, sp_item_feat, sp_item_valid, sp_item_iid): the number of species
+    (sites), each species' item-state flat indices (right-padded with -1), the
+    padding-validity mask, and each slot's item id (padded with -2, a sentinel
+    that never equals a real item id >= 0 or the itemless id -1).
+    """
+    S = int(species_id.max()) + 1
+    feats_by_site: list[list[int]] = [[] for _ in range(S)]
+    for f in range(V):
+        feats_by_site[int(species_id[f])].append(f)
+    max_items = max(len(x) for x in feats_by_site)
+    sp_item_feat = np.full((S, max_items), -1, dtype=np.int64)
+    sp_item_valid = np.zeros((S, max_items), dtype=bool)
+    sp_item_iid = np.full((S, max_items), -2, dtype=np.int64)
+    for s, feats in enumerate(feats_by_site):
+        k = len(feats)
+        sp_item_feat[s, :k] = feats
+        sp_item_valid[s, :k] = True
+        sp_item_iid[s, :k] = item_id[feats]
+    return S, sp_item_feat, sp_item_valid, sp_item_iid
+
+
+def _masked_logsumexp(
+    neg_e: NDArray[np.float64], valid: NDArray[np.bool_],
+) -> NDArray[np.float64]:
+    """Row-wise ``log Σ exp(neg_e)`` over the entries where ``valid``. Rows with
+    no valid entry return -inf (not NaN). ``neg_e`` may hold -inf at invalid
+    slots; the mask is authoritative."""
+    masked = np.where(valid, neg_e, -np.inf)
+    mx = masked.max(axis=1)
+    safe = np.where(np.isfinite(mx), mx, 0.0)
+    s = np.where(valid, np.exp(masked - safe[:, None]), 0.0).sum(axis=1)
+    with np.errstate(divide="ignore"):
+        return np.log(s) + safe
+
+
+def _site_conditional(
+    sp: NDArray[np.int64],
+    R_feat: NDArray[np.int64],
+    R_iid: NDArray[np.int64],
+    J: NDArray[np.float64],
+    h_eff: NDArray[np.float64],
+    inv_temp: NDArray[np.float64],
+    sp_item_feat: NDArray[np.int64],
+    sp_item_valid: NDArray[np.bool_],
+    sp_item_iid: NDArray[np.int64],
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_], NDArray[np.int64]]:
+    """Per-chain item conditional for placing species ``sp[c]`` alongside the
+    held members ``R_feat[c]``.
+
+    Returns (log_Z, neg_e, valid, feats) each shaped (n_chains, max_items):
+    ``feats`` are the candidate item-state flat indices, ``valid`` marks the ones
+    that clear item-exclusion against R (and aren't padding), ``neg_e`` is
+    ``-E_slot / T`` at those slots (``E_slot = -h_eff[f] - Σ_{j in R} J[f, j]``),
+    and ``log_Z`` is the tempered log item-partition ``log Σ_valid exp(neg_e)``.
+    """
+    feats = sp_item_feat[sp]              # (N, M); -1 padding
+    valid = sp_item_valid[sp].copy()      # (N, M)
+    iid = sp_item_iid[sp]                 # (N, M); -2 pad, -1 itemless, >=0 item
+    # Item-exclusion: a candidate with a real item conflicts if that item id is
+    # already held by one of the retained members. Itemless (iid < 0) never does.
+    conflict = ((iid[:, :, None] == R_iid[:, None, :]) & (iid[:, :, None] >= 0)).any(axis=2)
+    valid &= ~conflict
+    # E_slot = -h_eff[f] - Σ_{j in R} J[f, j]; padded feats index garbage rows of
+    # h/J but are masked out below, so the reads are harmless.
+    h_term = -h_eff[feats]
+    j_term = -J[feats[:, :, None], R_feat[:, None, :]].sum(axis=2)
+    neg_e = -(h_term + j_term) * inv_temp[:, None]
+    log_z = _masked_logsumexp(neg_e, valid)
+    return log_z, neg_e, valid, feats
+
+
+def _gumbel_choice(
+    neg_e: NDArray[np.float64], valid: NDArray[np.bool_], rng: np.random.Generator,
+) -> NDArray[np.int64]:
+    """Sample one column per row ∝ exp(neg_e) over valid entries (Gumbel-max).
+    Invalid entries get -inf score and are never chosen."""
+    g = -np.log(-np.log(rng.random(neg_e.shape)))
+    scores = np.where(valid, neg_e + g, -np.inf)
+    return np.argmax(scores, axis=1)
+
+
+def _potts_species_swap_sweep(
+    team: NDArray[np.int64],
+    J: NDArray[np.float64],
+    h_eff: NDArray[np.float64],
+    species_id: NDArray[np.int64],
+    item_id: NDArray[np.int64],
+    site: tuple[int, NDArray[np.int64], NDArray[np.bool_], NDArray[np.int64]],
+    rng: np.random.Generator,
+    *,
+    temp: NDArray[np.float64] | float = 1.0,
+    max_tries: int = 16,
+) -> float:
+    """One Metropolized-Gibbs species-swap proposal per chain, vectorized across
+    the bank ``team`` ((n_chains, team_size) flat feature indices, mutated in
+    place). See the module comment above for the derivation of the acceptance
+    ``min(1, Z_B / Z_A)``. Returns the acceptance fraction over chains."""
+    S, sp_item_feat, sp_item_valid, sp_item_iid = site
+    n_chains, k = team.shape
+    rows = np.arange(n_chains)
+    inv_temp = (1.0 / np.asarray(temp, dtype=np.float64)) * np.ones(n_chains)
+
+    p = rng.integers(k, size=n_chains)
+    out_feat = team[rows, p]
+    A = species_id[out_feat]
+    keep = np.ones((n_chains, k), dtype=bool)
+    keep[rows, p] = False
+    R_feat = team[keep].reshape(n_chains, k - 1)
+    R_iid = item_id[R_feat]
+    on_species = species_id[team]  # (n_chains, k)
+
+    # Propose B uniformly among off-team species (reject species already present).
+    B = rng.integers(S, size=n_chains)
+    unresolved = np.ones(n_chains, dtype=bool)
+    for _ in range(max_tries):
+        invalid = (on_species == B[:, None]).any(axis=1)
+        unresolved &= invalid
+        if not unresolved.any():
+            break
+        B[unresolved] = rng.integers(S, size=int(unresolved.sum()))
+    found = ~unresolved
+
+    logZ_A, _, _, _ = _site_conditional(
+        A, R_feat, R_iid, J, h_eff, inv_temp,
+        sp_item_feat, sp_item_valid, sp_item_iid)
+    logZ_B, negE_B, valid_B, feats_B = _site_conditional(
+        B, R_feat, R_iid, J, h_eff, inv_temp,
+        sp_item_feat, sp_item_valid, sp_item_iid)
+    found &= np.isfinite(logZ_B) & np.isfinite(logZ_A)  # B needs >= 1 valid item
+
+    log_ratio = logZ_B - logZ_A
+    accept = found & (
+        (log_ratio >= 0.0) | (rng.random(n_chains) < np.exp(np.minimum(log_ratio, 0.0)))
+    )
+    # On accept, draw B's item from the exact conditional and place it.
+    choice = _gumbel_choice(negE_B, valid_B, rng)
+    new_feat = feats_B[rows, choice]
+    team[rows[accept], p[accept]] = new_feat[accept]
+    return float(accept.mean())
+
+
+def _potts_item_reroll_sweep(
+    team: NDArray[np.int64],
+    J: NDArray[np.float64],
+    h_eff: NDArray[np.float64],
+    species_id: NDArray[np.int64],
+    item_id: NDArray[np.int64],
+    site: tuple[int, NDArray[np.int64], NDArray[np.bool_], NDArray[np.int64]],
+    rng: np.random.Generator,
+    *,
+    temp: NDArray[np.float64] | float = 1.0,
+) -> None:
+    """One Gibbs item-reroll per chain: resample a random on-team slot's item
+    from the exact conditional given the rest of the team. Species roster is
+    unchanged; always accepted. Mutates ``team`` in place."""
+    _, sp_item_feat, sp_item_valid, sp_item_iid = site
+    n_chains, k = team.shape
+    rows = np.arange(n_chains)
+    inv_temp = (1.0 / np.asarray(temp, dtype=np.float64)) * np.ones(n_chains)
+
+    p = rng.integers(k, size=n_chains)
+    s = species_id[team[rows, p]]
+    keep = np.ones((n_chains, k), dtype=bool)
+    keep[rows, p] = False
+    R_feat = team[keep].reshape(n_chains, k - 1)
+    R_iid = item_id[R_feat]
+
+    _, neg_e, valid, feats = _site_conditional(
+        s, R_feat, R_iid, J, h_eff, inv_temp,
+        sp_item_feat, sp_item_valid, sp_item_iid)
+    choice = _gumbel_choice(neg_e, valid, rng)
+    team[rows, p] = feats[rows, choice]
+
+
+def _advance_bank_potts(
+    team: NDArray[np.int64],
+    J: NDArray[np.float64],
+    h_eff: NDArray[np.float64],
+    temps: NDArray[np.float64],
+    species_id: NDArray[np.int64],
+    item_id: NDArray[np.int64],
+    site: tuple[int, NDArray[np.int64], NDArray[np.bool_], NDArray[np.int64]],
+    rng: np.random.Generator,
+    *,
+    n_sweeps: int,
+    swap_interval: int,
+    p_reroll: float,
+) -> tuple[float, float]:
+    """Advance the tempered persistent bank ``n_sweeps`` steps under the Potts
+    move kernel: a random-scan mixture of species swap and item reroll (item
+    reroll chosen with probability ``p_reroll``), interleaving replica exchange
+    every ``swap_interval`` sweeps when tempered. Mirrors ``_advance_bank`` for
+    the flat-index bank; returns (mean species-swap acceptance, mean
+    replica-exchange acceptance)."""
+    n_temps, n_chains, k = team.shape
+    flat = team.reshape(n_temps * n_chains, k)  # view: writes propagate
+    temp_row = np.repeat(temps, n_chains)
+    swap_sum = 0.0
+    swaps_done = 0
+    accept_sum = 0.0
+    accept_sweeps = 0
+    for sw in range(n_sweeps):
+        if rng.random() < p_reroll:
+            _potts_item_reroll_sweep(
+                flat, J, h_eff, species_id, item_id, site, rng, temp=temp_row)
+        else:
+            accept_sum += _potts_species_swap_sweep(
+                flat, J, h_eff, species_id, item_id, site, rng, temp=temp_row)
+            accept_sweeps += 1
+        if n_temps > 1 and swap_interval and (sw + 1) % swap_interval == 0:
+            energies = _bank_energies(team, J, h_eff)
+            swap_sum += _replica_exchange(team, energies, temps, rng)
+            swaps_done += 1
+    return (
+        accept_sum / accept_sweeps if accept_sweeps else 0.0,
+        swap_sum / swaps_done if swaps_done else 0.0,
+    )
+
+
 def fit_boltzmann_ising(
     X: NDArray[np.integer],
     *,
@@ -454,6 +704,8 @@ def fit_boltzmann_ising(
     n_temps: int = 1,
     t_max: float = 3.0,
     swap_interval: int = 10,
+    potts_moves: bool = True,
+    p_reroll: float = 0.5,
     adam_betas: tuple[float, float] = (0.9, 0.999),
     adam_eps: float = 1e-8,
     seed: int = 0,
@@ -525,6 +777,18 @@ def fit_boltzmann_ising(
            it (the distribution isn't mode-trapped at this fit quality), at
            several times the cost. Reach for `n_temps>1` only if you hit a
            genuinely multimodal model where the cold chain gets stuck.
+        potts_moves: when True and `species_of` is given, sample the bank with
+           the Potts move kernel that treats species selection and item
+           assignment as separate moves (Metropolized-Gibbs species swap on
+           `Z_B/Z_A` + Gibbs item reroll) instead of atomic (species, item)
+           swaps. Both target the same constrained ensemble; the Potts kernel
+           makes species and item separate concepts and mixes item assignments
+           without swapping a species out and back in. Ignored for the
+           species-only ensemble (`species_of=None`), which has no items to
+           reroll and keeps the atomic swap sampler (its q=2 reference).
+        p_reroll: probability that each Potts sweep is an item reroll rather
+           than a species swap (random-scan mixture; any value in (0, 1)
+           preserves the target). 0.5 is ~1 reroll per swap.
         progress: show a tqdm progress bar (falls back to silent if tqdm is
            unavailable).
 
@@ -574,10 +838,31 @@ def fit_boltzmann_ising(
     species_id = _group_ids(species_of, V, none_sentinel=False)
     item_id = _group_ids(item_of, V, none_sentinel=True)
 
+    use_potts = potts_moves and species_id is not None
+    site = None
+    if use_potts:
+        assert species_id is not None and item_id is not None
+        site = _build_site_tables(species_id, item_id, V)
+        # Item-states of the SAME species never co-occur on a team (species
+        # uniqueness), so their coupling is neither sampled nor constrained by
+        # data. Freeze it at zero and drop it from the fit mask.
+        same_species = species_id[:, None] == species_id[None, :]
+        J[same_species] = 0.0
+        mask &= ~same_species
+
+    def _advance(n: int) -> tuple[float, float]:
+        if use_potts:
+            assert site is not None and species_id is not None and item_id is not None
+            return _advance_bank_potts(
+                team, J, h_eff, temps, species_id, item_id, site, rng,
+                n_sweeps=n, swap_interval=swap_interval, p_reroll=p_reroll)
+        return _advance_bank(
+            team, J, h_eff, temps, species_id, item_id, rng,
+            n_sweeps=n, swap_interval=swap_interval)
+
     # Mix the bank under the warm-start params before the first gradient step.
     h_eff = field_weight * h
-    _advance_bank(team, J, h_eff, temps, species_id, item_id, rng,
-                  n_sweeps=n_burn, swap_interval=swap_interval)
+    _advance(n_burn)
 
     # Adam state.
     m_h = np.zeros(V); v_h = np.zeros(V)
@@ -597,9 +882,7 @@ def fit_boltzmann_ising(
         lr_t = lr if lr_final is None else (
             lr_final + 0.5 * (lr - lr_final) * (1.0 + np.cos(np.pi * (it - 1) / max(n_iters - 1, 1))))
         h_eff = field_weight * h
-        acc, swap_acc = _advance_bank(
-            team, J, h_eff, temps, species_id, item_id, rng,
-            n_sweeps=n_sweeps, swap_interval=swap_interval)
+        acc, swap_acc = _advance(n_sweeps)
         m_model, C_model = _batched_moments(team[0], V)  # cold level (T=1)
 
         # Ascent gradients on the regularized log-likelihood.
