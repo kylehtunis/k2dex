@@ -39,11 +39,11 @@ No build system on the Python side; global env. **`pandas` and `pyarrow` are int
 ## Repo layout
 
 ```
-k2dex/                  Python package (constants, helpers, loaders, models, sampling, rendering, rendering_html, styles, tournament_ingest)
+k2dex/                  Python package (constants, helpers, loaders, models, sampling, potts, rendering, rendering_html, styles, tournament_ingest)
 tournament_json/        In-person tournament raw JSON (committed dir, JSON gitignored)
 tournaments_cache/      Unified cache (gitignored)
 scripts/                app.py (Streamlit), precompute.py, scotus_precompute.py
-notebooks/              Analysis pipeline (numbered chain 1-10 + standalone diagnostics: pl_three_body_check, outcome_ceiling, boltzmann_learning, pl_vs_boltzmann_eval, higher_order_emergence)
+notebooks/              Analysis pipeline (numbered chain 1-10 + standalone diagnostics: pl_three_body_check, outcome_ceiling, boltzmann_learning, pl_vs_boltzmann_eval, higher_order_emergence, potts_modulation)
 tests/                  unittest + parity_baseline.json
 web/                    Static React/TS webapp (Vite + React 18)
   src/sampler/          1:1 port of k2dex/sampling.py
@@ -62,6 +62,7 @@ Read the code for full APIs. These are the non-obvious parts:
 - **`models.py`** — `fit_pl_ising` uses `scipy.optimize.minimize` (L-BFGS-B), not sklearn. Degenerate spins (< 2 units weighted mass) are skipped and fall back to prior or zero. Prior support enables cross-regulation warm-starting. `fit_boltzmann_ising` is the alternative **moment-matching** fit (constrained-MaxEnt / Boltzmann learning): warm-starts from the PL fit, then ascends the regularized log-likelihood with model moments from a persistent batched swap-chain bank (PCD). `empirical_moments(X, w)` returns the weighted 1-pt/2-pt targets.
 - **`sampling.py`** — All MCMC variants share `_local_swap_step`. All accept `species_of`/`item_of` for uniqueness constraints. **Mirrored 1:1 in `web/src/sampler/`**, gated by `tests/test_parity.py`. `estimate_moments` (free PT generation → 1-pt/2-pt model moments) is **training-only Python — NOT ported to TS, no parity row** (the webapp consumes the resulting `(J,h)`, never the training loop). Same for `fit_boltzmann_ising` and the `_batched_*` swap/moment helpers in `models.py`.
 - **`loaders.py`** — `build_species_model()` / `build_species_item_model()` accept `prior_regulation`/`intercept_prior_weight` for warm-start. `team_weights` computes `w = exp(-dt/tau) * m^[in-person]`, normalized to mean 1.
+- **`potts.py`** — **post-fit Potts analysis only** (no fitting/sampler change); the Potts reframe R2. Treats the fitted species+item `J` as a Potts coupling tensor: site = species, state = {absent, item…}, so the cross-species block `J[items_of_P, items_of_Q]` is that pair's Potts block relative to the absent (all-zero) reference. `load_fitted_model(model_dir)` reads a precompute artifact back into a `FittedModel`. `decompose_block` is the 2-way ANOVA / zero-sum-gauge split (species-level **synergy** = grand mean + zero-sum **item-modulation** residual). `modulation_scores` is the item-modulation table — reports **three** magnitudes (`mod_frob` raw Frobenius, `mod_rms` alphabet-normalized, `mod_frac` scale-free share) because they disagree and each keeps one confound: `mod_frob` ≈ pure popularity proxy (~0.9 corr), so "read against support" (`n_items`/`appearances`) is mandatory, not optional. `species_apc_graph` gives the plmDCA-style APC-corrected species graph (`corrected = frob − apc`) plus the signed `synergy` matrix. Gated by `tests/test_potts.py`; explored in `notebooks/potts_modulation.ipynb`.
 - **`tournament_ingest.py`** — Cache schema versioned (`CACHE_VERSION`); bump when parsing changes. Limitless dates are ISO timestamps, in-person dates bare `YYYY-MM-DD`; consumers must parse at day resolution.
 
 ## Conventions that span multiple files
