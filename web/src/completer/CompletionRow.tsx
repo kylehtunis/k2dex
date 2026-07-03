@@ -6,6 +6,7 @@
 import { type ReactNode, useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 import { CompMonCell } from "../render/cells";
+import { extractSpecies } from "../render/format";
 import { CorpusCell } from "../render/atoms";
 import { ScoreChip } from "../render/atoms";
 import type { IsingModel } from "../sampler/types";
@@ -28,6 +29,9 @@ export interface CompletionRowProps {
   isTopRow?: boolean;
   rank?: number;
   model: IsingModel;
+  /** Species-only mode: render each mon as its species, hiding the item that
+   * was marginalized out (the underlying team is still a real completion). */
+  hideItems?: boolean;
 }
 
 export function CompletionRow({
@@ -41,6 +45,7 @@ export function CompletionRow({
   isTopRow,
   rank,
   model,
+  hideItems = false,
 }: CompletionRowProps) {
   const sortedFree = [...freeIdxs].sort((a, b) => a - b);
   const { completer } = usePageState();
@@ -66,7 +71,10 @@ export function CompletionRow({
       <td className="mons">
         <div className="lab-comp-pair">
           {sortedFree.map((i) => (
-            <CompMonCell key={i} name={model.vocab[i]} />
+            <CompMonCell
+              key={i}
+              name={hideItems ? extractSpecies(model.vocab[i]) : model.vocab[i]}
+            />
           ))}
         </div>
       </td>

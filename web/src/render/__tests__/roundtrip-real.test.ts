@@ -44,7 +44,7 @@ function loadMeta(name: string): IsingModel {
 }
 
 describe("real-model share-token round-trip", () => {
-  for (const name of ["reg-m-a-species-item"]) {
+  for (const name of ["reg-m-a"]) {
     it(`every vocab index round-trips for ${name}`, () => {
       const model = loadMeta(name);
       const slugIndex = buildSlugIndex(model);

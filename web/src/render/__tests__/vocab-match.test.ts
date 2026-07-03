@@ -211,11 +211,13 @@ describe("shareLink core token", () => {
     expect(idxs).toEqual([0, 3]);
   });
 
-  it("decodes legacy model codes", () => {
+  it("decodes legacy model codes to the unified per-regulation slug", () => {
     const decoded = decodeCore("si.3.incineroar~sitrus-berry")!;
-    expect(decoded.modelId).toBe("reg-m-a-species-item");
+    expect(decoded.modelId).toBe("reg-m-a");
     const decoded2 = decodeCore("s.5.amoonguss")!;
-    expect(decoded2.modelId).toBe("reg-m-a-species");
+    expect(decoded2.modelId).toBe("reg-m-a");
+    const decoded3 = decodeCore("reg-m-a-species-item.3.incineroar~sitrus-berry")!;
+    expect(decoded3.modelId).toBe("reg-m-a");
   });
 
   it("encodes itemless features without a tilde", () => {
@@ -240,6 +242,8 @@ describe("shareLink completer token", () => {
         modelId: "test-species-item",
         fieldWeight: 0.3,
         fixedIdxs: [0],
+        fixedSites: [],
+        inactiveTracks: [],
         excludedSpecies: ["Amoonguss"],
         usePT: true,
         temperature: 0.5, // default — omitted
@@ -271,6 +275,8 @@ describe("shareLink completer token", () => {
         modelId: "test-species-item",
         fieldWeight: 0.8,
         fixedIdxs: [0],
+        fixedSites: [],
+        inactiveTracks: [],
         excludedSpecies: [],
         usePT: false,
         temperature: 0.5,
@@ -287,12 +293,64 @@ describe("shareLink completer token", () => {
     expect(decodeCompleter(params)!.usePT).toBe(false);
   });
 
+  it("encodes site pins as bare species slugs alongside feature pins", () => {
+    const params = encodeCompleter(
+      {
+        modelId: "reg-m-a",
+        fieldWeight: 0.3,
+        fixedIdxs: [3], // feature pin: Calyrex-Shadow @ Life Orb
+        fixedSites: [1], // site pin: Alolan Ninetales (any item)
+        inactiveTracks: [],
+        excludedSpecies: [],
+        usePT: true,
+        temperature: 0.5,
+        ptRuns: 10,
+        ptLadder: 7,
+        ptSweeps: 20000,
+        ptSwapInterval: 10,
+        seed: null,
+      },
+      model,
+    );
+    const d = decodeCompleter(params)!;
+    const slugIndex = buildSlugIndex(model);
+    const site = d.features.find((f) => f.itemSlug === null)!;
+    const feature = d.features.find((f) => f.itemSlug !== null)!;
+    expect(resolveSpeciesSlug(slugIndex, model, site.speciesSlug)).toBe("Alolan Ninetales");
+    expect(resolveFeature(slugIndex, model, feature.speciesSlug, feature.itemSlug).idx).toBe(3);
+  });
+
+  it("round-trips species-only mode (deactivated tracks)", () => {
+    const params = encodeCompleter(
+      {
+        modelId: "reg-m-a",
+        fieldWeight: 0.3,
+        fixedIdxs: [],
+        fixedSites: [1],
+        inactiveTracks: [0], // item track off
+        excludedSpecies: [],
+        usePT: true,
+        temperature: 0.5,
+        ptRuns: 10,
+        ptLadder: 7,
+        ptSweeps: 20000,
+        ptSwapInterval: 10,
+        seed: null,
+      },
+      model,
+    );
+    expect(params.get("d")).toBe("0");
+    expect(decodeCompleter(params)!.inactiveTracks).toEqual([0]);
+  });
+
   it("encodes a non-default seed and advanced knobs", () => {
     const params = encodeCompleter(
       {
         modelId: "test-species-item",
         fieldWeight: 0.3,
         fixedIdxs: [0],
+        fixedSites: [],
+        inactiveTracks: [],
         excludedSpecies: [],
         usePT: true,
         temperature: 0.7,

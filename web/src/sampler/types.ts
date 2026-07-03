@@ -5,9 +5,9 @@
 // render layer only, exactly as in the Python sampling.py.
 
 export interface IsingModel {
-  /** Unique slug identifier (e.g. "reg-m-a-species-item"). */
+  /** Unique slug identifier (e.g. "reg-m-a"). */
   readonly id: string;
-  /** Human-readable display name (e.g. "Reg M-A Species @ Item"). */
+  /** Human-readable display name (e.g. "Reg. M-A"). */
   readonly displayName: string;
   /** Regulation this model was fit on (e.g. "M-A"). */
   readonly regulation: string;

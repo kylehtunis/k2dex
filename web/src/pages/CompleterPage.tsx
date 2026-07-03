@@ -30,16 +30,13 @@ import {
   TOP_COMPLETIONS,
 } from "../constants";
 import { useModel } from "../state/ModelContext";
-import { usePageState } from "../state/PageStateContext";
+import { usePageState, type RosterSlot } from "../state/PageStateContext";
 import { PageTitle, SectionLabel, StatStrip } from "../render/atoms";
-import { ExcludedRow, SlotStrip } from "../render/cells";
-import {
-  SpeciesSelect,
-  VocabSelect,
-  speciesOptions,
-  vocabOptions,
-} from "../components/VocabSelect";
+import { ExcludedRow } from "../render/cells";
+import { SpeciesSelect, speciesOptions } from "../components/VocabSelect";
+import { RosterEditor } from "../components/RosterEditor";
 import { runFastPath, type FastPathResult } from "../completer/fastPath";
+import { withInactiveTracks } from "../sampler/model";
 import { teamObservables } from "../render/observables";
 import { nearestObserved } from "../render/corpus";
 import {
@@ -61,6 +58,8 @@ import { runPT, type PTDistEntry } from "../completer/ptDriver";
  * or a "Re-run" with a new seed (inputs unchanged). */
 interface PTInputFingerprint {
   fixed: readonly number[];
+  fixedSites: readonly number[];
+  speciesOnly: boolean;
   excluded: readonly number[];
   fieldWeight: number;
   temperature: number;
@@ -75,6 +74,7 @@ type RunState =
       mode: "fast";
       result: FastPathResult;
       fieldWeight: number;
+      hideItems: boolean;
     }
   | {
       mode: "pt";
@@ -88,6 +88,7 @@ type RunState =
       temperature: number;
       elapsedMs: number;
       seed: number;
+      hideItems: boolean;
       fingerprint: PTInputFingerprint;
     };
 
@@ -97,10 +98,38 @@ export function CompleterPage() {
   const { completer, setCompleter } = usePageState();
 
   const {
-    fixedIdxs, excludedSpecies, fieldWeight, temperature,
-    usePT, ptRuns, ptLadder, ptSweeps, ptSwapInterval,
+    roster, inactiveTracks, excludedSpecies, fieldWeight,
+    temperature, usePT, ptRuns, ptLadder, ptSweeps, ptSwapInterval,
   } = completer;
-  const setFixedIdxs = (v: number[]) => setCompleter({ fixedIdxs: v });
+  const setRoster = (next: RosterSlot[]) => setCompleter({ roster: next });
+
+  // Pin arrays derived from the ordered roster for the sampler + share links.
+  // Feature pins (item chosen) vs site pins (item left to the completer).
+  const fixedIdxs = roster.filter((s) => s.feature !== null).map((s) => s.feature as number);
+  const fixedSites = roster.filter((s) => s.feature === null).map((s) => s.site);
+
+  // Attribute toggle. Today the only track is "item"; deactivating it drives
+  // species-only mode (marginalize + hide the item, no reroll, no uniqueness).
+  const itemTrackIdx = model ? model.tracks.findIndex((t) => t.name === "item") : -1;
+  const speciesOnly = itemTrackIdx >= 0 && inactiveTracks.includes(itemTrackIdx);
+  const effectiveModel = useMemo(
+    () => (model ? withInactiveTracks(model, inactiveTracks) : null),
+    [model, inactiveTracks],
+  );
+
+  // Toggle a track. Deactivating clears every slot's item (it's now hidden and
+  // filled by the completer), turning feature pins into species-only pins.
+  const toggleTrack = (ti: number, active: boolean) => {
+    if (!model) return;
+    if (active) {
+      setCompleter({ inactiveTracks: inactiveTracks.filter((t) => t !== ti) });
+      return;
+    }
+    setCompleter({
+      inactiveTracks: [...inactiveTracks.filter((t) => t !== ti), ti],
+      roster: roster.map((s) => ({ site: s.site, feature: null })),
+    });
+  };
 
   const currentModelId = model?.id ?? "—";
 
@@ -127,10 +156,19 @@ export function CompleterPage() {
         return; // re-run once the new model is ready
       }
       const slugIndex = buildSlugIndex(model);
-      const fixed: number[] = [];
+      const newRoster: RosterSlot[] = [];
       for (const f of d.features) {
-        const r = resolveFeature(slugIndex, model, f.speciesSlug, f.itemSlug);
-        if (r.idx !== null) fixed.push(r.idx);
+        if (f.itemSlug === null) {
+          // Bare mon = site-level pin: resolve the species to a site index.
+          const name = resolveSpeciesSlug(slugIndex, model, f.speciesSlug);
+          if (name) {
+            const site = model.sites.indexOf(name);
+            if (site >= 0) newRoster.push({ site, feature: null });
+          }
+        } else {
+          const r = resolveFeature(slugIndex, model, f.speciesSlug, f.itemSlug);
+          if (r.idx !== null) newRoster.push({ site: model.siteOf[r.idx], feature: r.idx });
+        }
       }
       const excluded: string[] = [];
       for (const slug of d.excludedSlugs) {
@@ -138,8 +176,10 @@ export function CompleterPage() {
         if (name) excluded.push(name);
       }
       appliedRef.current = identity;
+      const inactive = d.inactiveTracks.filter((t) => t >= 0 && t < model.tracks.length);
       setCompleter({
-        fixedIdxs: fixed.slice(0, TEAM_SIZE),
+        roster: newRoster.slice(0, TEAM_SIZE),
+        inactiveTracks: inactive,
         excludedSpecies: excluded,
         fieldWeight: d.fieldWeight,
         usePT: d.usePT,
@@ -156,20 +196,13 @@ export function CompleterPage() {
       return;
     }
 
-    // Legacy ?pinned= (set by the /science page): pin the species' most
-    // popular build.
+    // Legacy ?pinned= (set by the /science page): site-pin the species
+    // (species locked, item free — the natural "I want this Pokemon" pin).
     const pinned = searchParams.get("pinned");
     if (!pinned) return;
-    let bestIdx = -1;
-    let bestM = -1;
-    for (let i = 0; i < model.V; i++) {
-      if (model.speciesOf[i] === pinned && model.m[i] > bestM) {
-        bestM = model.m[i];
-        bestIdx = i;
-      }
-    }
+    const site = model.sites.indexOf(pinned);
     appliedRef.current = identity;
-    if (bestIdx !== -1) setCompleter({ fixedIdxs: [bestIdx] });
+    if (site >= 0) setCompleter({ roster: [{ site, feature: null }] });
   }, [status, model, modelId, searchParams, setCompleter, setModelId]);
 
   // Ephemeral state — not persisted across tab switches.
@@ -201,10 +234,6 @@ export function CompleterPage() {
     }
   }
 
-  const vocabOpts = useMemo(
-    () => (model ? vocabOptions(model) : []),
-    [model],
-  );
   const speciesOpts = useMemo(
     () => (model ? speciesOptions(model) : []),
     [model],
@@ -227,8 +256,10 @@ export function CompleterPage() {
     ? `Reg ${model.regulation} · ${model.nCorpusTeams.toLocaleString()} teams`
     : undefined;
 
-  const fixedNames = model ? fixedIdxs.map((i) => model.vocab[i]) : [];
-  const fixedSpeciesSet = model ? new Set(fixedIdxs.map((i) => model.speciesOf[i])) : new Set<string>();
+  const totalPins = roster.length;
+  const fixedSpeciesSet = model
+    ? new Set(roster.map((s) => model.sites[s.site]))
+    : new Set<string>();
   const overlap = excludedSpecies.filter((s) => fixedSpeciesSet.has(s));
   const overlapError =
     overlap.length > 0
@@ -253,6 +284,7 @@ export function CompleterPage() {
       if (excludedSet.has(model!.speciesOf[i])) excludedNow.push(i);
     }
     const fp = runState.fingerprint;
+    if (fp.speciesOnly !== speciesOnly) return false;
     if (fp.fieldWeight !== fieldWeight) return false;
     if (fp.temperature !== temperature) return false;
     if (fp.ptRuns !== ptRuns) return false;
@@ -262,6 +294,10 @@ export function CompleterPage() {
     if (fp.fixed.length !== fixedIdxs.length) return false;
     for (let i = 0; i < fp.fixed.length; i++) {
       if (fp.fixed[i] !== fixedIdxs[i]) return false;
+    }
+    if (fp.fixedSites.length !== fixedSites.length) return false;
+    for (let i = 0; i < fp.fixedSites.length; i++) {
+      if (fp.fixedSites[i] !== fixedSites[i]) return false;
     }
     if (fp.excluded.length !== excludedNow.length) return false;
     for (let i = 0; i < fp.excluded.length; i++) {
@@ -282,15 +318,19 @@ export function CompleterPage() {
   // one write). Skipped while an incoming link is still pending decode and
   // when there's nothing worth sharing (empty roster + no excludes).
   const fixedKey = fixedIdxs.join(",");
+  const fixedSitesKey = fixedSites.join(",");
+  const inactiveKey = inactiveTracks.join(",");
   const excludedKey = [...excludedSpecies].sort().join(",");
   const shareParams = useMemo(() => {
     if (!model) return null;
-    if (fixedIdxs.length === 0 && excludedSpecies.length === 0) return null;
+    if (totalPins === 0 && excludedSpecies.length === 0) return null;
     return encodeCompleter(
       {
         modelId,
         fieldWeight,
         fixedIdxs,
+        fixedSites,
+        inactiveTracks,
         excludedSpecies,
         usePT,
         temperature,
@@ -304,8 +344,9 @@ export function CompleterPage() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    model, modelId, fieldWeight, fixedKey, excludedKey, usePT, temperature,
-    ptRuns, ptLadder, ptSweeps, ptSwapInterval, seedForUrl,
+    model, modelId, fieldWeight, fixedKey, fixedSitesKey, inactiveKey,
+    excludedKey, usePT, temperature, ptRuns, ptLadder, ptSweeps,
+    ptSwapInterval, seedForUrl,
   ]);
   useEffect(() => {
     if (!shareParams) return;
@@ -332,7 +373,12 @@ export function CompleterPage() {
     try {
       const text = await navigator.clipboard.readText();
       const { idxs, errors, warnings } = matchPaste(model, text);
-      if (idxs.length > 0) setFixedIdxs(idxs);
+      // A paste is a concrete roster of feature pins (species + item).
+      if (idxs.length > 0) {
+        setRoster(
+          idxs.slice(0, TEAM_SIZE).map((i) => ({ site: model.siteOf[i], feature: i })),
+        );
+      }
       setImportMsg({ error: errors[0] ?? null, warnings });
     } catch {
       setImportMsg({ error: "Couldn't read the clipboard.", warnings: [] });
@@ -356,7 +402,7 @@ export function CompleterPage() {
   };
 
   const onRun = () => {
-    if (!canRun || !model) return;
+    if (!canRun || !model || !effectiveModel) return;
     setErrorMsg(null);
     setRunning(true);
     // The displayed run now governs the URL seed; drop any armed link seed.
@@ -366,13 +412,14 @@ export function CompleterPage() {
       // Fast path — synchronous, ~50–200ms. queueMicrotask lets the
       // "Running…" state render once before the loop blocks.
       queueMicrotask(() => {
-        const r = runFastPath(model, {
+        const r = runFastPath(effectiveModel, {
           fixed: fixedIdxs,
+          fixedSites,
           excludedSpecies,
           fieldWeight,
         });
         if (r.ok) {
-          setRunState({ mode: "fast", result: r.result, fieldWeight });
+          setRunState({ mode: "fast", result: r.result, fieldWeight, hideItems: speciesOnly });
         } else {
           setErrorMsg(r.error.message);
           setRunState(null);
@@ -395,6 +442,8 @@ export function CompleterPage() {
     setSeedCounter(seedCounter + 1);
     const fingerprint: PTInputFingerprint = {
       fixed: [...fixedIdxs],
+      fixedSites: [...fixedSites],
+      speciesOnly,
       excluded: [...excluded],
       fieldWeight,
       temperature,
@@ -403,8 +452,9 @@ export function CompleterPage() {
       ptSweeps,
       ptSwapInterval,
     };
-    runPT(model, {
+    runPT(effectiveModel, {
       fixed: fixedIdxs,
+      fixedSites,
       excluded,
       fieldWeight,
       coldT: temperature,
@@ -415,6 +465,9 @@ export function CompleterPage() {
       burnIn: PT_BURN_IN,
       swapInterval: ptSwapInterval,
       seed,
+      // Species-only: don't reroll the item, marginalize it into species sets.
+      pReroll: speciesOnly ? 0 : undefined,
+      projectToSites: speciesOnly,
     }).then((r) => {
       stopTimer();
       const elapsedFinal = performance.now() - t0;
@@ -432,6 +485,7 @@ export function CompleterPage() {
           temperature,
           elapsedMs: elapsedFinal,
           seed,
+          hideItems: speciesOnly,
           fingerprint,
         });
       } else {
@@ -456,50 +510,66 @@ export function CompleterPage() {
 
       <SectionLabel
         num="01"
-        title={`Starting roster · ${fixedIdxs.length} of ${TEAM_SIZE} set`}
+        title={`Starting roster · ${totalPins} of ${TEAM_SIZE} set`}
+        right="pick a species per slot; leave the item unset to let the completer fill it"
       />
-      <SlotStrip picked={fixedNames} />
+      <RosterEditor
+        model={model}
+        roster={roster}
+        onChange={setRoster}
+        itemActive={!speciesOnly}
+        teamSize={TEAM_SIZE}
+      />
+      <div style={{ marginBottom: 12 }}>
+        <button
+          type="button"
+          className="lab-analyze-btn lab-copy-paste-btn"
+          onClick={handleImport}
+        >
+          Import from clipboard
+        </button>
+        {importMsg?.error && (
+          <div className="lab-form-error">{importMsg.error}</div>
+        )}
+        {importMsg?.warnings.map((w, i) => (
+          <div className="lab-form-note" key={i}>{w}</div>
+        ))}
+      </div>
       <ExcludedRow names={excludedSpecies} />
 
       <SectionLabel num="02" title="Constraints" />
-      <div className="lab-form-grid" style={{ marginBottom: 16 }}>
-        <div>
-          <label className="lab-form-label">Starting Roster</label>
-          <VocabSelect
-            options={vocabOpts}
-            value={fixedIdxs}
-            onChange={setFixedIdxs}
-            maxSelections={TEAM_SIZE}
-            placeholder="Choose Pokemon to include"
-            ariaLabel="Starting roster"
-          />
-          <div style={{ marginTop: 8 }}>
-            <button
-              type="button"
-              className="lab-analyze-btn lab-copy-paste-btn"
-              onClick={handleImport}
-            >
-              Import from clipboard
-            </button>
-          </div>
-          {importMsg?.error && (
-            <div className="lab-form-error">{importMsg.error}</div>
-          )}
-          {importMsg?.warnings.map((w, i) => (
-            <div className="lab-form-note" key={i}>{w}</div>
-          ))}
-        </div>
-        <div>
-          <label className="lab-form-label">Exclude (must NOT appear)</label>
-          <SpeciesSelect
-            options={speciesOpts}
-            value={excludedSpecies}
-            onChange={(v) => setCompleter({ excludedSpecies: v })}
-            placeholder="Choose species to exclude"
-            ariaLabel="Exclude species"
-          />
-        </div>
+      <div style={{ marginBottom: 16 }}>
+        <label className="lab-form-label">Exclude (must NOT appear)</label>
+        <SpeciesSelect
+          options={speciesOpts}
+          value={excludedSpecies}
+          onChange={(v) => setCompleter({ excludedSpecies: v })}
+          placeholder="Choose species to exclude"
+          ariaLabel="Exclude species"
+        />
       </div>
+
+      {model.tracks.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <label className="lab-form-label">Active attributes</label>
+          <div className="lab-form-caption">
+            Deactivate an attribute to build by species only. The model still
+            accounts for it under the hood; it's marginalized out and hidden.
+          </div>
+          <div className="lab-attr-toggles">
+            {model.tracks.map((t, ti) => (
+              <label key={t.name} className="lab-checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={!inactiveTracks.includes(ti)}
+                  onChange={(e) => toggleTrack(ti, e.target.checked)}
+                />
+                {t.name.charAt(0).toUpperCase() + t.name.slice(1)}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       <SectionLabel num="03" title="Sampler" />
       <div
@@ -736,6 +806,7 @@ function FastResults({
           corpus={corpus}
           isTopRow
           model={model}
+          hideItems={runState.hideItems}
         />
       </CompletionTable>
     </>
@@ -836,6 +907,7 @@ function PTResults({
               freqPct={freqPct}
               isTopRow={idx === 0}
               model={model}
+              hideItems={runState.hideItems}
             />
           );
         })}

@@ -238,6 +238,64 @@
   color: var(--lab-ink-muted);
   margin-top: auto;
 }
+.lab-attr-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+/* Factored 6-slot roster editor */
+.lab-roster-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+@media (max-width: 640px) {
+  .lab-roster-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.lab-roster-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--lab-border, #d8dbd4);
+  border-radius: 8px;
+  background: var(--lab-surface, #fff);
+}
+.lab-roster-slot-sprite {
+  align-self: center;
+}
+.lab-roster-slot-empty {
+  align-items: center;
+  justify-content: flex-start;
+  border-style: dashed;
+  background: transparent;
+}
+.lab-roster-slot-inert {
+  opacity: 0.55;
+}
+.lab-roster-slot-ord {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  color: var(--lab-ink-muted);
+  letter-spacing: 0.08em;
+}
+.lab-roster-slot-hint {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--lab-ink-muted);
+  text-align: center;
+}
+.lab-roster-slot .lab-roster-species,
+.lab-roster-slot .lab-roster-item {
+  width: 100%;
+}
+.lab-roster-slot-empty .lab-roster-species {
+  width: 100%;
+}
 .lab-slot-empty {
   background: transparent;
   border: none;

@@ -5,10 +5,15 @@
 import { GREEDY_MAX_SWAPS, MF_MAX_ITERS, MF_TOL, TEAM_SIZE } from "../constants";
 import { greedyOptimize } from "../sampler/greedy";
 import { meanfieldMarginals } from "../sampler/meanfield";
+import { resolveSitePins } from "../sampler/energy";
 import type { GreedyChainEntry, IsingModel } from "../sampler/types";
 
 export interface FastPathInput {
   fixed: readonly number[];
+  /** Site-level pins (species fixed, item free). The greedy path has no reroll
+   * machinery, so each is resolved up front to its best placeable feature and
+   * then treated as an ordinary feature pin. */
+  fixedSites?: readonly number[];
   excludedSpecies: readonly string[]; // species-level
   fieldWeight: number;
 }
@@ -47,8 +52,21 @@ export function runFastPath(
   model: IsingModel,
   input: FastPathInput,
 ): { ok: true; result: FastPathResult } | { ok: false; error: FastPathError } {
-  const { fixed, fieldWeight } = input;
+  const { fieldWeight } = input;
   const excluded = expandExcludedSpecies(input.excludedSpecies, model);
+  // Resolve site pins to their best feature and treat them as feature pins.
+  const seeds = resolveSitePins(model, input.fixedSites ?? [], input.fixed, excluded);
+  if (seeds === null) {
+    return {
+      ok: false,
+      error: {
+        kind: "over_constrained",
+        message:
+          "Not enough available Pokemon to fill the team after applying constraints.",
+      },
+    };
+  }
+  const fixed = [...input.fixed, ...seeds];
   const kFree = TEAM_SIZE - fixed.length;
   if (kFree < 0) {
     return {

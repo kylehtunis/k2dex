@@ -138,6 +138,58 @@ export function initializeState(
   return null;
 }
 
+/** Resolve site-level pins (species fixed, track values free) to concrete seed
+ * features: for each site, its highest-marginal feature that is available and
+ * doesn't collide with the feature pins / earlier seeds on any unique track.
+ * Returns one feature per `fixedSites` entry (aligned), or null if some site has
+ * no placeable feature under the constraints.
+ *
+ * Used two ways: to seed the PT chains at site-pinned slots (where the seed's
+ * track values then reroll during sampling), and to resolve a site pin to an
+ * ordinary feature pin on the greedy fast path (which has no reroll machinery,
+ * so the seed stays put). */
+export function resolveSitePins(
+  model: IsingModel,
+  fixedSites: readonly number[],
+  fixedFeatures: readonly number[],
+  excluded: Iterable<number>,
+): number[] | null {
+  if (fixedSites.length === 0) return [];
+  const exSet = new Set<number>(excluded);
+  const usedSites = new Set<number>();
+  const usedTrack = model.tracks.map(() => new Set<string>());
+  const addUsed = (f: number) => {
+    usedSites.add(model.siteOf[f]);
+    for (let t = 0; t < model.tracks.length; t++) {
+      if (!model.tracks[t].unique) continue;
+      const v = model.trackValues[f][t];
+      if (v !== null) usedTrack[t].add(v);
+    }
+  };
+  for (const f of fixedFeatures) addUsed(f);
+  const seeds: number[] = [];
+  for (const site of fixedSites) {
+    if (usedSites.has(site)) return null; // site already taken by a feature pin / duplicate
+    let best = -1;
+    let bestM = -Infinity;
+    for (const f of model.siteFeatures[site]) {
+      if (exSet.has(f)) continue;
+      let conflict = false;
+      for (let t = 0; t < model.tracks.length; t++) {
+        if (!model.tracks[t].unique) continue;
+        const v = model.trackValues[f][t];
+        if (v !== null && usedTrack[t].has(v)) { conflict = true; break; }
+      }
+      if (conflict) continue;
+      if (model.m[f] > bestM) { bestM = model.m[f]; best = f; }
+    }
+    if (best < 0) return null;
+    seeds.push(best);
+    addUsed(best);
+  }
+  return seeds;
+}
+
 /** Build the list of vocab indices available to fill free team slots
  * (i.e. not fixed, not excluded). Convenience used by every sampler. */
 export function availableIndices(

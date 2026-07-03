@@ -48,6 +48,9 @@ BOLTZMANN_REG = "l2"                    # regularizer toward zero ("l1" or "l2")
 BOLTZMANN_REG_LAMBDA = 1e-3             # regularization strength (small: tightest moment
                                         # match; larger deliberately shrinks (J,h))
 BOLTZMANN_SEED = 0                      # PCD sampler RNG seed
+BOLTZMANN_SUPPORT_MIN_COUNT = 10        # species+item: only fit couplings for feature
+                                        # pairs co-occurring >= N times (freeze the rest
+                                        # at the PL warm-start). Part of the standard recipe.
 
 # --- Sample weighting (weighted base model) ---
 # Per-team fit weight: w = exp(-age_days / RECENCY_TAU_DAYS) * IN_PERSON_WEIGHT^[in-person],
@@ -56,7 +59,7 @@ RECENCY_TAU_DAYS = 30.0                # decay timescale in days; None = no rece
 IN_PERSON_WEIGHT = 1.0                 # multiplier on in-person teams; 1.0 = no upweight
 
 # --- Limitless ingest filter ---
-MIN_TEAMS_PER_TOURNAMENT = 16  # was 16; bump spreads corpus more temporally
+MIN_TEAMS_PER_TOURNAMENT = 32  # was 16; bump spreads corpus more temporally
                                # and indirectly filters small-tournament quirks
 
 # --- In-person tournament data ---

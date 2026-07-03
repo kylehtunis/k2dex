@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { IsingModel } from "../types";
 import { swapMcmc } from "../swap";
 import { parallelTemperedMcmc } from "../pt";
-import { unpackLowerTriangle, factoredFromSpeciesItem } from "../model";
+import { unpackLowerTriangle, factoredFromSpeciesItem, withInactiveTracks } from "../model";
 
 function buildSyntheticModel(): IsingModel {
   const V = 12;
@@ -110,6 +110,65 @@ describe("parallelTemperedMcmc smoke", () => {
     expect(result!.swapAccept).toBeGreaterThanOrEqual(0);
     expect(result!.swapAccept).toBeLessThanOrEqual(1);
     for (const team of result!.samples) assertValidTeam(team, model, fixed);
+  });
+});
+
+describe("parallelTemperedMcmc site pins", () => {
+  it("keeps the site-pinned species on every sample and stays valid", () => {
+    const model = buildSyntheticModel();
+    const result = parallelTemperedMcmc(model, {
+      fixed: [], fixedSites: [0], excluded: [], fieldWeight: 1.0,
+      tLadder: [1.0, 1.5, 2.5, 4.0],
+      nSteps: 400, burnIn: 100, swapInterval: 10, seed: 7,
+    });
+    expect(result).not.toBeNull();
+    for (const team of result!.samples) {
+      assertValidTeam(team, model, []);
+      // Site 0 (species "A") is present in every sample; the item may vary.
+      expect(team.some((i) => model.siteOf[i] === 0)).toBe(true);
+    }
+  });
+
+  it("combines a feature pin and a site pin", () => {
+    const model = buildSyntheticModel();
+    // Feature pin index 3 = "B @ y" (locked exactly); site pin site 3 = "D".
+    const result = parallelTemperedMcmc(model, {
+      fixed: [3], fixedSites: [3], excluded: [], fieldWeight: 1.0,
+      tLadder: [1.0, 2.0, 4.0],
+      nSteps: 300, burnIn: 50, swapInterval: 10, seed: 42,
+    });
+    expect(result).not.toBeNull();
+    for (const team of result!.samples) {
+      assertValidTeam(team, model, [3]);
+      expect(team.some((i) => model.siteOf[i] === 3)).toBe(true);
+    }
+  });
+});
+
+describe("species-only sampling (degenerate item track)", () => {
+  it("keeps species unique with no reroll; items may collide", () => {
+    const base = buildSyntheticModel();
+    const itemTrack = base.tracks.findIndex((t) => t.name === "item");
+    expect(itemTrack).toBeGreaterThanOrEqual(0);
+    // Deactivate the item track: it becomes degenerate (non-unique). With
+    // pReroll 0 the sampler never rerolls it; species-swaps still marginalize.
+    const model = withInactiveTracks(base, [itemTrack]);
+    const result = parallelTemperedMcmc(model, {
+      fixed: [], excluded: [], fieldWeight: 1.0,
+      tLadder: [1.0, 2.0, 4.0],
+      nSteps: 300, burnIn: 50, swapInterval: 10, seed: 3,
+      pReroll: 0,
+    });
+    expect(result).not.toBeNull();
+    for (const team of result!.samples) {
+      expect(team.length).toBe(model.teamSize);
+      // Species (site) uniqueness always holds; item uniqueness is relaxed.
+      const species = new Set<string>();
+      for (const i of team) {
+        expect(species.has(model.speciesOf[i])).toBe(false);
+        species.add(model.speciesOf[i]);
+      }
+    }
   });
 });
 

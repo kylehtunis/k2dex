@@ -14,7 +14,7 @@
 
 import type { IsingModel, PTResult, TeamIndices } from "./types";
 import { Rng } from "./rng";
-import { availableIndices, buildConstraintSets } from "./energy";
+import { availableIndices, buildConstraintSets, resolveSitePins } from "./energy";
 import { initChain, snapshotTeam } from "./swap";
 import type { ChainState } from "./swap";
 import {
@@ -36,6 +36,10 @@ export interface PTOpts {
   /** Probability an item-track model rerolls (vs species-swaps) each sweep.
    * Ignored for species-only models. Default 0.5. */
   pReroll?: number;
+  /** Site-level pins (species fixed, track values free). Each is seeded to its
+   * best placeable feature, then its slot is locked against species-swaps but
+   * still rerolled. Empty = feature-level pins only. */
+  fixedSites?: readonly number[];
 }
 
 export function parallelTemperedMcmc(
@@ -46,21 +50,32 @@ export function parallelTemperedMcmc(
   const rng = new Rng(opts.seed);
   const K = opts.tLadder.length;
 
+  // Resolve site-level pins to concrete seed features (species fixed, item
+  // free). They occupy free slots that are locked against species-swaps but
+  // still rerolled; the remaining slots fill randomly.
+  const seeds = resolveSitePins(model, opts.fixedSites ?? [], opts.fixed, opts.excluded);
+  if (seeds === null) return null;
+
   const available = availableIndices(model, opts.fixed, opts.excluded);
-  const nToFill = teamSize - opts.fixed.length;
-  if (available.length < nToFill) return null;
+  const nToFill = teamSize - opts.fixed.length - seeds.length;
+  if (nToFill < 0 || available.length < nToFill) return null;
 
   const hEff = new Float64Array(V);
   for (let i = 0; i < V; i++) hEff[i] = opts.fieldWeight * h[i];
 
-  const constraints = buildConstraintSets(opts.fixed, model);
+  // The random fill must avoid the feature pins' AND the seeds' sites/values.
+  const constraints = buildConstraintSets([...opts.fixed, ...seeds], model);
 
-  // Potts move context: site tables, availability mask, and the fixed pins.
+  // Potts move context: site tables, availability mask, fixed pins, and the
+  // site-pinned slot indices (0..seeds.length-1, front of onNf).
   const tables = buildSiteTables(model);
   const avail = new Uint8Array(V).fill(1);
   for (const e of opts.excluded) avail[e] = 0;
   for (const f of opts.fixed) avail[f] = 0; // pinned features are retained, never re-placed
-  const ctx: PottsContext = { fixed: opts.fixed, avail, tables };
+  // Seed features are NOT masked off: their slot rerolls among the site's items.
+  const lockedSlots = new Set<number>();
+  for (let i = 0; i < seeds.length; i++) lockedSlots.add(i);
+  const ctx: PottsContext = { fixed: opts.fixed, avail, tables, lockedSlots };
   const hasTracks = model.tracks.length > 0;
   const pReroll = opts.pReroll ?? 0.5;
 
@@ -74,6 +89,7 @@ export function parallelTemperedMcmc(
       constraints,
       hEff,
       rng,
+      seeds,
     );
     if (c === null) return null;
     chains.push(c);

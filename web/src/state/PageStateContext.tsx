@@ -21,8 +21,23 @@ import {
 } from "../constants";
 import { useModel } from "./ModelContext";
 
+/** One filled roster slot. `feature` is the flat vocab index when the user has
+ * pinned a specific item (a feature pin); `null` when only the species is
+ * chosen and the completer fills the item (a site pin). */
+export interface RosterSlot {
+  site: number;
+  feature: number | null;
+}
+
 export interface CompleterInputs {
-  fixedIdxs: number[];
+  /** Ordered roster: the source of truth for the 6-slot editor. Feature pins
+   * (`feature != null`) and site pins (`feature == null`) are derived from it
+   * for the sampler; empty slots are simply the absence of an entry. */
+  roster: RosterSlot[];
+  /** Deactivated attribute tracks (indices into model.tracks). A deactivated
+   * track is degenerate: not pinned to a value, not rerolled, marginalized out
+   * of the completions, and hidden. Empty = all attributes active. */
+  inactiveTracks: number[];
   excludedSpecies: string[];
   fieldWeight: number;
   temperature: number;
@@ -39,7 +54,8 @@ export interface AnalysisInputs {
 }
 
 const COMPLETER_DEFAULTS: CompleterInputs = {
-  fixedIdxs: [],
+  roster: [],
+  inactiveTracks: [],
   excludedSpecies: [],
   fieldWeight: 0.5,
   temperature: 0.5,

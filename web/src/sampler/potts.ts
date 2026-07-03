@@ -144,6 +144,10 @@ export interface PottsContext {
   /** Length-V mask, 1 where a feature may be placed (not excluded). */
   avail: Uint8Array;
   tables: SiteTables;
+  /** onNf slot indices whose species is site-pinned: the species never swaps,
+   * but the item track still rerolls. Empty/undefined = no site pins (the
+   * species-swap then considers every free slot, exactly as before). */
+  lockedSlots?: ReadonlySet<number>;
 }
 
 /** The retained team (all on-team features except the slot at `onNfPos` of the
@@ -217,6 +221,8 @@ export function pottsSpeciesSwap(
   const { siteOf } = model;
 
   const outK = rng.integers(chain.onNf.length);
+  // Site-pinned slots keep their species; only their item track rerolls.
+  if (ctx.lockedSlots?.has(outK)) return { proposed: false, accepted: false };
   const outFeat = chain.onNf[outK];
   const siteA = siteOf[outFeat];
   const { rFeat, rItemId } = retained(chain, outK, ctx, tables);

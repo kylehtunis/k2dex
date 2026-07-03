@@ -28,6 +28,8 @@ export interface PTRequest {
     trackValues: readonly (readonly (string | null)[])[];
   };
   fixed: readonly number[];
+  /** Site-level pins (species fixed, item free to reroll). */
+  fixedSites?: readonly number[];
   excluded: readonly number[];
   fieldWeight: number;
   /** Cold target T (smallest), at index 0 in the rebuilt ladder. */
@@ -44,6 +46,10 @@ export interface PTRequest {
   seed: number;
   /** Item-track reroll probability per sweep (ignored for species-only). */
   pReroll?: number;
+  /** Aggregate completions by species (site) set instead of by full feature
+   * set — used when an attribute is deactivated, to marginalize it out. Each
+   * bucket keeps its most-frequent real feature-team as the representative. */
+  projectToSites?: boolean;
 }
 
 export interface PTResponse {
@@ -90,6 +96,47 @@ function aggregate(
   return { dist, nKept: total };
 }
 
+/** Like `aggregate`, but buckets by the team's species (site) set — the item(s)
+ * are marginalized out. Each bucket's `team` is its most-frequent real
+ * feature-team (a genuine sampled completion), so downstream observables and
+ * corpus lookups stay meaningful; the UI hides the item column. */
+function aggregateBySite(
+  allSamples: TeamIndices[][],
+  siteOf: readonly number[],
+): { dist: Array<{ team: number[]; count: number }>; nKept: number } {
+  interface Bucket {
+    count: number;
+    reps: Map<string, { team: number[]; count: number }>;
+  }
+  const buckets = new Map<string, Bucket>();
+  let total = 0;
+  for (const samples of allSamples) {
+    for (const team of samples) {
+      total++;
+      const sorted = [...team].sort((a, b) => a - b);
+      const siteKey = sorted.map((i) => siteOf[i]).sort((a, b) => a - b).join(",");
+      let bucket = buckets.get(siteKey);
+      if (!bucket) {
+        bucket = { count: 0, reps: new Map() };
+        buckets.set(siteKey, bucket);
+      }
+      bucket.count++;
+      const featKey = sorted.join(",");
+      const rep = bucket.reps.get(featKey);
+      if (rep) rep.count++;
+      else bucket.reps.set(featKey, { team: sorted, count: 1 });
+    }
+  }
+  const dist = [...buckets.values()]
+    .map((b) => {
+      let best = { team: [] as number[], count: -1 };
+      for (const rep of b.reps.values()) if (rep.count > best.count) best = rep;
+      return { team: best.team, count: b.count };
+    })
+    .sort((a, b) => b.count - a.count);
+  return { dist, nKept: total };
+}
+
 self.onmessage = (e: MessageEvent<PTRequest>) => {
   const req = e.data;
   try {
@@ -129,6 +176,7 @@ self.onmessage = (e: MessageEvent<PTRequest>) => {
     for (let run = 0; run < req.nRuns; run++) {
       const res = parallelTemperedMcmc(model, {
         fixed: req.fixed,
+        fixedSites: req.fixedSites,
         excluded: req.excluded,
         fieldWeight: req.fieldWeight,
         tLadder: ladder,
@@ -150,7 +198,9 @@ self.onmessage = (e: MessageEvent<PTRequest>) => {
       localAcceptSum += res.localAccept;
       swapAcceptSum += res.swapAccept;
     }
-    const { dist, nKept } = aggregate(allSamples);
+    const { dist, nKept } = req.projectToSites
+      ? aggregateBySite(allSamples, md.siteOf)
+      : aggregate(allSamples);
     const reply: PTResponse = {
       ok: true,
       dist,

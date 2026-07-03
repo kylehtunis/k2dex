@@ -42,7 +42,14 @@ export interface SwapMcmcOpts {
 
 /** Build a ChainState with `fixed` clamped on and `nToFill` free slots
  * filled via uniqueness-respecting initialization. Returns null if no
- * valid initial state can be built (e.g., user over-constrained items). */
+ * valid initial state can be built (e.g., user over-constrained items).
+ *
+ * `preOn` features are pre-placed at the front of `onNf` (the site-pin seeds):
+ * they occupy free slots — on the team and free to reroll their track values —
+ * but the caller (pt.ts) marks their slot indices `lockedSlots` so the species
+ * never swaps. Placing them first makes those slot indices a stable `0..L-1`
+ * across every chain. `constraints` must already account for their sites/values
+ * so the `nToFill` random fill doesn't collide with them. */
 export function initChain(
   model: IsingModel,
   fixed: readonly number[],
@@ -51,31 +58,24 @@ export function initChain(
   constraints: ConstraintSets,
   hEff: Float64Array,
   rng: Rng,
+  preOn: readonly number[] = [],
 ): ChainState | null {
   const { V, J } = model;
   const state = new Uint8Array(V);
   for (const i of fixed) state[i] = 1;
+  for (const i of preOn) state[i] = 1;
 
-  let onNf: number[];
-  let offNf: number[];
+  let init: number[] = [];
   if (nToFill > 0) {
-    const init = initializeState(
-      available,
-      nToFill,
-      constraints,
-      model,
-      rng,
-    );
-    if (init === null) return null;
+    const filled = initializeState(available, nToFill, constraints, model, rng);
+    if (filled === null) return null;
+    init = filled;
     for (const i of init) state[i] = 1;
-    onNf = init;
-    const onSet = new Set(init);
-    offNf = [];
-    for (const i of available) if (!onSet.has(i)) offNf.push(i);
-  } else {
-    onNf = [];
-    offNf = [];
   }
+  const onNf = [...preOn, ...init];
+  const onSet = new Set(onNf);
+  const offNf: number[] = [];
+  for (const i of available) if (!onSet.has(i)) offNf.push(i);
 
   const stateF = new Float64Array(V);
   for (let i = 0; i < V; i++) stateF[i] = state[i];

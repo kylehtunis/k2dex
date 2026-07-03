@@ -19,20 +19,25 @@ Float32 is sufficient for J/h/m at our scale (values O(1e-3..5),
 regularized, no accumulating round-off). Lower-triangle packing halves
 J's bytes; the JS loader reconstructs the symmetric matrix on init.
 
+One artifact per (regulation, type) cell. `type` is a product-tier build recipe
+(today only "standard": a species+item Boltzmann fit with the constants.py
+defaults), applied uniformly across regulations. The slug is derived as
+`reg-<regulation>` for the standard tier.
+
 Usage:
-    # Build one model at a time:
-    python precompute.py --display-name "Reg M-A Species @ Item" --regulation M-A --type species_item
-    python precompute.py --display-name "Reg M-A Species" --regulation M-A --type species
+    # Build one model (standard type implied):
+    python precompute.py --build --regulation M-A
+    python precompute.py --build --regulation M-B --new
 
-    # Override regularization (default: lambda=10 for species, lambda=1 for species_item):
-    python precompute.py --display-name "Reg M-B Species" --regulation M-B --type species --lambda 5.0
+    # Override the fit recipe if needed (advanced/dev only):
+    python precompute.py --build --regulation M-A --lambda 5.0 --bz-iters 2000
 
-    # Weighted fit (recency decay + in-person upweight; values from weighting_sweep.ipynb):
-    python precompute.py --display-name "Reg M-A Species @ Item" --type species_item --tau 90 --in-person-weight 2.0
+    # Rebuild every committed model from its stored meta.json, then refresh manifest:
+    python precompute.py --recompute
 
-    # Generate manifest after all models are built:
+    # Generate manifest after models are built:
     python precompute.py --generate-manifest
-    python precompute.py --generate-manifest --default-model reg-m-a-species-item
+    python precompute.py --generate-manifest --default-model reg-m-b
 """
 from __future__ import annotations
 
@@ -60,6 +65,7 @@ from k2dex.constants import (
     BOLTZMANN_REG,
     BOLTZMANN_REG_LAMBDA,
     BOLTZMANN_SEED,
+    BOLTZMANN_SUPPORT_MIN_COUNT,
     BOLTZMANN_SWAP_INTERVAL,
     BOLTZMANN_T_MAX,
     CURRENT_REGULATION,
@@ -83,6 +89,61 @@ DEFAULT_LAMBDA = {
     "species": SPECIES_LR_LAMBDA,
     "species_item": SPECIES_ITEM_LR_LAMBDA,
 }
+
+# Product-tier model types. A closed enum: each names a build *recipe* applied
+# uniformly across every regulation, orthogonal to the regulation (= which sites
+# and tracks are legal). Today only "standard" exists; a monetized "pro" tier may
+# join later. This is distinct from the retired feature-dimension --type (species
+# vs species_item), which the factored schema + attribute toggle made obsolete:
+# the standard recipe is always the species+item build, and the species-only
+# experience is a UI toggle, not a separate artifact.
+PRODUCT_TYPES = ("standard",)
+
+# Description of each type, shared across regulations. Surfaced in the manifest's
+# `types` block (per-model provenance is derived from each meta.json instead).
+TYPE_DESCRIPTIONS: dict[str, str] = {
+    "standard": (
+        "Fit on all recorded tournament rosters, weighting recent teams and "
+        "those brought to in-person events. The recommended model."
+    ),
+}
+
+# The builder + fit method each product type resolves to. The standard tier is a
+# moment-matching Boltzmann fit on species+item features (see the plan: on-the-fly
+# track marginalization is only faithful when the model's marginals match the data).
+TYPE_BUILDER = {"standard": "species_item"}
+TYPE_METHOD = {"standard": "boltzmann"}
+
+
+def model_slug(regulation: str, product_type: str) -> str:
+    """Artifact id/slug for a (regulation, type) cell.
+
+    'reg-<regulation>' for the standard tier; 'reg-<regulation>-<type>' for any
+    future tier, so the standard model keeps the clean per-regulation slug.
+    """
+    base = f"reg-{slugify(regulation)}"
+    return base if product_type == "standard" else f"{base}-{slugify(product_type)}"
+
+
+def default_boltzmann_opts() -> dict:
+    """The standard Boltzmann recipe, read from the BOLTZMANN_* constants (the
+    single source of truth). CLI --bz-* flags override individual knobs."""
+    return {
+        "n_iters": BOLTZMANN_N_ITERS,
+        "lr": BOLTZMANN_LR,
+        "lr_final": BOLTZMANN_LR_FINAL,
+        "avg_last": BOLTZMANN_AVG_LAST,
+        "n_chains": BOLTZMANN_N_CHAINS,
+        "n_sweeps": BOLTZMANN_N_SWEEPS,
+        "n_burn": BOLTZMANN_N_BURN,
+        "n_temps": BOLTZMANN_N_TEMPS,
+        "t_max": BOLTZMANN_T_MAX,
+        "swap_interval": BOLTZMANN_SWAP_INTERVAL,
+        "reg": BOLTZMANN_REG,
+        "reg_lambda": BOLTZMANN_REG_LAMBDA,
+        "seed": BOLTZMANN_SEED,
+        "support_min_count": BOLTZMANN_SUPPORT_MIN_COUNT,
+    }
 
 
 def slugify(display_name: str) -> str:
@@ -145,10 +206,11 @@ def write_model(
     slug: str,
     display_name: str,
     regulation: str,
-    model_type: str,
+    builder_type: str,
     lam: float,
     out_dir: Path,
     *,
+    product_type: str = "standard",
     description: str | None = None,
     min_team_count: int = PHASE2_MIN_TEAM_COUNT,
     recency_tau: float | None = RECENCY_TAU_DAYS,
@@ -171,7 +233,7 @@ def write_model(
     if description:
         print(f"  description: {description}")
     print(f"  regulation: {regulation}")
-    print(f"  type: {model_type}")
+    print(f"  type: {product_type} (builder: {builder_type})")
     print(f"  method: {method}")
     print(f"  lambda: {lam}")
     if method == "boltzmann" and boltzmann_opts:
@@ -182,7 +244,7 @@ def write_model(
         print(f"  prior_regulation: {prior_regulation} "
               f"(intercept_prior_weight={intercept_prior_weight})")
 
-    builder = MODEL_BUILDERS[model_type]
+    builder = MODEL_BUILDERS[builder_type]
     vocab, m, J, h, team_counts, species_of, item_of, latest_date = builder(
         regulation=regulation,
         min_team_count=min_team_count,
@@ -233,6 +295,7 @@ def write_model(
         "id": slug,
         "display_name": display_name,
         "regulation": regulation,
+        "type": product_type,
         "feature_dimensions": feature_dimensions,
         "latest_tournament_date": latest_date,
         "V": V,
@@ -286,16 +349,26 @@ def write_model(
 
 
 def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> None:
-    """Scan model directories and write manifest.json."""
+    """Scan model directories and write manifest.json.
+
+    Manifest schema v3 is a (regulation, type) grid: one entry per model, each
+    tagged with its regulation and product `type`. Descriptions live once per
+    type in a shared `types` block (not per model); everything else in a model
+    entry is derived provenance read straight from its meta.json.
+    """
     models = []
+    types_present: set[str] = set()
     for meta_path in sorted(out_dir.glob("*/meta.json")):
         with open(meta_path) as f:
             meta = json.load(f)
         slug = meta.get("id", meta.get("name", meta_path.parent.name))
+        product_type = meta.get("type", "standard")
+        types_present.add(product_type)
         entry: dict = {
             "id": slug,
             "display_name": meta.get("display_name", slug),
             "regulation": meta.get("regulation", ""),
+            "type": product_type,
             "feature_dimensions": meta.get("feature_dimensions", 1),
             "V": meta["V"],
             "n_corpus_teams": meta["n_corpus_teams"],
@@ -303,8 +376,6 @@ def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> Non
             "team_size": meta.get("team_size", TEAM_SIZE),
             "tracks": meta.get("tracks", []),
         }
-        if "description" in meta:
-            entry["description"] = meta["description"]
         if meta.get("new"):
             entry["new"] = True
         models.append(entry)
@@ -317,13 +388,25 @@ def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> Non
         valid = ", ".join(m["id"] for m in models)
         print(f"error: --default-model {default_model!r} not found. Valid slugs: {valid}")
         sys.exit(1)
-    resolved_default = default_model if default_model is not None else models[0]["id"]
+    # Default to the current regulation's standard model when unspecified.
+    if default_model is not None:
+        resolved_default = default_model
+    else:
+        preferred = model_slug(CURRENT_REGULATION, "standard")
+        resolved_default = preferred if any(m["id"] == preferred for m in models) else models[0]["id"]
 
     models.sort(key=lambda m: m["id"] != resolved_default)
 
+    types = {
+        t: {"description": TYPE_DESCRIPTIONS[t]}
+        for t in sorted(types_present)
+        if t in TYPE_DESCRIPTIONS
+    }
+
     manifest = {
-        "schema_version": 2,
+        "schema_version": 3,
         "default_model": resolved_default,
+        "types": types,
         "models": models,
     }
     manifest_path = out_dir / "manifest.json"
@@ -373,8 +456,8 @@ def recompute_all(
         if regulation_filter is not None and reg != regulation_filter:
             print(f"  skip {meta_path.parent.name}: regulation {reg!r} != {regulation_filter!r}")
             continue
-        model_type = type_by_dim.get(meta.get("feature_dimensions", 1))
-        if model_type is None:
+        builder_type = type_by_dim.get(meta.get("feature_dimensions", 1))
+        if builder_type is None:
             print(f"  skip {meta_path.parent.name}: unknown feature_dimensions")
             continue
         fit = meta.get("fit", {})
@@ -384,9 +467,10 @@ def recompute_all(
             slug=slug,
             display_name=meta.get("display_name", slug),
             regulation=meta.get("regulation", CURRENT_REGULATION),
-            model_type=model_type,
-            lam=fit.get("lambda", DEFAULT_LAMBDA[model_type]),
+            builder_type=builder_type,
+            lam=fit.get("lambda", DEFAULT_LAMBDA[builder_type]),
             out_dir=out_dir,
+            product_type=meta.get("type", "standard"),
             description=meta.get("description"),
             min_team_count=fit.get("min_team_count", PHASE2_MIN_TEAM_COUNT),
             recency_tau=fit.get("recency_tau_days", RECENCY_TAU_DAYS),
@@ -401,12 +485,16 @@ def recompute_all(
         )
 
     # V / n_corpus_teams can move, so refresh the manifest. Preserve the
-    # existing default unless one was passed explicitly.
+    # existing default unless one was passed explicitly. Drop a stale default
+    # (e.g. a retired split-model id after the schema collapse) so
+    # generate_manifest re-resolves it instead of erroring.
     if default_model is None:
         manifest_path = out_dir / "manifest.json"
         if manifest_path.exists():
             with open(manifest_path) as f:
-                default_model = json.load(f).get("default_model")
+                stored_default = json.load(f).get("default_model")
+            if stored_default and (out_dir / stored_default / "meta.json").exists():
+                default_model = stored_default
     print()
     generate_manifest(out_dir, default_model=default_model)
 
@@ -424,14 +512,16 @@ def main() -> int:
 
     group = parser.add_argument_group("model build (one model per invocation)")
     group.add_argument(
-        "--display-name",
-        help="Human-readable model name (e.g. 'Reg M-A Species @ Item'). "
-             "The directory slug is auto-generated from this.",
+        "--build",
+        action="store_true",
+        help="Build one model for --regulation / --type. The slug is derived from "
+             "the (regulation, type) cell (e.g. 'reg-m-a'); no --display-name needed.",
     )
     group.add_argument(
-        "--description",
+        "--display-name",
         default=None,
-        help="Optional short description shown in the model picker.",
+        help="Optional display-name override (default: derived as 'Reg. <regulation>'). "
+             "Does not affect the slug, which comes from (regulation, type).",
     )
     group.add_argument(
         "--regulation",
@@ -440,9 +530,12 @@ def main() -> int:
     )
     group.add_argument(
         "--type",
-        choices=list(MODEL_BUILDERS),
-        dest="model_type",
-        help="Model type: 'species' or 'species_item'.",
+        choices=list(PRODUCT_TYPES),
+        dest="product_type",
+        default="standard",
+        help="Product-tier model type (default: standard). A build recipe applied "
+             "uniformly across regulations, distinct from the retired species vs "
+             "species_item feature-dimension meaning.",
     )
     group.add_argument(
         "--lambda",
@@ -456,9 +549,10 @@ def main() -> int:
     group.add_argument(
         "--method",
         choices=["pseudo_likelihood", "boltzmann"],
-        default="pseudo_likelihood",
-        help="Fit method. 'boltzmann' warm-starts from the PL fit and refines it "
-             "by constrained-MaxEnt moment matching. Recorded in meta.json:fit.",
+        default=None,
+        help="Fit method override. Defaults to the product type's method "
+             "(standard -> boltzmann). 'boltzmann' warm-starts from the PL fit and "
+             "refines it by constrained-MaxEnt moment matching. Recorded in meta.json:fit.",
     )
     group.add_argument(
         "--tau",
@@ -549,10 +643,11 @@ def main() -> int:
                           help=f"Regularizer toward zero (default: {BOLTZMANN_REG}).")
     bz_group.add_argument("--bz-reg-lambda", type=float, default=BOLTZMANN_REG_LAMBDA,
                           help=f"Regularization strength (default: {BOLTZMANN_REG_LAMBDA}).")
-    bz_group.add_argument("--bz-support-min-count", type=int, default=None,
-                          help="If set, only fit couplings for feature pairs that "
-                               "co-occur >= N times in the corpus (freezes the rest "
-                               "at the PL warm-start). Recommended for species_item.")
+    bz_group.add_argument("--bz-support-min-count", type=int,
+                          default=BOLTZMANN_SUPPORT_MIN_COUNT,
+                          help="Only fit couplings for feature pairs that co-occur >= N "
+                               "times in the corpus (freezes the rest at the PL warm-start). "
+                               f"Default: {BOLTZMANN_SUPPORT_MIN_COUNT}. Pass 0 to fit all pairs.")
     bz_group.add_argument("--bz-seed", type=int, default=BOLTZMANN_SEED,
                           help=f"RNG seed for the PCD sampler (default: {BOLTZMANN_SEED}).")
 
@@ -590,14 +685,20 @@ def main() -> int:
         print("\nDone. Inspect artifacts before committing.")
         return 0
 
-    if not args.display_name or not args.model_type:
-        parser.error("--display-name and --type are required for model builds.")
+    if not args.build:
+        parser.error(
+            "no action given. Use --build (single model), --recompute, or "
+            "--generate-manifest.")
 
-    slug = slugify(args.display_name)
-    lam = args.lam if args.lam is not None else DEFAULT_LAMBDA[args.model_type]
+    product_type = args.product_type
+    builder_type = TYPE_BUILDER[product_type]
+    method = args.method if args.method is not None else TYPE_METHOD[product_type]
+    slug = model_slug(args.regulation, product_type)
+    display_name = args.display_name or f"Reg. {args.regulation}"
+    lam = args.lam if args.lam is not None else DEFAULT_LAMBDA[builder_type]
 
     boltzmann_opts: dict | None = None
-    if args.method == "boltzmann":
+    if method == "boltzmann":
         boltzmann_opts = {
             "n_iters": args.bz_iters,
             "lr": args.bz_lr,
@@ -615,18 +716,18 @@ def main() -> int:
             "reg_lambda": args.bz_reg_lambda,
             "seed": args.bz_seed,
         }
-        if args.bz_support_min_count is not None:
+        if args.bz_support_min_count and args.bz_support_min_count > 0:
             boltzmann_opts["support_min_count"] = args.bz_support_min_count
 
     print(f"Output root: {out_dir}")
     write_model(
         slug=slug,
-        display_name=args.display_name,
+        display_name=display_name,
         regulation=args.regulation,
-        model_type=args.model_type,
+        builder_type=builder_type,
         lam=lam,
         out_dir=out_dir,
-        description=args.description,
+        product_type=product_type,
         min_team_count=args.min_team_count,
         recency_tau=args.recency_tau,
         in_person_weight=args.in_person_weight,
@@ -635,7 +736,7 @@ def main() -> int:
         is_new=args.is_new,
         prior_regulation=args.prior_regulation,
         intercept_prior_weight=args.intercept_prior_weight,
-        method=args.method,
+        method=method,
         boltzmann_opts=boltzmann_opts,
     )
 

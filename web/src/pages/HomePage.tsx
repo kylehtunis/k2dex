@@ -17,8 +17,8 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
 
-function dimTag(fd: number): string {
-  return fd === 1 ? "Species only" : "With held items";
+function typeTag(type: string): string {
+  return type.charAt(0).toUpperCase() + type.slice(1);
 }
 
 function ModelCard({
@@ -42,7 +42,7 @@ function ModelCard({
       {m.isNew && <span className="lab-new-badge lab-home-model-new-badge">New</span>}
       <div className="lab-home-model-card-header">
         <span className="lab-home-model-card-label">{m.displayName}</span>
-        <span className="lab-home-model-card-tag">{dimTag(m.featureDimensions)}</span>
+        <span className="lab-home-model-card-tag">{typeTag(m.type)}</span>
       </div>
       <div className="lab-home-model-card-footer">
         <span className="lab-home-model-stats">

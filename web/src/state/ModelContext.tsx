@@ -36,20 +36,32 @@ const ModelContext = createContext<ModelContextValue | null>(null);
 const STORAGE_KEY = "k2dex.modelId";
 const LEGACY_STORAGE_KEY = "k2dex.phaseKey";
 
+// Retired split-model ids -> the unified per-regulation model. After the
+// schema collapse each regulation has exactly one artifact, so a returning
+// visitor's stored id (or legacy /science phaseKey) maps to its regulation.
 const LEGACY_MODEL_MAP: Record<string, string> = {
-  species: "reg-m-a-species",
-  species_item: "reg-m-a-species-item",
+  species: "reg-m-a",
+  species_item: "reg-m-a",
+  "reg-m-a-species": "reg-m-a",
+  "reg-m-a-species-item": "reg-m-a",
+  "reg-m-a-species-item-weighted": "reg-m-a",
+  "reg-m-b-experimental": "reg-m-b",
+  "reg-m-b-species-item-boltzmann": "reg-m-b",
 };
 
 function readStoredModelId(manifest: Manifest): string {
+  const inManifest = (id: string) => manifest.models.some((m) => m.id === id);
   try {
     const v = localStorage.getItem(STORAGE_KEY);
-    if (v && manifest.models.some((m) => m.id === v)) return v;
+    if (v) {
+      if (inManifest(v)) return v;
+      const remapped = LEGACY_MODEL_MAP[v];
+      if (remapped && inManifest(remapped)) return remapped;
+    }
 
     const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-    if (legacy && LEGACY_MODEL_MAP[legacy]) {
-      const mapped = LEGACY_MODEL_MAP[legacy];
-      if (manifest.models.some((m) => m.id === mapped)) return mapped;
+    if (legacy && LEGACY_MODEL_MAP[legacy] && inManifest(LEGACY_MODEL_MAP[legacy])) {
+      return LEGACY_MODEL_MAP[legacy];
     }
   } catch { /* localStorage may be unavailable */ }
   return manifest.defaultModel;

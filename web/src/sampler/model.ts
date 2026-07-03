@@ -144,6 +144,25 @@ export function deriveFactored(
   return { siteFeatures, speciesOf, itemOf };
 }
 
+/** A sampling view of `model` with the given tracks made degenerate (their
+ * `unique` flag cleared). The attribute toggle uses this: a deactivated track
+ * carries no uniqueness constraint and the sampler doesn't reroll it (the
+ * caller also sets pReroll=0), so the species-swap conditional sums over its
+ * values freely — the exact marginal over that attribute. Only `tracks` is
+ * changed; every other field (J/h/siteFeatures/…) is shared. Returns `model`
+ * unchanged when nothing is deactivated. */
+export function withInactiveTracks(
+  model: IsingModel,
+  inactive: readonly number[],
+): IsingModel {
+  if (inactive.length === 0) return model;
+  const set = new Set(inactive);
+  return {
+    ...model,
+    tracks: model.tracks.map((t, i) => (set.has(i) ? { ...t, unique: false } : t)),
+  };
+}
+
 /** Load all four model artifacts in parallel. `basePath` is the URL
  * prefix that contains `<modelName>/{meta.json,J.bin,h.bin,m.bin}`;
  * defaults to "models" which combines with Vite's `base` to resolve

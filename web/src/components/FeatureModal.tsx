@@ -320,12 +320,15 @@ function FeatureActions({
   onClose,
 }: ActionsProps) {
   if (pathname.includes("/completer")) {
-    const pinned = completer.fixedIdxs.includes(idx);
-    const rosterFull = completer.fixedIdxs.length >= TEAM_SIZE;
+    const site = model.siteOf[idx];
+    const pinnedExact = completer.roster.some((s) => s.feature === idx);
+    const speciesInRoster = completer.roster.some((s) => s.site === site);
+    const rosterFull = completer.roster.length >= TEAM_SIZE;
     const excluded = completer.excludedSpecies.includes(species);
     const pin = () => {
+      // Pin this exact build (species + item) as a roster slot.
       setCompleter({
-        fixedIdxs: [...completer.fixedIdxs, idx],
+        roster: [...completer.roster, { site, feature: idx }],
         excludedSpecies: completer.excludedSpecies.filter((s) => s !== species),
       });
       onClose();
@@ -333,9 +336,7 @@ function FeatureActions({
     const exclude = () => {
       setCompleter({
         excludedSpecies: [...completer.excludedSpecies, species],
-        fixedIdxs: completer.fixedIdxs.filter(
-          (i) => model.speciesOf[i] !== species,
-        ),
+        roster: completer.roster.filter((s) => model.sites[s.site] !== species),
       });
       onClose();
     };
@@ -345,9 +346,9 @@ function FeatureActions({
           type="button"
           className="lab-button-primary lab-feature-action"
           onClick={pin}
-          disabled={pinned || rosterFull}
+          disabled={pinnedExact || rosterFull || speciesInRoster}
         >
-          {pinned ? "Pinned to roster" : "Pin to roster"}
+          {pinnedExact ? "Pinned to roster" : "Pin to roster"}
         </button>
         <button
           type="button"
