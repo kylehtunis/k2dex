@@ -6,8 +6,8 @@
 // species and item are separate dimensions, and "unspecified" is the default
 // (not an explicit "any item" choice).
 
-import { useMemo } from "react";
-import Select, { type SingleValue } from "react-select";
+import { useEffect, useMemo, useRef } from "react";
+import Select, { type SelectInstance, type SingleValue } from "react-select";
 import type { IsingModel } from "../sampler/types";
 import type { RosterSlot } from "../state/PageStateContext";
 import { SpriteBox } from "../render/Sprite";
@@ -63,17 +63,53 @@ export function RosterEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, sitePop, usedKey]);
 
+  // Per-slot select instances, so a species pick can jump the cursor to its
+  // item picker and a clear can send it back to the species picker. Populated
+  // by ref callbacks; entries null out on unmount.
+  const speciesRefs = useRef<(SelectInstance<Opt> | null)[]>([]);
+  const itemRefs = useRef<(SelectInstance<Opt> | null)[]>([]);
+  const pendingFocus = useRef<{ kind: "species" | "item"; slot: number } | null>(null);
+
+  // After a roster change re-renders, apply the queued focus. The target
+  // mounts in the same commit, so its ref is set before this effect runs;
+  // attempt once and clear so a stale target can't grab focus on a later
+  // unrelated render.
+  useEffect(() => {
+    const p = pendingFocus.current;
+    if (!p) return;
+    pendingFocus.current = null;
+    const inst = p.kind === "item" ? itemRefs.current[p.slot] : speciesRefs.current[p.slot];
+    inst?.focus();
+  });
+
+  // After choosing a species, jump to that slot's item picker; with no item
+  // track, jump to the next species picker (the next mon / the add slot).
+  const focusAfterSpecies = (slot: number) => {
+    pendingFocus.current = itemActive
+      ? { kind: "item", slot }
+      : slot + 1 < teamSize
+        ? { kind: "species", slot: slot + 1 }
+        : null;
+  };
+
   const setSpecies = (slot: number, site: number | null) => {
     if (site === null) {
+      // Clearing a slot removes the mon; send focus to the species picker that
+      // now occupies this index (next mon shifted up, or the add slot).
+      pendingFocus.current = { kind: "species", slot };
       onChange(roster.filter((_, i) => i !== slot));
     } else {
       // New species → item resets to unset (items are species-specific).
+      focusAfterSpecies(slot);
       onChange(roster.map((s, i) => (i === slot ? { site, feature: null } : s)));
     }
   };
   const setItem = (slot: number, feature: number | null) =>
     onChange(roster.map((s, i) => (i === slot ? { ...s, feature } : s)));
-  const addSpecies = (site: number) => onChange([...roster, { site, feature: null }]);
+  const addSpecies = (site: number) => {
+    focusAfterSpecies(roster.length);
+    onChange([...roster, { site, feature: null }]);
+  };
 
   const slots = [];
   for (let i = 0; i < teamSize; i++) {
@@ -81,10 +117,13 @@ export function RosterEditor({
       const slot = roster[i];
       const spriteName =
         slot.feature !== null ? model.vocab[slot.feature] : model.sites[slot.site];
-      const itemOptions: Opt[] = model.siteFeatures[slot.site].map((f) => ({
-        label: itemLabel(model, f),
-        value: `${f}`,
-      }));
+      const itemOptions: Opt[] = model.siteFeatures[slot.site]
+        .slice()
+        .sort((a, b) => model.m[b] - model.m[a])
+        .map((f) => ({
+          label: itemLabel(model, f),
+          value: `${f}`,
+        }));
       const itemValue: Opt | null =
         slot.feature !== null
           ? { label: itemLabel(model, slot.feature), value: `${slot.feature}` }
@@ -93,12 +132,17 @@ export function RosterEditor({
         <div className="lab-roster-slot" key={`slot-${i}`}>
           <SpriteBox name={spriteName} size={56} className="lab-roster-slot-sprite" />
           <Select
+            ref={(el) => {
+              speciesRefs.current[i] = el;
+            }}
             classNamePrefix="lab-select"
             className="lab-roster-species"
             options={speciesOptions}
             value={{ label: model.sites[slot.site], value: `${slot.site}` }}
             onChange={(o: SingleValue<Opt>) => setSpecies(i, o ? Number(o.value) : null)}
             isClearable
+            openMenuOnFocus
+            tabSelectsValue={false}
             placeholder="Pokémon"
             aria-label={`Slot ${i + 1} Pokémon`}
             menuPortalTarget={document.body}
@@ -106,12 +150,17 @@ export function RosterEditor({
           />
           {itemActive && (
             <Select
+              ref={(el) => {
+                itemRefs.current[i] = el;
+              }}
               classNamePrefix="lab-select"
               className="lab-roster-item"
               options={itemOptions}
               value={itemValue}
               onChange={(o: SingleValue<Opt>) => setItem(i, o ? Number(o.value) : null)}
               isClearable
+              openMenuOnFocus
+              tabSelectsValue={false}
               placeholder={itemPlaceholder}
               aria-label={`Slot ${i + 1} item`}
               menuPortalTarget={document.body}
@@ -125,6 +174,9 @@ export function RosterEditor({
         <div className="lab-roster-slot lab-roster-slot-empty" key={`add-${i}`}>
           <div className="lab-roster-slot-ord">·{i + 1}·</div>
           <Select
+            ref={(el) => {
+              speciesRefs.current[i] = el;
+            }}
             classNamePrefix="lab-select"
             className="lab-roster-species"
             options={speciesOptions}
