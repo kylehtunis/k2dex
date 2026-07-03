@@ -514,7 +514,7 @@ export function CompleterPage() {
       <SectionLabel
         num="01"
         title={`Starting roster · ${totalPins} of ${TEAM_SIZE} set`}
-        right="pick a Pokémon per slot; leave the item unset to let the completer fill it"
+        right="fill in what you want, the model does the rest"
       />
       <RosterEditor
         model={model}
@@ -566,9 +566,7 @@ export function CompleterPage() {
           <div style={{ marginTop: 8 }}>
             <label className="lab-form-label">Excluded attributes</label>
             <div className="lab-form-caption">
-              All attributes are active by default. Exclude one to build by
-              Pokémon only: the model still accounts for it under the hood, but
-              it's marginalized out and hidden from the results.
+              All attributes are active by default. Excluded attributes are not considered by the when completing the team.
             </div>
             <div className="lab-attr-toggles">
               {model.tracks.map((t, ti) => (
