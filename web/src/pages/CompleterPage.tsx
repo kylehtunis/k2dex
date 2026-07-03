@@ -600,22 +600,10 @@ export function CompleterPage() {
 
       <SectionLabel num="02" title="Constraints" />
       <div style={{ marginBottom: 16 }}>
-        <label className="lab-form-label">Exclude (must NOT appear)</label>
-        <SpeciesSelect
-          options={speciesOpts}
-          value={excludedSpecies}
-          onChange={(v) => setCompleter({ excludedSpecies: v })}
-          placeholder="Choose Pokémon to exclude"
-          ariaLabel="Exclude Pokémon"
-        />
-      </div>
-      <div style={{ marginBottom: 16 }}>
         <label className="lab-form-label">Include (only these may appear)</label>
         <div className="lab-form-caption">
-          Restrict the completer to only these Pokémon (plus any you've pinned).
-          Handy if you only own part of the roster. Leave empty to allow every
-          legal Pokémon. With a list set, included plus pinned must total at
-          least {TEAM_SIZE}.
+          Restrict the completer to only use these Pokémon (plus any pinned).
+          Leave empty to allow every legal Pokémon.
         </div>
         <SpeciesSelect
           options={speciesOpts}
@@ -623,6 +611,16 @@ export function CompleterPage() {
           onChange={(v) => setCompleter({ includedSpecies: v })}
           placeholder="Choose the only Pokémon to allow"
           ariaLabel="Include Pokémon"
+        />
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <label className="lab-form-label">Exclude (must NOT appear)</label>
+        <SpeciesSelect
+          options={speciesOpts}
+          value={excludedSpecies}
+          onChange={(v) => setCompleter({ excludedSpecies: v })}
+          placeholder="Choose Pokémon to exclude"
+          ariaLabel="Exclude Pokémon"
         />
       </div>
 

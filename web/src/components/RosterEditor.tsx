@@ -32,8 +32,8 @@ export function RosterEditor({
   onChange,
   itemActive,
   teamSize = 6,
-  itemPlaceholder = "item — completer fills",
-  emptyHint = "filled by completer",
+  itemPlaceholder = "item (optional)",
+  emptyHint = "empty",
 }: {
   model: IsingModel;
   roster: readonly RosterSlot[];
