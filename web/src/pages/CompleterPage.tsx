@@ -40,9 +40,9 @@ import { withInactiveTracks } from "../sampler/model";
 import { teamObservables } from "../render/observables";
 import { nearestObserved } from "../render/corpus";
 import {
-  CompletionRow,
-  CompletionTable,
-} from "../completer/CompletionRow";
+  CompletionCard,
+  CompletionList,
+} from "../completer/CompletionCard";
 import { formatSigned } from "../render/format";
 import {
   buildSlugIndex,
@@ -102,6 +102,9 @@ export function CompleterPage() {
     temperature, usePT, ptRuns, ptLadder, ptSweeps, ptSwapInterval,
   } = completer;
   const setRoster = (next: RosterSlot[]) => setCompleter({ roster: next });
+  // Reset every input on the page back to an empty query.
+  const clearAll = () =>
+    setCompleter({ roster: [], excludedSpecies: [], inactiveTracks: [] });
 
   // Pin arrays derived from the ordered roster for the sampler + share links.
   // Feature pins (item chosen) vs site pins (item left to the completer).
@@ -511,7 +514,7 @@ export function CompleterPage() {
       <SectionLabel
         num="01"
         title={`Starting roster · ${totalPins} of ${TEAM_SIZE} set`}
-        right="pick a species per slot; leave the item unset to let the completer fill it"
+        right="pick a Pokémon per slot; leave the item unset to let the completer fill it"
       />
       <RosterEditor
         model={model}
@@ -520,13 +523,21 @@ export function CompleterPage() {
         itemActive={!speciesOnly}
         teamSize={TEAM_SIZE}
       />
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button
           type="button"
           className="lab-analyze-btn lab-copy-paste-btn"
           onClick={handleImport}
         >
           Import from clipboard
+        </button>
+        <button
+          type="button"
+          className="lab-analyze-btn lab-copy-paste-btn"
+          onClick={clearAll}
+          disabled={roster.length === 0 && excludedSpecies.length === 0 && inactiveTracks.length === 0}
+        >
+          Clear all
         </button>
         {importMsg?.error && (
           <div className="lab-form-error">{importMsg.error}</div>
@@ -544,31 +555,35 @@ export function CompleterPage() {
           options={speciesOpts}
           value={excludedSpecies}
           onChange={(v) => setCompleter({ excludedSpecies: v })}
-          placeholder="Choose species to exclude"
-          ariaLabel="Exclude species"
+          placeholder="Choose Pokémon to exclude"
+          ariaLabel="Exclude Pokémon"
         />
       </div>
 
       {model.tracks.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <label className="lab-form-label">Active attributes</label>
-          <div className="lab-form-caption">
-            Deactivate an attribute to build by species only. The model still
-            accounts for it under the hood; it's marginalized out and hidden.
+        <details className="lab-expander" style={{ marginBottom: 16 }}>
+          <summary>Advanced options</summary>
+          <div style={{ marginTop: 8 }}>
+            <label className="lab-form-label">Excluded attributes</label>
+            <div className="lab-form-caption">
+              All attributes are active by default. Exclude one to build by
+              Pokémon only: the model still accounts for it under the hood, but
+              it's marginalized out and hidden from the results.
+            </div>
+            <div className="lab-attr-toggles">
+              {model.tracks.map((t, ti) => (
+                <label key={t.name} className="lab-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={inactiveTracks.includes(ti)}
+                    onChange={(e) => toggleTrack(ti, !e.target.checked)}
+                  />
+                  {t.name.charAt(0).toUpperCase() + t.name.slice(1)}
+                </label>
+              ))}
+            </div>
           </div>
-          <div className="lab-attr-toggles">
-            {model.tracks.map((t, ti) => (
-              <label key={t.name} className="lab-checkbox-row">
-                <input
-                  type="checkbox"
-                  checked={!inactiveTracks.includes(ti)}
-                  onChange={(e) => toggleTrack(ti, e.target.checked)}
-                />
-                {t.name.charAt(0).toUpperCase() + t.name.slice(1)}
-              </label>
-            ))}
-          </div>
-        </div>
+        </details>
       )}
 
       <SectionLabel num="03" title="Sampler" />
@@ -796,8 +811,8 @@ function FastResults({
         title="Suggested completion"
         right={`mean-field fill → greedy descent · pinned: ${result.fixed.length}`}
       />
-      <CompletionTable>
-        <CompletionRow
+      <CompletionList>
+        <CompletionCard
           freeIdxs={freeFinal}
           fullTeam={result.finalTeam}
           scoreAdj={obs.scoreAdj}
@@ -808,7 +823,7 @@ function FastResults({
           model={model}
           hideItems={runState.hideItems}
         />
-      </CompletionTable>
+      </CompletionList>
     </>
   );
 }
@@ -888,14 +903,14 @@ function PTResults({
         title="Top completions"
         right={`ordered by sample frequency · ${Math.min(TOP_COMPLETIONS, dist.length)} of ${dist.length.toLocaleString()} shown`}
       />
-      <CompletionTable includeFreq includeRank>
+      <CompletionList>
         {topK.map((entry, idx) => {
           const freeIdxs = entry.team.filter((i) => !fixedSet.has(i));
           const obs = teamObservables(model, entry.team, fieldWeight);
           const corpus = nearestObserved(entry.team, teamCounts);
           const freqPct = nKept > 0 ? (entry.count / nKept) * 100 : 0;
           return (
-            <CompletionRow
+            <CompletionCard
               key={entry.team.join("-")}
               rank={idx + 1}
               freeIdxs={freeIdxs}
@@ -911,7 +926,7 @@ function PTResults({
             />
           );
         })}
-      </CompletionTable>
+      </CompletionList>
     </>
   );
 }

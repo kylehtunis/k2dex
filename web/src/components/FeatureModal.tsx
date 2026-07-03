@@ -356,14 +356,17 @@ function FeatureActions({
           onClick={exclude}
           disabled={excluded}
         >
-          {excluded ? "Excluded" : "Exclude species"}
+          {excluded ? "Excluded" : "Exclude Pokémon"}
         </button>
       </div>
     );
   }
 
   if (pathname.includes("/analysis")) {
-    const team = analysis.teamIdxs;
+    // Feature-level team = the roster slots with an item pinned.
+    const team = analysis.roster
+      .filter((s) => s.feature !== null)
+      .map((s) => s.feature as number);
     const onTeam = team.includes(idx);
     const teamFull = team.length >= TEAM_SIZE;
     if (onTeam) {
@@ -380,7 +383,12 @@ function FeatureActions({
             type="button"
             className="lab-button-primary lab-feature-action"
             onClick={() => {
-              setAnalysis({ teamIdxs: [...team, idx] });
+              setAnalysis({
+                roster: [
+                  ...analysis.roster,
+                  { site: model.siteOf[idx], feature: idx },
+                ],
+              });
               onClose();
             }}
           >
@@ -401,7 +409,11 @@ function FeatureActions({
               className="lab-feature-swap-target"
               onClick={() => {
                 setAnalysis({
-                  teamIdxs: team.map((t) => (t === memberIdx ? idx : t)),
+                  roster: analysis.roster.map((s) =>
+                    s.feature === memberIdx
+                      ? { site: model.siteOf[idx], feature: idx }
+                      : s,
+                  ),
                 });
                 onClose();
               }}

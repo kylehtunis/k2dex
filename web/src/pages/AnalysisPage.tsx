@@ -19,10 +19,10 @@ import {
   TOP_SINGLE_SWAPS,
 } from "../constants";
 import { useModel } from "../state/ModelContext";
-import { usePageState } from "../state/PageStateContext";
+import { usePageState, type RosterSlot } from "../state/PageStateContext";
 import { PageTitle, SectionLabel, StatStrip } from "../render/atoms";
-import { SlotStrip } from "../render/cells";
-import { VocabSelect, vocabOptions } from "../components/VocabSelect";
+import { RosterEditor } from "../components/RosterEditor";
+import type { IsingModel } from "../sampler/types";
 import {
   intraTeamSumJ,
   pairwiseJRows,
@@ -40,11 +40,23 @@ import { SwapsTable } from "../analysis/SwapsTable";
 import { ChainTable } from "../analysis/ChainTable";
 import { ScrollX } from "../components/ScrollX";
 
+/** Feature indices → roster slots (each a feature pin). Analysis is
+ * feature-level, so every entry carries a concrete item. */
+function idxsToRoster(model: IsingModel, idxs: readonly number[]): RosterSlot[] {
+  return idxs.map((i) => ({ site: model.siteOf[i], feature: i }));
+}
+
 export function AnalysisPage() {
   const { model, teamCounts, status, modelId, setModelId } = useModel();
   const [searchParams, setSearchParams] = useSearchParams();
   const { analysis, setAnalysis } = usePageState();
-  const { teamIdxs, fieldWeight } = analysis;
+  const { roster, fieldWeight } = analysis;
+  // The complete team = roster slots with an item pinned. Species-only slots
+  // are in-progress picks that don't count until an item is chosen.
+  const teamIdxs = useMemo(
+    () => roster.filter((s) => s.feature !== null).map((s) => s.feature as number),
+    [roster],
+  );
 
   // The share token currently reflected in (or being applied from) the URL.
   // Guards the decode/live-sync handshake: decode marks a token applied,
@@ -79,7 +91,7 @@ export function AnalysisPage() {
       }
       appliedTokenRef.current = key;
       setAnalysis({
-        teamIdxs: idxs.slice(0, TEAM_SIZE),
+        roster: idxsToRoster(model, idxs.slice(0, TEAM_SIZE)),
         fieldWeight: decoded.fieldWeight,
       });
       return;
@@ -91,7 +103,8 @@ export function AnalysisPage() {
       .map(Number)
       .filter((i) => !isNaN(i) && i >= 0 && i < model.V);
     appliedTokenRef.current = key;
-    if (idxs.length > 0) setAnalysis({ teamIdxs: idxs.slice(0, TEAM_SIZE) });
+    if (idxs.length > 0)
+      setAnalysis({ roster: idxsToRoster(model, idxs.slice(0, TEAM_SIZE)) });
   }, [status, model, modelId, searchParams, setAnalysis, setModelId]);
 
   // Live-sync the URL from state (debounced so a slider drag settles into
@@ -124,17 +137,13 @@ export function AnalysisPage() {
     try {
       const text = await navigator.clipboard.readText();
       const { idxs, errors, warnings } = matchPaste(model, text);
-      if (idxs.length > 0) setAnalysis({ teamIdxs: idxs });
+      if (idxs.length > 0)
+        setAnalysis({ roster: idxsToRoster(model, idxs.slice(0, TEAM_SIZE)) });
       setImportMsg({ error: errors[0] ?? null, warnings });
     } catch {
       setImportMsg({ error: "Couldn't read the clipboard.", warnings: [] });
     }
   }, [model, setAnalysis]);
-
-  const vocabOpts = useMemo(
-    () => (model ? vocabOptions(model) : []),
-    [model],
-  );
 
   const teamSorted = useMemo(
     () => [...teamIdxs].sort((a, b) => a - b),
@@ -207,7 +216,6 @@ export function AnalysisPage() {
   const corpusCaption = model
     ? `Reg ${model.regulation} · ${model.nCorpusTeams.toLocaleString()} teams`
     : undefined;
-  const teamNames = model ? teamIdxs.map((i) => model.vocab[i]) : [];
 
   return (
     <>
@@ -224,19 +232,17 @@ export function AnalysisPage() {
       <SectionLabel
         num="01"
         title={`Team · ${teamIdxs.length} of ${TEAM_SIZE} set`}
+        right="pick a Pokémon and item for each of the six slots"
       />
-      <SlotStrip picked={teamNames} />
-      <div style={{ marginBottom: 16 }}>
-        <label className="lab-form-label">Your team (exactly {TEAM_SIZE})</label>
-        <VocabSelect
-          options={vocabOpts}
-          value={teamIdxs}
-          onChange={(v) => setAnalysis({ teamIdxs: v })}
-          maxSelections={TEAM_SIZE}
-          placeholder={`Choose your team of ${TEAM_SIZE}`}
-          ariaLabel="Your team"
-        />
-      </div>
+      <RosterEditor
+        model={model}
+        roster={roster}
+        onChange={(next) => setAnalysis({ roster: next })}
+        itemActive
+        teamSize={TEAM_SIZE}
+        itemPlaceholder="item"
+        emptyHint={null}
+      />
       <div style={{ marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button
           type="button"
@@ -253,6 +259,14 @@ export function AnalysisPage() {
         >
           {copied ? "Copied!" : "Copy pokepaste"}
         </button>
+        <button
+          type="button"
+          className="lab-analyze-btn lab-copy-paste-btn"
+          onClick={() => setAnalysis({ roster: [] })}
+          disabled={roster.length === 0}
+        >
+          Clear all
+        </button>
       </div>
       {importMsg?.error && (
         <div className="lab-form-error">{importMsg.error}</div>
@@ -266,7 +280,7 @@ export function AnalysisPage() {
       )}
       {!teamComplete && !uniquenessError && (
         <p style={{ color: "var(--lab-ink-muted)", fontStyle: "italic" }}>
-          Pick {TEAM_SIZE} Pokemon to analyze (have {teamIdxs.length}).
+          Pick {TEAM_SIZE} Pokémon to analyze (have {teamIdxs.length}).
         </p>
       )}
 
@@ -371,7 +385,11 @@ export function AnalysisPage() {
               teamCounts={teamCounts}
               onAcceptSwap={(out, inn) =>
                 setAnalysis({
-                  teamIdxs: teamSorted.filter((i) => i !== out).concat(inn),
+                  roster: roster.map((s) =>
+                    s.feature === out
+                      ? { site: model.siteOf[inn], feature: inn }
+                      : s,
+                  ),
                 })
               }
             />

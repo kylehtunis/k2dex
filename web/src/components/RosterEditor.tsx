@@ -32,12 +32,20 @@ export function RosterEditor({
   onChange,
   itemActive,
   teamSize = 6,
+  itemPlaceholder = "item — completer fills",
+  emptyHint = "filled by completer",
 }: {
   model: IsingModel;
   roster: readonly RosterSlot[];
   onChange: (next: RosterSlot[]) => void;
   itemActive: boolean;
   teamSize?: number;
+  /** Placeholder for the item picker. The completer says the completer fills
+   * an unset item; analysis (feature-level) leaves it plain. */
+  itemPlaceholder?: string;
+  /** Hint shown in trailing inert slots. `null` renders just the ordinal —
+   * used on analysis, where an empty slot isn't "filled by" anything. */
+  emptyHint?: string | null;
 }) {
   const sitePop = useMemo(() => {
     const pop = new Float64Array(model.sites.length);
@@ -91,8 +99,8 @@ export function RosterEditor({
             value={{ label: model.sites[slot.site], value: `${slot.site}` }}
             onChange={(o: SingleValue<Opt>) => setSpecies(i, o ? Number(o.value) : null)}
             isClearable
-            placeholder="species"
-            aria-label={`Slot ${i + 1} species`}
+            placeholder="Pokémon"
+            aria-label={`Slot ${i + 1} Pokémon`}
             menuPortalTarget={document.body}
             styles={portalStyles}
           />
@@ -104,7 +112,7 @@ export function RosterEditor({
               value={itemValue}
               onChange={(o: SingleValue<Opt>) => setItem(i, o ? Number(o.value) : null)}
               isClearable
-              placeholder="item — completer fills"
+              placeholder={itemPlaceholder}
               aria-label={`Slot ${i + 1} item`}
               menuPortalTarget={document.body}
               styles={portalStyles}
@@ -122,8 +130,8 @@ export function RosterEditor({
             options={speciesOptions}
             value={null}
             onChange={(o: SingleValue<Opt>) => o && addSpecies(Number(o.value))}
-            placeholder="add a species"
-            aria-label={`Slot ${i + 1} — add a species`}
+            placeholder="add a Pokémon"
+            aria-label={`Slot ${i + 1} — add a Pokémon`}
             menuPortalTarget={document.body}
             styles={portalStyles}
           />
@@ -133,7 +141,7 @@ export function RosterEditor({
       slots.push(
         <div className="lab-roster-slot lab-roster-slot-empty lab-roster-slot-inert" key={`empty-${i}`}>
           <div className="lab-roster-slot-ord">·{i + 1}·</div>
-          <div className="lab-roster-slot-hint">filled by completer</div>
+          {emptyHint && <div className="lab-roster-slot-hint">{emptyHint}</div>}
         </div>,
       );
     }

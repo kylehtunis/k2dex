@@ -390,11 +390,6 @@
 .lab-comp-table tr.top-row {
   background: color-mix(in oklch, var(--lab-accent) 8%, transparent);
 }
-.lab-comp-pair {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 .lab-comp-mon {
   display: flex;
   align-items: center;
@@ -428,6 +423,128 @@
   font-family: var(--lab-font-mono);
   font-size: 13px;
   color: var(--lab-ink);
+}
+
+/* ----- Completion cards (stacked; full team + observables underneath) ----- */
+.lab-comp-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lab-comp-card {
+  border: 1px solid var(--lab-rule);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: var(--lab-surface, #fff);
+}
+.lab-comp-card.is-top {
+  border-color: var(--lab-accent);
+  background: color-mix(in oklch, var(--lab-accent) 6%, var(--lab-surface, #fff));
+}
+.lab-comp-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.lab-comp-card-rank {
+  font-family: var(--lab-font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--lab-ink-muted);
+}
+.lab-comp-card-freq {
+  font-family: var(--lab-font-mono);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--lab-ink);
+}
+.lab-comp-card-freq-unit {
+  font-size: 11px;
+  color: var(--lab-ink-muted);
+  margin-left: 1px;
+}
+.lab-comp-mon-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .lab-comp-mon-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.lab-comp-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+button.lab-comp-tile {
+  width: 100%;
+}
+.lab-comp-tile.is-pinned {
+  background: var(--lab-panel);
+  border-color: var(--lab-rule-soft);
+}
+.lab-comp-tile-name {
+  font-family: var(--lab-font-serif);
+  font-size: 13px;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--lab-ink);
+}
+.lab-comp-tile-item {
+  font-family: var(--lab-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--lab-ink-muted);
+}
+.lab-comp-tile-pin {
+  font-family: var(--lab-font-sans);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+}
+.lab-feature-link.lab-comp-tile:hover .lab-comp-tile-name {
+  color: var(--lab-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.lab-comp-card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 22px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--lab-rule-soft);
+}
+.lab-comp-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lab-comp-stat-label {
+  font-family: var(--lab-font-sans);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+}
+.lab-comp-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .lab-analyze-btn {
@@ -847,13 +964,6 @@
 
 /* ----- Composed-cell layout classes (web-only; no rendering_html twin) ----- */
 
-/* Action button stack inside completion rows. */
-.lab-comp-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
 .lab-pair-cell,
 .lab-swap-cell {
   display: flex;
@@ -1034,18 +1144,6 @@
   .lab-table-cards .lab-comp-freq {
     align-items: flex-start;
   }
-  /* Let completion mons flow as a 2-column grid when there's room. */
-  .lab-table-cards .lab-comp-pair {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-  }
-  .lab-comp-actions {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-
   /* Pair tables (PairwiseJ / ExtremeCouplings): pair horizontal,
    * stats stacked below. */
   .lab-table-pairs {

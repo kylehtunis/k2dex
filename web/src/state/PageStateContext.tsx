@@ -49,7 +49,10 @@ export interface CompleterInputs {
 }
 
 export interface AnalysisInputs {
-  teamIdxs: number[];
+  /** Ordered roster (mirrors the completer). Analysis is feature-level, so a
+   * complete team is the slots whose `feature` is set; a species-only slot is
+   * simply an in-progress pick that doesn't count toward the team yet. */
+  roster: RosterSlot[];
   fieldWeight: number;
 }
 
@@ -67,7 +70,7 @@ const COMPLETER_DEFAULTS: CompleterInputs = {
 };
 
 const ANALYSIS_DEFAULTS: AnalysisInputs = {
-  teamIdxs: [],
+  roster: [],
   fieldWeight: 0.5,
 };
 
