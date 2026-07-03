@@ -1373,11 +1373,27 @@ button.lab-comp-tile {
   font-size: 20px;
   color: var(--lab-ink);
 }
-.lab-feature-modal-item {
-  margin-top: 2px;
-  font-family: var(--lab-font-mono);
-  font-size: 12px;
-  color: var(--lab-ink-soft);
+/* Attribute (track) dropdowns under the species identity. */
+.lab-feature-attrs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-bottom: 12px;
+}
+.lab-feature-attr {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 160px;
+  min-width: 140px;
+}
+.lab-feature-attr-label {
+  font-family: var(--lab-font-sans);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
 }
 
 .lab-feature-modal-body {

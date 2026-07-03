@@ -15,6 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import { useLocation } from "react-router-dom";
+import Select, { type SingleValue } from "react-select";
 import { Modal } from "./Modal";
 import { FeatureModalContext } from "./FeatureModalContext";
 import { useMediaQuery } from "./useMediaQuery";
@@ -23,7 +24,7 @@ import { usePageState } from "../state/PageStateContext";
 import { SpriteBox } from "../render/Sprite";
 import { InlineMon, TeamMiniStrip } from "../render/cells";
 import { ScoreChip, SignedBar, StatStrip } from "../render/atoms";
-import { extractItem, extractSpecies, formatPct, formatSigned } from "../render/format";
+import { extractSpecies, formatPct, formatSigned } from "../render/format";
 import {
   featureCorpusAppearances,
   featureCouplings,
@@ -71,6 +72,14 @@ export function FeatureModalProvider({ children }: { children: ReactNode }) {
   const close = useCallback(() => setStack([]), []);
   const back = useCallback(() => setStack((s) => s.slice(0, -1)), []);
 
+  // Attribute change on the current feature → swap which feature is shown
+  // without touching Back history (it's a refinement, not a navigation).
+  const replaceTop = useCallback(
+    (i: number) =>
+      setStack((s) => (s.length > 0 ? [...s.slice(0, -1), i] : [i])),
+    [],
+  );
+
   // Indices are model-specific — drop any open feature when the model changes.
   useEffect(() => {
     setStack([]);
@@ -90,6 +99,7 @@ export function FeatureModalProvider({ children }: { children: ReactNode }) {
           onBack={back}
           onClose={close}
           onDrill={drillTo}
+          onReplace={replaceTop}
         />
       )}
     </FeatureModalContext.Provider>
@@ -104,9 +114,19 @@ interface BodyProps {
   onClose: () => void;
   /** Drill-through handler re-provided to in-panel partner links (pushes). */
   onDrill: (name: string) => void;
+  /** Attribute change → replace the shown feature (no Back entry). */
+  onReplace: (idx: number) => void;
 }
 
-function FeatureModalBody({ model, idx, canGoBack, onBack, onClose, onDrill }: BodyProps) {
+function FeatureModalBody({
+  model,
+  idx,
+  canGoBack,
+  onBack,
+  onClose,
+  onDrill,
+  onReplace,
+}: BodyProps) {
   const { teamCounts } = useModel();
   const { pathname } = useLocation();
   const { completer, setCompleter, analysis, setAnalysis } = usePageState();
@@ -118,7 +138,6 @@ function FeatureModalBody({ model, idx, canGoBack, onBack, onClose, onDrill }: B
 
   const name = model.vocab[idx];
   const species = extractSpecies(name);
-  const item = extractItem(name);
 
   const couplings = useMemo(() => featureCouplings(model, idx, 10), [model, idx]);
   const corpus = useMemo(
@@ -166,9 +185,9 @@ function FeatureModalBody({ model, idx, canGoBack, onBack, onClose, onDrill }: B
               <h2 id={TITLE_ID} className="lab-feature-modal-title">
                 {species}
               </h2>
-              {item && <div className="lab-feature-modal-item">@ {item}</div>}
             </div>
           </div>
+          <AttributeSelectors model={model} idx={idx} onReplace={onReplace} />
           <StatStrip
             cells={[
               {
@@ -254,6 +273,71 @@ function FeatureModalBody({ model, idx, canGoBack, onBack, onClose, onDrill }: B
       </div>
       </FeatureModalContext.Provider>
     </Modal>
+  );
+}
+
+interface AttrOpt {
+  label: string;
+  value: string;
+}
+const attrPortalStyles = {
+  menuPortal: (base: Record<string, unknown>) => ({ ...base, zIndex: 9999 }),
+};
+
+/** One dropdown per attribute track (today: item). Each option is a concrete
+ * feature of this species — picking one re-points the modal at that feature so
+ * every panel below recomputes. Defaults to the feature the user clicked. */
+function AttributeSelectors({
+  model,
+  idx,
+  onReplace,
+}: {
+  model: IsingModel;
+  idx: number;
+  onReplace: (idx: number) => void;
+}) {
+  const site = model.siteOf[idx];
+  if (model.tracks.length === 0) return null;
+  return (
+    <div className="lab-feature-attrs">
+      {model.tracks.map((track, ti) => {
+        // Options = this species' features, distinct on the track's value and
+        // consistent with the current choice on every other track; most-used
+        // value first. Each option's value is its feature index.
+        const seen = new Set<string>();
+        const rows: { opt: AttrOpt; m: number }[] = [];
+        for (const f of model.siteFeatures[site]) {
+          const matchesOthers = model.trackValues[f].every(
+            (v, t) => t === ti || v === model.trackValues[idx][t],
+          );
+          if (!matchesOthers) continue;
+          const val = model.trackValues[f][ti];
+          const key = val ?? " ";
+          if (seen.has(key)) continue;
+          seen.add(key);
+          rows.push({ opt: { label: val ?? "—", value: String(f) }, m: model.m[f] });
+        }
+        rows.sort((a, b) => b.m - a.m);
+        const options = rows.map((r) => r.opt);
+        const current = options.find((o) => o.value === String(idx)) ?? null;
+        return (
+          <label key={track.name} className="lab-feature-attr">
+            <span className="lab-feature-attr-label">{track.name}</span>
+            <Select
+              classNamePrefix="lab-select"
+              className="lab-feature-attr-select"
+              options={options}
+              value={current}
+              onChange={(o: SingleValue<AttrOpt>) => o && onReplace(Number(o.value))}
+              isSearchable={options.length > 8}
+              menuPortalTarget={document.body}
+              styles={attrPortalStyles}
+              aria-label={`${track.name} for ${model.sites[site]}`}
+            />
+          </label>
+        );
+      })}
+    </div>
   );
 }
 
