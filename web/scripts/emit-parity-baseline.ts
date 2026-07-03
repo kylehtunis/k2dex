@@ -16,6 +16,8 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { IsingModel, TeamCounts } from "../src/sampler/types";
+import { factoredFromSpeciesItem } from "../src/sampler/model";
+import { buildSiteTables, siteConditional } from "../src/sampler/potts";
 import { meanfieldMarginals } from "../src/sampler/meanfield";
 import { greedyOptimize } from "../src/sampler/greedy";
 import { rankSingleSwaps } from "../src/sampler/rank";
@@ -99,6 +101,8 @@ const vocab = SPECIES_OF.map((s, i) => {
 const indexOf = new Map<string, number>();
 for (let i = 0; i < vocab.length; i++) indexOf.set(vocab[i], i);
 
+const factored = factoredFromSpeciesItem(SPECIES_OF, ITEM_OF);
+
 const model: IsingModel = {
   id: "synthetic",
   displayName: "Synthetic",
@@ -110,6 +114,7 @@ const model: IsingModel = {
   vocab,
   speciesOf: SPECIES_OF,
   itemOf: ITEM_OF,
+  ...factored,
   m,
   J,
   h,
@@ -340,6 +345,49 @@ for (const c of [
   corpusCases.push({ name: c.name, team: c.team, expected: r });
 }
 
+// --- Potts site-table + site-conditional cases -----------------------
+
+const siteTablesTS = buildSiteTables(model);
+const siteTablesExpected = {
+  nSites: siteTablesTS.nSites,
+  siteFeatures: siteTablesTS.siteFeatures,
+  itemId: Array.from(siteTablesTS.itemId),
+};
+
+const availAll = new Uint8Array(V).fill(1);
+
+interface SiteCondCase {
+  name: string;
+  input: { site: number; rFeat: number[]; invTemp: number };
+  expected: {
+    feats: number[];
+    negE: number[];
+    valid: number[]; // 0/1
+    logZ: number | null; // null encodes -Infinity for JSON
+  };
+}
+
+const siteCondCases: SiteCondCase[] = [];
+for (const c of [
+  { name: "site0_no_retained", site: 0, rFeat: [] as number[], invTemp: 1.0 },
+  { name: "site1_retained_2_4", site: 1, rFeat: [2, 4], invTemp: 1.0 },
+  { name: "site2_item_exclusion", site: 2, rFeat: [1, 3], invTemp: 1.5 },
+  { name: "site5_itemless_tempered", site: 5, rFeat: [0, 6], invTemp: 0.5 },
+]) {
+  const rItemId = c.rFeat.map((f) => siteTablesTS.itemId[f]);
+  const r = siteConditional(c.site, c.rFeat, rItemId, model, h, c.invTemp, siteTablesTS, availAll);
+  siteCondCases.push({
+    name: c.name,
+    input: { site: c.site, rFeat: c.rFeat, invTemp: c.invTemp },
+    expected: {
+      feats: r.feats,
+      negE: Array.from(r.negE),
+      valid: r.valid.map((v) => (v ? 1 : 0)),
+      logZ: Number.isFinite(r.logZ) ? r.logZ : null,
+    },
+  });
+}
+
 // --- Write baseline ---------------------------------------------------
 
 const baseline = {
@@ -366,9 +414,11 @@ const baseline = {
   },
   slugs: slugCases,
   obs: obsCases,
+  siteTables: siteTablesExpected,
+  siteConditional: siteCondCases,
 };
 
 mkdirSync(dirname(OUT_PATH), { recursive: true });
 writeFileSync(OUT_PATH, JSON.stringify(baseline, null, 2));
 console.log(`Wrote ${OUT_PATH}`);
-console.log(`  ${mfCases.length} MF cases, ${greedyCases.length} greedy cases, ${rankCases.length} rank cases, ${corpusCases.length} corpus cases, ${slugCases.length} slug cases, ${obsCases.length} obs cases`);
+console.log(`  ${mfCases.length} MF cases, ${greedyCases.length} greedy cases, ${rankCases.length} rank cases, ${corpusCases.length} corpus cases, ${slugCases.length} slug cases, ${obsCases.length} obs cases, ${siteCondCases.length} site-conditional cases`);

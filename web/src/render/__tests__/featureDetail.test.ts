@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { IsingModel, TeamCounts } from "../../sampler/types";
+import { factoredFromSpeciesItem } from "../../sampler/model";
 import {
   featureCorpusAppearances,
   featureCouplings,
@@ -39,10 +40,11 @@ function buildModel(): IsingModel {
   const indexOf = new Map<string, number>();
   vocab.forEach((s, i) => indexOf.set(s, i));
 
+  const factored = factoredFromSpeciesItem(speciesOf, itemOf);
   return {
     id: "fd", displayName: "FD", regulation: "test",
     featureDimensions: 2, latestTournamentDate: "",
-    V, teamSize: 6, vocab, speciesOf, itemOf, m, J, h, indexOf,
+    V, teamSize: 6, vocab, speciesOf, itemOf, ...factored, m, J, h, indexOf,
     nCorpusTeams: 20, name: "fd",
   };
 }

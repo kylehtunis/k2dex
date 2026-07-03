@@ -15,6 +15,7 @@ import {
   initializeState,
   swapViolatesUniqueness,
   teamEnergy,
+  type ConstraintSets,
 } from "./energy";
 
 export interface ChainState {
@@ -47,12 +48,11 @@ export function initChain(
   fixed: readonly number[],
   available: readonly number[],
   nToFill: number,
-  fixedSpecies: Set<string>,
-  fixedItems: Set<string>,
+  constraints: ConstraintSets,
   hEff: Float64Array,
   rng: Rng,
 ): ChainState | null {
-  const { V, J, speciesOf, itemOf } = model;
+  const { V, J } = model;
   const state = new Uint8Array(V);
   for (const i of fixed) state[i] = 1;
 
@@ -62,10 +62,8 @@ export function initChain(
     const init = initializeState(
       available,
       nToFill,
-      fixedSpecies,
-      fixedItems,
-      speciesOf,
-      itemOf,
+      constraints,
+      model,
       rng,
     );
     if (init === null) return null;
@@ -101,8 +99,7 @@ export function localSwapStep(
   model: IsingModel,
   hEff: Float64Array,
   T: number,
-  fixedSpecies: Set<string>,
-  fixedItems: Set<string>,
+  constraints: ConstraintSets,
   rng: Rng,
 ): { proposed: boolean; accepted: boolean } {
   if (chain.offNf.length === 0 || chain.onNf.length === 0) {
@@ -117,10 +114,8 @@ export function localSwapStep(
       iIn,
       outK,
       chain.onNf,
-      fixedSpecies,
-      fixedItems,
-      model.speciesOf,
-      model.itemOf,
+      constraints,
+      model,
     )
   ) {
     return { proposed: false, accepted: false };
@@ -164,7 +159,7 @@ export function swapMcmc(
   model: IsingModel,
   opts: SwapMcmcOpts,
 ): SwapMcmcResult | null {
-  const { V, h, teamSize, speciesOf, itemOf } = model;
+  const { V, h, teamSize } = model;
   const rng = new RngImpl(opts.seed);
 
   const available = availableIndices(model, opts.fixed, opts.excluded);
@@ -174,11 +169,7 @@ export function swapMcmc(
   const hEff = new Float64Array(V);
   for (let i = 0; i < V; i++) hEff[i] = opts.fieldWeight * h[i];
 
-  const { fixedSpecies, fixedItems } = buildConstraintSets(
-    opts.fixed,
-    speciesOf,
-    itemOf,
-  );
+  const constraints = buildConstraintSets(opts.fixed, model);
 
   if (nToFill === 0) {
     // Team fully determined by `fixed`; no swaps possible.
@@ -193,8 +184,7 @@ export function swapMcmc(
     opts.fixed,
     available,
     nToFill,
-    fixedSpecies,
-    fixedItems,
+    constraints,
     hEff,
     rng,
   );
@@ -209,8 +199,7 @@ export function swapMcmc(
       model,
       hEff,
       opts.temperature,
-      fixedSpecies,
-      fixedItems,
+      constraints,
       rng,
     );
     if (r.proposed) proposed++;

@@ -2,7 +2,7 @@
 // and reconstructs the in-memory IsingModel.
 //
 // File schema (mirrored from precompute.py):
-//   meta.json         vocab, species_of, item_of, scalars
+//   meta.json         vocab, sites, site_of, tracks, track_values, scalars
 //   J.bin             float32 lower triangle, V*(V-1)/2 entries
 //                     ordering: [J[i,j] for i in 1..V-1 for j in 0..i-1]
 //   h.bin             float32, V entries
@@ -22,13 +22,15 @@ interface MetaJson {
   team_size: number;
   n_corpus_teams: number;
   vocab: string[];
-  species_of: string[];
-  item_of: (string | null)[];
+  sites: string[];
+  site_of: number[];
+  tracks: { name: string; unique: boolean }[];
+  track_values: (string | null)[][];
   fit: { method: string; C?: number; lambda?: number; min_team_count: number };
   schema_version: number;
 }
 
-const SUPPORTED_SCHEMA_VERSIONS = [1, 2];
+const SUPPORTED_SCHEMA_VERSIONS = [3];
 
 /** Fetch a binary file as a Float32Array (assumes little-endian, native
  * to all platforms we care about). */
@@ -72,6 +74,76 @@ export function unpackLowerTriangle(
   return J;
 }
 
+/** Convenience views derived from the factored (sites + tracks) schema.
+ * `siteFeatures` groups feature indices by site (a pure projection of
+ * `siteOf`, not stored in meta.json); `speciesOf`/`itemOf` reconstruct the
+ * old per-feature (species, item) arrays that display and render code use. */
+export interface DerivedFactored {
+  siteFeatures: number[][];
+  speciesOf: string[];
+  itemOf: (string | null)[];
+}
+
+/** The factored (sites + tracks) fields of an IsingModel, as loaded from a
+ * v3 artifact or reconstructed from per-feature species/item arrays. */
+export interface FactoredFields {
+  sites: string[];
+  siteOf: number[];
+  tracks: { name: string; unique: boolean }[];
+  trackValues: (string | null)[][];
+  siteFeatures: number[][];
+}
+
+/** Inverse of {@link deriveFactored}: build the factored schema fields from
+ * per-feature (species, item) arrays. A model with any non-null item carries a
+ * single unique "item" track; an all-null species-only model carries no tracks.
+ * Used to construct in-memory models from the legacy species/item view (tests,
+ * ad-hoc models); the production loader reads the factored fields directly. */
+export function factoredFromSpeciesItem(
+  speciesOf: readonly string[],
+  itemOf: readonly (string | null)[],
+): FactoredFields {
+  const sites: string[] = [];
+  const siteIndex = new Map<string, number>();
+  const siteOf: number[] = [];
+  const siteFeatures: number[][] = [];
+  for (let i = 0; i < speciesOf.length; i++) {
+    const sp = speciesOf[i];
+    let s = siteIndex.get(sp);
+    if (s === undefined) {
+      s = sites.length;
+      siteIndex.set(sp, s);
+      sites.push(sp);
+      siteFeatures.push([]);
+    }
+    siteOf.push(s);
+    siteFeatures[s].push(i);
+  }
+  const hasItems = itemOf.some((x) => x !== null);
+  const tracks = hasItems ? [{ name: "item", unique: true }] : [];
+  const trackValues: (string | null)[][] = hasItems
+    ? itemOf.map((it) => [it])
+    : itemOf.map(() => []);
+  return { sites, siteOf, tracks, trackValues, siteFeatures };
+}
+
+export function deriveFactored(
+  sites: readonly string[],
+  siteOf: readonly number[],
+  trackValues: readonly (readonly (string | null)[])[],
+): DerivedFactored {
+  const siteFeatures: number[][] = sites.map(() => []);
+  const speciesOf: string[] = new Array(siteOf.length);
+  const itemOf: (string | null)[] = new Array(siteOf.length);
+  for (let i = 0; i < siteOf.length; i++) {
+    const s = siteOf[i];
+    siteFeatures[s].push(i);
+    speciesOf[i] = sites[s];
+    itemOf[i] = trackValues[i].length > 0 ? trackValues[i][0] : null;
+  }
+  return { siteFeatures, speciesOf, itemOf };
+}
+
 /** Load all four model artifacts in parallel. `basePath` is the URL
  * prefix that contains `<modelName>/{meta.json,J.bin,h.bin,m.bin}`;
  * defaults to "models" which combines with Vite's `base` to resolve
@@ -108,19 +180,28 @@ export async function loadModel(
   }
 
   const id = meta.id ?? meta.name ?? modelName;
-  const hasItems = meta.item_of.some((x) => x !== null);
+  const { siteFeatures, speciesOf, itemOf } = deriveFactored(
+    meta.sites,
+    meta.site_of,
+    meta.track_values,
+  );
 
   return {
     id,
     displayName: meta.display_name ?? id,
     regulation: meta.regulation ?? "",
-    featureDimensions: meta.feature_dimensions ?? (hasItems ? 2 : 1),
+    featureDimensions: meta.feature_dimensions ?? (meta.tracks.length + 1),
     latestTournamentDate: meta.latest_tournament_date ?? "",
     V: meta.V,
     teamSize: meta.team_size,
     vocab: meta.vocab,
-    speciesOf: meta.species_of,
-    itemOf: meta.item_of,
+    sites: meta.sites,
+    siteOf: meta.site_of,
+    tracks: meta.tracks,
+    trackValues: meta.track_values,
+    siteFeatures,
+    speciesOf,
+    itemOf,
     m,
     J,
     h,

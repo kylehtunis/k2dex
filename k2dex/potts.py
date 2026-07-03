@@ -100,10 +100,20 @@ def load_fitted_model(model_dir: str | Path) -> FittedModel:
     J[cols, rows] = tri
     h = np.fromfile(model_dir / "h.bin", dtype=np.float32).astype(np.float64)
     m = np.fromfile(model_dir / "m.bin", dtype=np.float32).astype(np.float64)
+    # Reconstruct the per-feature (species, item) view this module's analysis
+    # API is built on from the factored v3 schema: species_of[i] = sites[site_of[i]],
+    # item_of[i] = the first track's value (None when the model has no tracks).
+    sites = list(meta["sites"])
+    site_of = list(meta["site_of"])
+    track_values = list(meta["track_values"])
+    species_of = [sites[s] for s in site_of]
+    item_of: list[str | None] = [
+        (vals[0] if vals else None) for vals in track_values
+    ]
     return FittedModel(
         vocab=list(meta["vocab"]),
-        species_of=list(meta["species_of"]),
-        item_of=list(meta["item_of"]),
+        species_of=species_of,
+        item_of=item_of,
         J=J, h=h, m=m,
         team_size=int(meta["team_size"]),
         n_corpus_teams=int(meta["n_corpus_teams"]),

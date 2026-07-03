@@ -4,9 +4,11 @@
 //   team_energy, build_constraint_sets, swap_violates_uniqueness,
 //   initialize_state.
 //
-// Uniqueness machinery (no-duplicate-species, no-duplicate-item) is
-// gated on whether speciesOf / itemOf were passed. Phase 1 / Phase 2
-// pass them as null and the checks become no-ops, mirroring Python.
+// Uniqueness machinery is dimension-agnostic: a team never holds two of the
+// same site (species), and never two features sharing a value on a track
+// flagged `unique` (e.g. the item track). Species-only models carry no tracks,
+// so only the always-on site constraint applies (trivially satisfied since each
+// feature is its own site).
 
 import type { IsingModel } from "./types";
 import type { Rng } from "./rng";
@@ -37,60 +39,57 @@ export function teamEnergy(
 }
 
 export interface ConstraintSets {
-  fixedSpecies: Set<string>;
-  fixedItems: Set<string>;
+  /** Site (species) indices occupied by the fixed slots. Sites are always
+   * unique across a team. */
+  usedSites: Set<number>;
+  /** Values occupied by the fixed slots on each track, aligned to
+   * `model.tracks` by index. Only tracks flagged `unique` are populated (and
+   * checked); non-unique tracks keep an empty, unused set. */
+  usedTrackValues: Set<string>[];
 }
 
-/** Species + non-null item sets occupied by `fixed`. Empty when
- * speciesOf / itemOf are not provided. */
+/** Sites + per-track unique values occupied by `fixed`. */
 export function buildConstraintSets(
   fixed: Iterable<number>,
-  speciesOf: readonly string[] | null,
-  itemOf: readonly (string | null)[] | null,
+  model: IsingModel,
 ): ConstraintSets {
-  const fixedSpecies = new Set<string>();
-  const fixedItems = new Set<string>();
-  if (speciesOf === null && itemOf === null) {
-    return { fixedSpecies, fixedItems };
-  }
+  const usedSites = new Set<number>();
+  const usedTrackValues = model.tracks.map(() => new Set<string>());
   for (const i of fixed) {
-    if (speciesOf !== null) fixedSpecies.add(speciesOf[i]);
-    if (itemOf !== null) {
-      const it = itemOf[i];
-      if (it !== null) fixedItems.add(it);
+    usedSites.add(model.siteOf[i]);
+    for (let t = 0; t < model.tracks.length; t++) {
+      if (!model.tracks[t].unique) continue;
+      const v = model.trackValues[i][t];
+      if (v !== null) usedTrackValues[t].add(v);
     }
   }
-  return { fixedSpecies, fixedItems };
+  return { usedSites, usedTrackValues };
 }
 
 /** True iff swapping `iIn` into position `outK` of `onNf` would create
- * a duplicate species or duplicate non-null item (counting both the
- * fixed and free slots of the team). */
+ * a duplicate site (species) or a duplicate value on any unique track
+ * (counting both the fixed and free slots of the team). */
 export function swapViolatesUniqueness(
   iIn: number,
   outK: number,
   onNf: readonly number[],
-  fixedSpecies: Set<string>,
-  fixedItems: Set<string>,
-  speciesOf: readonly string[] | null,
-  itemOf: readonly (string | null)[] | null,
+  constraints: ConstraintSets,
+  model: IsingModel,
 ): boolean {
-  if (speciesOf !== null) {
-    const target = speciesOf[iIn];
-    if (fixedSpecies.has(target)) return true;
+  const site = model.siteOf[iIn];
+  if (constraints.usedSites.has(site)) return true;
+  for (let k = 0; k < onNf.length; k++) {
+    if (k === outK) continue;
+    if (model.siteOf[onNf[k]] === site) return true;
+  }
+  for (let t = 0; t < model.tracks.length; t++) {
+    if (!model.tracks[t].unique) continue;
+    const target = model.trackValues[iIn][t];
+    if (target === null) continue;
+    if (constraints.usedTrackValues[t].has(target)) return true;
     for (let k = 0; k < onNf.length; k++) {
       if (k === outK) continue;
-      if (speciesOf[onNf[k]] === target) return true;
-    }
-  }
-  if (itemOf !== null) {
-    const target = itemOf[iIn];
-    if (target !== null) {
-      if (fixedItems.has(target)) return true;
-      for (let k = 0; k < onNf.length; k++) {
-        if (k === outK) continue;
-        if (itemOf[onNf[k]] === target) return true;
-      }
+      if (model.trackValues[onNf[k]][t] === target) return true;
     }
   }
   return false;
@@ -98,41 +97,40 @@ export function swapViolatesUniqueness(
 
 /** Greedy uniqueness-respecting sample of `nToFill` indices from
  * `available`. Returns null if no valid completion exists after
- * `maxAttempts` random restarts (e.g., user pinned conflicting items).
- *
- * Falls back to plain without-replacement sampling when both lookups
- * are null — the Phase 1/2 case. */
+ * `maxAttempts` random restarts (e.g., user pinned conflicting items). */
 export function initializeState(
   available: readonly number[],
   nToFill: number,
-  fixedSpecies: Set<string>,
-  fixedItems: Set<string>,
-  speciesOf: readonly string[] | null,
-  itemOf: readonly (string | null)[] | null,
+  constraints: ConstraintSets,
+  model: IsingModel,
   rng: Rng,
   maxAttempts = 100,
 ): number[] | null {
-  if (speciesOf === null && itemOf === null) {
-    if (available.length < nToFill) return null;
-    return rng.choice(available, nToFill);
-  }
+  const nTracks = model.tracks.length;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const chosen: number[] = [];
-    const usedSpecies = new Set(fixedSpecies);
-    const usedItems = new Set(fixedItems);
+    const usedSites = new Set(constraints.usedSites);
+    const usedTrack = constraints.usedTrackValues.map((s) => new Set(s));
     const shuffled = rng.permutation(available);
     for (const idx of shuffled) {
       if (chosen.length === nToFill) break;
-      if (speciesOf !== null && usedSpecies.has(speciesOf[idx])) continue;
-      if (itemOf !== null) {
-        const it = itemOf[idx];
-        if (it !== null && usedItems.has(it)) continue;
+      if (usedSites.has(model.siteOf[idx])) continue;
+      let conflict = false;
+      for (let t = 0; t < nTracks; t++) {
+        if (!model.tracks[t].unique) continue;
+        const v = model.trackValues[idx][t];
+        if (v !== null && usedTrack[t].has(v)) {
+          conflict = true;
+          break;
+        }
       }
+      if (conflict) continue;
       chosen.push(idx);
-      if (speciesOf !== null) usedSpecies.add(speciesOf[idx]);
-      if (itemOf !== null) {
-        const it = itemOf[idx];
-        if (it !== null) usedItems.add(it);
+      usedSites.add(model.siteOf[idx]);
+      for (let t = 0; t < nTracks; t++) {
+        if (!model.tracks[t].unique) continue;
+        const v = model.trackValues[idx][t];
+        if (v !== null) usedTrack[t].add(v);
       }
     }
     if (chosen.length === nToFill) return chosen;

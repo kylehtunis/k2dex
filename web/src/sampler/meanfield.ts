@@ -45,7 +45,7 @@ export function meanfieldMarginals(
   model: IsingModel,
   opts: MeanfieldOpts,
 ): MeanfieldResult | null {
-  const { V, J, h, teamSize, speciesOf, itemOf } = model;
+  const { V, J, h, teamSize } = model;
   const nIters = opts.nIters ?? DEFAULT_N_ITERS;
   const tol = opts.tol ?? DEFAULT_TOL;
   const damp = opts.damp ?? DEFAULT_DAMP;
@@ -58,24 +58,23 @@ export function meanfieldMarginals(
   for (const i of opts.fixed) fixedMask[i] = 1;
   for (const i of opts.excluded) excludedMask[i] = 1;
 
-  // Phase-3 uniqueness against the fixed mons: a candidate sharing a
-  // species or item with anything pinned is not eligible to fill a
-  // free slot.
-  const { fixedSpecies, fixedItems } = buildConstraintSets(
-    opts.fixed,
-    speciesOf,
-    itemOf,
-  );
+  // Uniqueness against the fixed mons: a candidate sharing a site (species)
+  // or a unique-track value (item) with anything pinned is not eligible to
+  // fill a free slot.
+  const constraints = buildConstraintSets(opts.fixed, model);
   const uniqInvalid = new Uint8Array(V);
-  if (fixedSpecies.size > 0) {
-    for (let i = 0; i < V; i++) {
-      if (fixedSpecies.has(speciesOf[i])) uniqInvalid[i] = 1;
+  for (let i = 0; i < V; i++) {
+    if (constraints.usedSites.has(model.siteOf[i])) {
+      uniqInvalid[i] = 1;
+      continue;
     }
-  }
-  if (fixedItems.size > 0) {
-    for (let i = 0; i < V; i++) {
-      const it = itemOf[i];
-      if (it !== null && fixedItems.has(it)) uniqInvalid[i] = 1;
+    for (let t = 0; t < model.tracks.length; t++) {
+      if (!model.tracks[t].unique) continue;
+      const v = model.trackValues[i][t];
+      if (v !== null && constraints.usedTrackValues[t].has(v)) {
+        uniqInvalid[i] = 1;
+        break;
+      }
     }
   }
 

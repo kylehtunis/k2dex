@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { IsingModel } from "../../sampler/types";
+import { factoredFromSpeciesItem } from "../../sampler/model";
 import {
   buildSlugIndex,
   matchPaste,
@@ -43,6 +44,7 @@ function buildModel(): IsingModel {
   vocab.forEach((v, i) => indexOf.set(v, i));
   // Marginals: Incineroar @ Sitrus is the most popular Incineroar build.
   const m = Float64Array.from([0.5, 0.2, 0.3, 0.4, 0.35]);
+  const factored = factoredFromSpeciesItem(species, items);
   return {
     id: "test-species-item",
     displayName: "Test Species @ Item",
@@ -54,6 +56,7 @@ function buildModel(): IsingModel {
     vocab,
     speciesOf: species,
     itemOf: items,
+    ...factored,
     m,
     J: new Float64Array(V * V),
     h: new Float64Array(V),

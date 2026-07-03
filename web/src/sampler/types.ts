@@ -21,9 +21,22 @@ export interface IsingModel {
   readonly teamSize: number;
   /** Vocab display strings (bare species or "Species @ Item"). */
   readonly vocab: readonly string[];
-  /** Per-feature species name, for uniqueness constraints. */
+  /** Distinct species (the Potts sites), in vocab order. */
+  readonly sites: readonly string[];
+  /** Per-feature site index (into `sites`), length V. */
+  readonly siteOf: readonly number[];
+  /** Track (attribute) definitions. Empty for species-only models. */
+  readonly tracks: readonly { name: string; unique: boolean }[];
+  /** Per-feature track values, length V; each entry has one value per track
+   * (`null` = undetermined/inapplicable on that track). */
+  readonly trackValues: readonly (readonly (string | null)[])[];
+  /** Derived: feature indices grouped by site (groupby siteOf). Length = sites.length. */
+  readonly siteFeatures: readonly (readonly number[])[];
+  /** Per-feature species name, for uniqueness constraints. Convenience view:
+   * `sites[siteOf[i]]`. */
   readonly speciesOf: readonly string[];
-  /** Per-feature item name; null for itemless features. */
+  /** Per-feature item name; null for itemless features. Convenience view:
+   * first track value (`trackValues[i][0] ?? null`). */
   readonly itemOf: readonly (string | null)[];
   /** Empirical per-feature marginal (Float32 promoted to Float64 on load). */
   readonly m: Float64Array;

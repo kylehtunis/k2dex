@@ -4,13 +4,25 @@
 // with `min(1, exp((1/T_lo - 1/T_hi) * (E_lo - E_hi)))`. Cold-chain
 // samples are kept post burn-in.
 //
+// The inner move is the universal Potts kernel (potts.ts): each sweep is a
+// species-swap, or — when the model has tracks — with probability `pReroll` an
+// item track-reroll instead. For a species-only model this degenerates to the
+// atomic swap. `localSwapStep` (swap.ts) is retained for the `swapMcmc` utility
+// but is no longer the PT inner move.
+//
 // Mirrors sampling.parallel_tempered_mcmc.
 
 import type { IsingModel, PTResult, TeamIndices } from "./types";
 import { Rng } from "./rng";
 import { availableIndices, buildConstraintSets } from "./energy";
-import { initChain, localSwapStep, snapshotTeam } from "./swap";
+import { initChain, snapshotTeam } from "./swap";
 import type { ChainState } from "./swap";
+import {
+  buildSiteTables,
+  pottsSpeciesSwap,
+  pottsTrackReroll,
+  type PottsContext,
+} from "./potts";
 
 export interface PTOpts {
   fixed: readonly number[];
@@ -21,13 +33,16 @@ export interface PTOpts {
   burnIn: number;
   swapInterval: number;
   seed: number;
+  /** Probability an item-track model rerolls (vs species-swaps) each sweep.
+   * Ignored for species-only models. Default 0.5. */
+  pReroll?: number;
 }
 
 export function parallelTemperedMcmc(
   model: IsingModel,
   opts: PTOpts,
 ): PTResult | null {
-  const { V, h, teamSize, speciesOf, itemOf } = model;
+  const { V, h, teamSize } = model;
   const rng = new Rng(opts.seed);
   const K = opts.tLadder.length;
 
@@ -38,11 +53,16 @@ export function parallelTemperedMcmc(
   const hEff = new Float64Array(V);
   for (let i = 0; i < V; i++) hEff[i] = opts.fieldWeight * h[i];
 
-  const { fixedSpecies, fixedItems } = buildConstraintSets(
-    opts.fixed,
-    speciesOf,
-    itemOf,
-  );
+  const constraints = buildConstraintSets(opts.fixed, model);
+
+  // Potts move context: site tables, availability mask, and the fixed pins.
+  const tables = buildSiteTables(model);
+  const avail = new Uint8Array(V).fill(1);
+  for (const e of opts.excluded) avail[e] = 0;
+  for (const f of opts.fixed) avail[f] = 0; // pinned features are retained, never re-placed
+  const ctx: PottsContext = { fixed: opts.fixed, avail, tables };
+  const hasTracks = model.tracks.length > 0;
+  const pReroll = opts.pReroll ?? 0.5;
 
   const chains: ChainState[] = [];
   for (let k = 0; k < K; k++) {
@@ -51,8 +71,7 @@ export function parallelTemperedMcmc(
       opts.fixed,
       available,
       nToFill,
-      fixedSpecies,
-      fixedItems,
+      constraints,
       hEff,
       rng,
     );
@@ -67,19 +86,26 @@ export function parallelTemperedMcmc(
   let swapPropose = 0;
 
   for (let step = 0; step < opts.nSteps; step++) {
-    // One local MH move per chain at its own temperature.
+    // One Potts move per chain at its own temperature: a species-swap, or an
+    // item track-reroll (chosen with probability pReroll when tracks exist).
+    // Reroll is a Gibbs step (always accepted) and is not counted toward the
+    // species-swap MH acceptance statistic.
     for (let k = 0; k < K; k++) {
-      const r = localSwapStep(
-        chains[k],
-        model,
-        hEff,
-        opts.tLadder[k],
-        fixedSpecies,
-        fixedItems,
-        rng,
-      );
-      if (r.proposed) localPropose++;
-      if (r.accepted) localAccept++;
+      if (hasTracks && rng.random() < pReroll) {
+        pottsTrackReroll(chains[k], model, hEff, opts.tLadder[k], tables, ctx, rng);
+      } else {
+        const r = pottsSpeciesSwap(
+          chains[k],
+          model,
+          hEff,
+          opts.tLadder[k],
+          tables,
+          ctx,
+          rng,
+        );
+        if (r.proposed) localPropose++;
+        if (r.accepted) localAccept++;
+      }
     }
 
     // Periodic replica-exchange between adjacent T levels.

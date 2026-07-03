@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { IsingModel } from "../types";
 import { swapMcmc } from "../swap";
 import { parallelTemperedMcmc } from "../pt";
-import { unpackLowerTriangle } from "../model";
+import { unpackLowerTriangle, factoredFromSpeciesItem } from "../model";
 
 function buildSyntheticModel(): IsingModel {
   const V = 12;
@@ -36,10 +36,11 @@ function buildSyntheticModel(): IsingModel {
   const indexOf = new Map<string, number>();
   for (let i = 0; i < vocab.length; i++) indexOf.set(vocab[i], i);
 
+  const factored = factoredFromSpeciesItem(speciesOf, itemOf);
   return {
     id: "synthetic", displayName: "Synthetic", regulation: "test",
     featureDimensions: 2, latestTournamentDate: "",
-    V, teamSize: TEAM_SIZE, vocab, speciesOf, itemOf, m, J, h, indexOf,
+    V, teamSize: TEAM_SIZE, vocab, speciesOf, itemOf, ...factored, m, J, h, indexOf,
     nCorpusTeams: 0, name: "synthetic",
   };
 }

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "default_model": "reg-m-b-experimental",
   "models": [
     {
@@ -8,32 +8,33 @@
       "regulation": "M-B",
       "feature_dimensions": 2,
       "V": 539,
-      "n_corpus_teams": 5612,
+      "n_corpus_teams": 5615,
       "latest_tournament_date": "2026-06-29T01:00:00.000Z",
       "team_size": 6,
+      "tracks": [
+        {
+          "name": "item",
+          "unique": true
+        }
+      ],
       "description": "A new model for M-B. Vocabulary is currently small due to the limited data, will improve over time.",
       "new": true
-    },
-    {
-      "id": "reg-m-a-species",
-      "display_name": "Reg. M-A Species",
-      "regulation": "M-A",
-      "feature_dimensions": 1,
-      "V": 198,
-      "n_corpus_teams": 25704,
-      "latest_tournament_date": "2026-06-16T17:00:00.000Z",
-      "team_size": 6,
-      "description": "Used for creating teams of Pok\u00e9mon, considering only the species. Lower resolution than the Species @ Item model."
     },
     {
       "id": "reg-m-a-species-item",
       "display_name": "Reg. M-A Species @ Item",
       "regulation": "M-A",
       "feature_dimensions": 2,
-      "V": 833,
+      "V": 832,
       "n_corpus_teams": 23850,
       "latest_tournament_date": "2026-06-16T17:00:00.000Z",
       "team_size": 6,
+      "tracks": [
+        {
+          "name": "item",
+          "unique": true
+        }
+      ],
       "description": "Used for creating teams of Pok\u00e9mon with their held items. This is the recommended model."
     },
     {
@@ -41,11 +42,33 @@
       "display_name": "Reg. M-A Species @ Item (Weighted)",
       "regulation": "M-A",
       "feature_dimensions": 2,
-      "V": 696,
+      "V": 695,
       "n_corpus_teams": 23276,
       "latest_tournament_date": "2026-06-16T17:00:00.000Z",
       "team_size": 6,
+      "tracks": [
+        {
+          "name": "item",
+          "unique": true
+        }
+      ],
       "description": "Experimental model that places higher emphasis on recent teams and those brought to in-person tournaments."
+    },
+    {
+      "id": "reg-m-b-species-item-boltzmann",
+      "display_name": "Reg M-B Species @ Item Boltzmann",
+      "regulation": "M-B",
+      "feature_dimensions": 2,
+      "V": 539,
+      "n_corpus_teams": 5615,
+      "latest_tournament_date": "2026-06-29T01:00:00.000Z",
+      "team_size": 6,
+      "tracks": [
+        {
+          "name": "item",
+          "unique": true
+        }
+      ]
     }
   ]
 }

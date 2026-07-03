@@ -14,12 +14,25 @@ import numpy as np
 
 from k2dex.models import (
     _advance_bank_potts,
+    _bank_flat_indices,
     _build_site_tables,
     _group_ids,
     _site_conditional,
     fit_boltzmann_ising,
 )
 from k2dex.sampling import estimate_moments, initialize_state
+
+
+def _factored_bank(team_flat, species_id, site):
+    """Convert a flat-index bank (n_temps, n_chains, k) to the factored
+    (team_sites, team_values, feat_lookup) form the Potts sampler now uses."""
+    _S, sp_item_feat, sp_item_valid, _iid = site
+    V = species_id.shape[0]
+    feat_to_val0 = np.zeros(V, dtype=np.int64)
+    feat_to_val0[sp_item_feat[sp_item_valid]] = np.nonzero(sp_item_valid)[1]
+    team_sites = species_id[team_flat]
+    team_values = feat_to_val0[team_flat][..., None]
+    return team_sites, team_values, sp_item_feat
 
 
 def _valid_teams(V, k, species_of, item_of):
@@ -74,14 +87,17 @@ def _potts_moments(J, h, k, species_of, item_of, *, seed,
     for c in range(n_chains):
         team[0, c] = initialize_state(
             available, k, set(), set(), species_of, item_of, rng)
-    _advance_bank_potts(team, J, h, temps, species_id, item_id, site, rng,
+    team_sites, team_values, feat_lookup = _factored_bank(team, species_id, site)
+    _advance_bank_potts(team_sites, team_values, J, h, temps, item_id, site,
+                        feat_lookup, rng,
                         n_sweeps=burn, swap_interval=10, p_reroll=0.5)
     m_acc = np.zeros(V)
     C_acc = np.zeros((V, V))
     for _ in range(snapshots):
-        _advance_bank_potts(team, J, h, temps, species_id, item_id, site, rng,
+        _advance_bank_potts(team_sites, team_values, J, h, temps, item_id, site,
+                            feat_lookup, rng,
                             n_sweeps=stride, swap_interval=10, p_reroll=0.5)
-        flat = team[0]
+        flat = _bank_flat_indices(team_sites[0], team_values[0], feat_lookup)
         m_acc += np.bincount(flat.ravel(), minlength=V) / n_chains
         # raw second moments over on-bits
         for row in flat:
@@ -201,9 +217,12 @@ class TestConstraintInvariants(unittest.TestCase):
         for c in range(64):
             team[0, c] = initialize_state(
                 available, k, set(), set(), _SPECIES, _ITEM, rng)
-        _advance_bank_potts(team, J, h, np.array([1.0]), species_id, item_id,
-                            site, rng, n_sweeps=800, swap_interval=10, p_reroll=0.5)
-        for row in team[0]:
+        team_sites, team_values, feat_lookup = _factored_bank(team, species_id, site)
+        _advance_bank_potts(team_sites, team_values, J, h, np.array([1.0]),
+                            item_id, site, feat_lookup, rng,
+                            n_sweeps=800, swap_interval=10, p_reroll=0.5)
+        team_flat = _bank_flat_indices(team_sites[0], team_values[0], feat_lookup)
+        for row in team_flat:
             sp = [_SPECIES[i] for i in row]
             self.assertEqual(len(set(sp)), k, "duplicate species produced")
             it = [_ITEM[i] for i in row if _ITEM[i] is not None]
@@ -227,10 +246,14 @@ class TestConstraintInvariants(unittest.TestCase):
         for c in range(32):
             team[0, c] = initialize_state(
                 available, k, set(), set(), _SPECIES, _ITEM, rng)
-        before = np.sort(species_id[team[0]], axis=1)
-        _advance_bank_potts(team, J, h, np.array([1.0]), species_id, item_id,
-                            site, rng, n_sweeps=300, swap_interval=10, p_reroll=1.0)
-        after = np.sort(species_id[team[0]], axis=1)
+        team_sites, team_values, feat_lookup = _factored_bank(team, species_id, site)
+        # p_reroll=1.0 -> only value rerolls; team_sites (the species roster) is
+        # never touched, so the sorted per-chain species multiset is invariant.
+        before = np.sort(team_sites[0], axis=1).copy()
+        _advance_bank_potts(team_sites, team_values, J, h, np.array([1.0]),
+                            item_id, site, feat_lookup, rng,
+                            n_sweeps=300, swap_interval=10, p_reroll=1.0)
+        after = np.sort(team_sites[0], axis=1)
         np.testing.assert_array_equal(before, after)
 
 

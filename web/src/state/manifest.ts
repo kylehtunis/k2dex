@@ -4,6 +4,9 @@ export interface ModelSummary {
   description?: string;
   regulation: string;
   featureDimensions: 1 | 2;
+  /** Track (attribute) definitions the model carries, for the UI toggle.
+   * Empty for species-only models. */
+  tracks: { name: string; unique: boolean }[];
   V: number;
   nCorpusTeams: number;
   latestTournamentDate: string;
@@ -26,6 +29,7 @@ interface ManifestJson {
     description?: string;
     regulation: string;
     feature_dimensions: 1 | 2;
+    tracks?: { name: string; unique: boolean }[];
     V: number;
     n_corpus_teams: number;
     latest_tournament_date: string;
@@ -51,6 +55,7 @@ export async function loadManifest(): Promise<Manifest> {
       ...(m.description !== undefined && { description: m.description }),
       regulation: m.regulation,
       featureDimensions: m.feature_dimensions,
+      tracks: m.tracks ?? [],
       V: m.V,
       nCorpusTeams: m.n_corpus_teams,
       latestTournamentDate: m.latest_tournament_date,

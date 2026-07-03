@@ -3,7 +3,8 @@
 Fits a single PL inverse-Ising model per invocation and serializes the
 artifacts the JS client needs into `web/public/models/<slug>/`:
 
-    meta.json         — vocab, species_of, item_of, scalars, fit hyperparams
+    meta.json         — vocab, sites, site_of, tracks, track_values,
+                        scalars, fit hyperparams (schema v3, factored)
     J.bin             — float32 lower triangle, V*(V-1)/2 entries
                         ordering: [J[i,j] for i in range(1,V) for j in range(i)]
     h.bin             — float32, V entries
@@ -185,6 +186,26 @@ def write_model(
     feature_dimensions = 1 if all(i is None for i in item_of) else 2
     print(f"  V = {V}, corpus teams = {n_teams:,}, latest tournament = {latest_date}")
 
+    # Factored (sites + tracks) schema derivation. Sites are the distinct
+    # species in first-appearance (vocab) order; site_of maps each feature to
+    # its site. A species+item model carries one "item" track (unique per team);
+    # a species-only model carries no tracks (each site has a single feature).
+    # site_features is intentionally NOT stored -- it is a pure projection of
+    # site_of that both loaders and the TS sampler rederive.
+    sites: list[str] = []
+    site_index: dict[str, int] = {}
+    for sp in species_of:
+        if sp not in site_index:
+            site_index[sp] = len(sites)
+            sites.append(sp)
+    site_of = [site_index[sp] for sp in species_of]
+    if feature_dimensions == 2:
+        tracks = [{"name": "item", "unique": True}]
+        track_values: list[list[str | None]] = [[it] for it in item_of]
+    else:
+        tracks = []
+        track_values = [[] for _ in vocab]
+
     model_dir.mkdir(parents=True, exist_ok=True)
 
     j_flat = pack_lower_triangle(J)
@@ -205,8 +226,10 @@ def write_model(
         "team_size": TEAM_SIZE,
         "n_corpus_teams": n_teams,
         "vocab": vocab,
-        "species_of": species_of,
-        "item_of": item_of,
+        "sites": sites,
+        "site_of": site_of,
+        "tracks": tracks,
+        "track_values": track_values,
         "fit": {
             "method": method,
             "lambda": lam,
@@ -227,7 +250,7 @@ def write_model(
                 else {}
             ),
         },
-        "schema_version": 2,
+        "schema_version": 3,
     }
     if description:
         meta["description"] = description
@@ -265,6 +288,7 @@ def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> Non
             "n_corpus_teams": meta["n_corpus_teams"],
             "latest_tournament_date": meta.get("latest_tournament_date", ""),
             "team_size": meta.get("team_size", TEAM_SIZE),
+            "tracks": meta.get("tracks", []),
         }
         if "description" in meta:
             entry["description"] = meta["description"]
@@ -285,7 +309,7 @@ def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> Non
     models.sort(key=lambda m: m["id"] != resolved_default)
 
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "default_model": resolved_default,
         "models": models,
     }

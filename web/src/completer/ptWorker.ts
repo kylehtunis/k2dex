@@ -6,12 +6,15 @@
 // (sampling.py emits raw samples; app.py:parallel_tempered_distribution
 // folds them into a Counter, which is what /completer renders).
 
+import { deriveFactored } from "../sampler/model";
 import { parallelTemperedMcmc } from "../sampler/pt";
 import type { IsingModel, TeamIndices } from "../sampler/types";
 
 export interface PTRequest {
   /** Slim view of the model. Worker reconstructs an IsingModel-shaped
-   * value from these (it doesn't need vocab/indexOf for the math). */
+   * value from these (it doesn't need vocab/indexOf for the math). The
+   * factored fields (sites/siteOf/tracks/trackValues) drive the Potts moves;
+   * speciesOf/itemOf/siteFeatures are rederived from them in the worker. */
   modelData: {
     V: number;
     teamSize: number;
@@ -19,8 +22,10 @@ export interface PTRequest {
     h: Float64Array;
     m: Float64Array;
     vocab: readonly string[];
-    speciesOf: readonly string[];
-    itemOf: readonly (string | null)[];
+    sites: readonly string[];
+    siteOf: readonly number[];
+    tracks: readonly { name: string; unique: boolean }[];
+    trackValues: readonly (readonly (string | null)[])[];
   };
   fixed: readonly number[];
   excluded: readonly number[];
@@ -37,6 +42,8 @@ export interface PTRequest {
   burnIn: number;
   swapInterval: number;
   seed: number;
+  /** Item-track reroll probability per sweep (ignored for species-only). */
+  pReroll?: number;
 }
 
 export interface PTResponse {
@@ -86,20 +93,31 @@ function aggregate(
 self.onmessage = (e: MessageEvent<PTRequest>) => {
   const req = e.data;
   try {
+    const md = req.modelData;
+    const { siteFeatures, speciesOf, itemOf } = deriveFactored(
+      md.sites,
+      md.siteOf,
+      md.trackValues,
+    );
     const model: IsingModel = {
       id: "",
       displayName: "",
       regulation: "",
-      featureDimensions: 1,
+      featureDimensions: md.tracks.length + 1,
       latestTournamentDate: "",
-      V: req.modelData.V,
-      teamSize: req.modelData.teamSize,
-      vocab: req.modelData.vocab,
-      speciesOf: req.modelData.speciesOf,
-      itemOf: req.modelData.itemOf,
-      m: req.modelData.m,
-      J: req.modelData.J,
-      h: req.modelData.h,
+      V: md.V,
+      teamSize: md.teamSize,
+      vocab: md.vocab,
+      sites: md.sites,
+      siteOf: md.siteOf,
+      tracks: md.tracks,
+      trackValues: md.trackValues,
+      siteFeatures,
+      speciesOf,
+      itemOf,
+      m: md.m,
+      J: md.J,
+      h: md.h,
       indexOf: new Map(),
       nCorpusTeams: 0,
       name: "",
@@ -118,6 +136,7 @@ self.onmessage = (e: MessageEvent<PTRequest>) => {
         burnIn: req.burnIn,
         swapInterval: req.swapInterval,
         seed: req.seed + run, // independent stream per run
+        pReroll: req.pReroll,
       });
       if (res === null) {
         const reply: PTError = {

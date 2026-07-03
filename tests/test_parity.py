@@ -26,9 +26,11 @@ from pathlib import Path
 import numpy as np
 
 from k2dex.sampling import (
+    build_site_tables,
     greedy_optimize,
     meanfield_marginals,
     rank_single_swaps,
+    site_conditional,
 )
 from collections import Counter
 
@@ -206,6 +208,52 @@ class TestParity(unittest.TestCase):
         for case in self.baseline["slugs"]:
             with self.subTest(input=case["input"]):
                 self.assertEqual(species_to_slug(case["input"]), case["expected"])
+
+    def test_site_tables_cases(self) -> None:
+        """build_site_tables parity: the per-site feature grouping and item-id
+        assignment must match potts.ts:buildSiteTables byte-for-byte."""
+        expected = self.baseline["siteTables"]
+        tables = build_site_tables(self.species_of, self.item_of, self.V)
+        self.assertEqual(tables.n_sites, expected["nSites"])
+        self.assertEqual(
+            [list(x) for x in tables.site_features], expected["siteFeatures"],
+        )
+        self.assertEqual(list(tables.item_id), expected["itemId"])
+
+    def test_site_conditional_cases(self) -> None:
+        """site_conditional parity: candidate feats, neg-energies, validity, and
+        the log item-partition must match potts.ts:siteConditional."""
+        tables = build_site_tables(self.species_of, self.item_of, self.V)
+        avail = np.ones(self.V, dtype=bool)
+        for case in self.baseline["siteConditional"]:
+            with self.subTest(case=case["name"]):
+                inp = case["input"]
+                r_feat = inp["rFeat"]
+                r_item_id = [tables.item_id[f] for f in r_feat]
+                log_z, neg_e, valid, feats = site_conditional(
+                    inp["site"], r_feat, r_item_id,
+                    self.J, self.h, inp["invTemp"], tables, avail,
+                )
+                exp = case["expected"]
+                self.assertEqual(list(feats), exp["feats"],
+                                 f"feats mismatch for {case['name']}")
+                np.testing.assert_allclose(
+                    neg_e, np.array(exp["negE"]), atol=ATOL,
+                    err_msg=f"negE mismatch for {case['name']}",
+                )
+                np.testing.assert_array_equal(
+                    valid.astype(np.uint8),
+                    np.array(exp["valid"], dtype=np.uint8),
+                    err_msg=f"valid mismatch for {case['name']}",
+                )
+                if exp["logZ"] is None:
+                    self.assertFalse(np.isfinite(log_z),
+                                     f"expected -inf logZ for {case['name']}")
+                else:
+                    self.assertAlmostEqual(
+                        log_z, exp["logZ"], delta=ATOL,
+                        msg=f"logZ mismatch for {case['name']}",
+                    )
 
     def test_rank_cases(self) -> None:
         for case in self.baseline["rank"]:

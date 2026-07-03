@@ -81,22 +81,33 @@ export function runFastPath(
   for (let i = 0; i < model.V; i++) if (mf.validMask[i]) validIdxs.push(i);
   validIdxs.sort((a, b) => mf.marginals[b] - mf.marginals[a]);
 
-  const usedSp = new Set<string>();
-  const usedItem = new Set<string>();
-  for (const i of fixed) {
-    usedSp.add(model.speciesOf[i]);
-    const it = model.itemOf[i];
-    if (it !== null) usedItem.add(it);
-  }
+  const { siteOf, tracks, trackValues } = model;
+  const usedSites = new Set<number>();
+  const usedTrack = tracks.map(() => new Set<string>());
+  const addUsed = (i: number) => {
+    usedSites.add(siteOf[i]);
+    for (let t = 0; t < tracks.length; t++) {
+      if (!tracks[t].unique) continue;
+      const v = trackValues[i][t];
+      if (v !== null) usedTrack[t].add(v);
+    }
+  };
+  const conflicts = (i: number): boolean => {
+    if (usedSites.has(siteOf[i])) return true;
+    for (let t = 0; t < tracks.length; t++) {
+      if (!tracks[t].unique) continue;
+      const v = trackValues[i][t];
+      if (v !== null && usedTrack[t].has(v)) return true;
+    }
+    return false;
+  };
+  for (const i of fixed) addUsed(i);
   const initFree: number[] = [];
   for (const cand of validIdxs) {
     if (initFree.length === kFree) break;
-    if (usedSp.has(model.speciesOf[cand])) continue;
-    const it = model.itemOf[cand];
-    if (it !== null && usedItem.has(it)) continue;
+    if (conflicts(cand)) continue;
     initFree.push(cand);
-    usedSp.add(model.speciesOf[cand]);
-    if (it !== null) usedItem.add(it);
+    addUsed(cand);
   }
   if (initFree.length < kFree) {
     return {

@@ -41,6 +41,7 @@ export function runPT(
     burnIn: number;
     swapInterval: number;
     seed?: number;
+    pReroll?: number;
   },
 ): Promise<PTSuccess | PTFailure> {
   return new Promise((resolve) => {
@@ -65,8 +66,10 @@ export function runPT(
         h: model.h,
         m: model.m,
         vocab: model.vocab,
-        speciesOf: model.speciesOf,
-        itemOf: model.itemOf,
+        sites: model.sites,
+        siteOf: model.siteOf,
+        tracks: model.tracks,
+        trackValues: model.trackValues,
       },
       fixed: opts.fixed,
       excluded: opts.excluded,
@@ -79,6 +82,7 @@ export function runPT(
       burnIn: opts.burnIn,
       swapInterval: opts.swapInterval,
       seed: opts.seed ?? 0x5eed,
+      pReroll: opts.pReroll,
     };
     worker.postMessage(req);
   });
