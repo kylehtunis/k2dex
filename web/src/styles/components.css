@@ -348,6 +348,15 @@
   padding: 3px 10px;
   border-radius: 2px;
 }
+.lab-included-tag {
+  font-family: var(--lab-font-sans);
+  font-size: 11px;
+  color: var(--lab-accent);
+  border: 1px solid var(--lab-accent);
+  background: var(--lab-panel);
+  padding: 3px 10px;
+  border-radius: 2px;
+}
 .lab-excluded-note {
   font-family: var(--lab-font-serif);
   font-style: italic;

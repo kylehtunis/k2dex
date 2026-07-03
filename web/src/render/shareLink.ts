@@ -19,9 +19,9 @@
 // Legacy model codes (the short "s"/"si" and the retired split-model slugs)
 // decode to the unified per-regulation slug for backward compatibility.
 //
-// Completer adds default-omitting params: x (excluded), g (greedy),
-// tmp (temperature index), a (advanced PT knobs), seed (reproduces the
-// exact PT run while inputs still match it).
+// Completer adds default-omitting params: x (excluded), i (included allow-list),
+// g (greedy), tmp (temperature index), a (advanced PT knobs), seed (reproduces
+// the exact PT run while inputs still match it).
 
 import {
   FIELD_WEIGHT_OPTIONS,
@@ -138,6 +138,8 @@ export interface CompleterShareState {
   /** Deactivated attribute-track indices (species-only mode). Encoded as `d`. */
   inactiveTracks: readonly number[];
   excludedSpecies: readonly string[];
+  /** Inclusion allow-list (species names). Encoded as `i`. */
+  includedSpecies: readonly string[];
   usePT: boolean;
   temperature: number;
   ptRuns: number;
@@ -159,6 +161,12 @@ export function encodeCompleter(
     p.set(
       "x",
       [...s.excludedSpecies].map(speciesToSlug).sort().join("_"),
+    );
+  }
+  if (s.includedSpecies.length) {
+    p.set(
+      "i",
+      [...s.includedSpecies].map(speciesToSlug).sort().join("_"),
     );
   }
   if (s.inactiveTracks.length) {
@@ -190,6 +198,7 @@ export interface DecodedCompleter {
   features: FeatureSlug[];
   inactiveTracks: number[];
   excludedSlugs: string[];
+  includedSlugs: string[];
   usePT: boolean;
   temperature: number;
   ptRuns: number;
@@ -206,6 +215,8 @@ export function decodeCompleter(params: URLSearchParams): DecodedCompleter | nul
   const usePT = params.get("g") !== "1";
   const x = params.get("x");
   const excludedSlugs = x ? x.split("_").filter(Boolean) : [];
+  const iParam = params.get("i");
+  const includedSlugs = iParam ? iParam.split("_").filter(Boolean) : [];
   const d = params.get("d");
   const inactiveTracks = d
     ? d.split("-").map(Number).filter((n) => Number.isInteger(n) && n >= 0)
@@ -242,6 +253,7 @@ export function decodeCompleter(params: URLSearchParams): DecodedCompleter | nul
     features: core.features,
     inactiveTracks,
     excludedSlugs,
+    includedSlugs,
     usePT,
     temperature,
     ptRuns,

@@ -245,6 +245,7 @@ describe("shareLink completer token", () => {
         fixedSites: [],
         inactiveTracks: [],
         excludedSpecies: ["Amoonguss"],
+        includedSpecies: [],
         usePT: true,
         temperature: 0.5, // default — omitted
         ptRuns: 10,
@@ -269,6 +270,34 @@ describe("shareLink completer token", () => {
     expect(d.seed).toBeNull();
   });
 
+  it("round-trips the inclusion allow-list", () => {
+    const params = encodeCompleter(
+      {
+        modelId: "test-species-item",
+        fieldWeight: 0.3,
+        fixedIdxs: [],
+        fixedSites: [],
+        inactiveTracks: [],
+        excludedSpecies: [],
+        includedSpecies: ["Amoonguss", "Incineroar"],
+        usePT: true,
+        temperature: 0.5,
+        ptRuns: 10,
+        ptLadder: 7,
+        ptSweeps: 20000,
+        ptSwapInterval: 10,
+        seed: null,
+      },
+      model,
+    );
+    expect(params.get("i")).toBe("amoonguss_incineroar");
+    expect(params.get("x")).toBeNull();
+    expect(decodeCompleter(params)!.includedSlugs).toEqual([
+      "amoonguss",
+      "incineroar",
+    ]);
+  });
+
   it("carries greedy mode without a seed", () => {
     const params = encodeCompleter(
       {
@@ -278,6 +307,7 @@ describe("shareLink completer token", () => {
         fixedSites: [],
         inactiveTracks: [],
         excludedSpecies: [],
+        includedSpecies: [],
         usePT: false,
         temperature: 0.5,
         ptRuns: 10,
@@ -302,6 +332,7 @@ describe("shareLink completer token", () => {
         fixedSites: [1], // site pin: Alolan Ninetales (any item)
         inactiveTracks: [],
         excludedSpecies: [],
+        includedSpecies: [],
         usePT: true,
         temperature: 0.5,
         ptRuns: 10,
@@ -329,6 +360,7 @@ describe("shareLink completer token", () => {
         fixedSites: [1],
         inactiveTracks: [0], // item track off
         excludedSpecies: [],
+        includedSpecies: [],
         usePT: true,
         temperature: 0.5,
         ptRuns: 10,
@@ -352,6 +384,7 @@ describe("shareLink completer token", () => {
         fixedSites: [],
         inactiveTracks: [],
         excludedSpecies: [],
+        includedSpecies: [],
         usePT: true,
         temperature: 0.7,
         ptRuns: 15,

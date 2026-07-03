@@ -39,6 +39,9 @@ export interface CompleterInputs {
    * of the completions, and hidden. Empty = all attributes active. */
   inactiveTracks: number[];
   excludedSpecies: string[];
+  /** Inclusion allow-list (species names). When non-empty, the completer may
+   * only place these Pokémon (plus pinned ones); empty = all legal Pokémon. */
+  includedSpecies: string[];
   fieldWeight: number;
   temperature: number;
   usePT: boolean;
@@ -60,6 +63,7 @@ const COMPLETER_DEFAULTS: CompleterInputs = {
   roster: [],
   inactiveTracks: [],
   excludedSpecies: [],
+  includedSpecies: [],
   fieldWeight: 0.5,
   temperature: 0.5,
   usePT: true,

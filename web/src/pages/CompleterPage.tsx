@@ -32,7 +32,7 @@ import {
 import { useModel } from "../state/ModelContext";
 import { usePageState, type RosterSlot } from "../state/PageStateContext";
 import { PageTitle, SectionLabel, StatStrip } from "../render/atoms";
-import { ExcludedRow } from "../render/cells";
+import { ExcludedRow, IncludedRow } from "../render/cells";
 import { SpeciesSelect, speciesOptions } from "../components/VocabSelect";
 import { RosterEditor } from "../components/RosterEditor";
 import { runFastPath, type FastPathResult } from "../completer/fastPath";
@@ -98,18 +98,43 @@ export function CompleterPage() {
   const { completer, setCompleter } = usePageState();
 
   const {
-    roster, inactiveTracks, excludedSpecies, fieldWeight,
+    roster, inactiveTracks, excludedSpecies, includedSpecies, fieldWeight,
     temperature, usePT, ptRuns, ptLadder, ptSweeps, ptSwapInterval,
   } = completer;
   const setRoster = (next: RosterSlot[]) => setCompleter({ roster: next });
   // Reset every input on the page back to an empty query.
   const clearAll = () =>
-    setCompleter({ roster: [], excludedSpecies: [], inactiveTracks: [] });
+    setCompleter({
+      roster: [], excludedSpecies: [], includedSpecies: [], inactiveTracks: [],
+    });
 
   // Pin arrays derived from the ordered roster for the sampler + share links.
   // Feature pins (item chosen) vs site pins (item left to the completer).
   const fixedIdxs = roster.filter((s) => s.feature !== null).map((s) => s.feature as number);
   const fixedSites = roster.filter((s) => s.feature === null).map((s) => s.site);
+
+  // Inclusion allow-list → effective exclude set. The sampler only knows how to
+  // exclude features, so an "only these Pokémon" constraint is expressed as
+  // excluding every species outside the allowed set (included ∪ pinned). This
+  // keeps the sampler untouched — the include list is pure boundary conversion.
+  const pinnedSpecies = model ? roster.map((s) => model.sites[s.site]) : [];
+  const allowedSpeciesSet =
+    model && includedSpecies.length > 0
+      ? new Set<string>([...includedSpecies, ...pinnedSpecies])
+      : null;
+  const effectiveExcludedSpecies =
+    allowedSpeciesSet && model
+      ? model.sites.filter((sp) => !allowedSpeciesSet.has(sp))
+      : excludedSpecies;
+  const effectiveExcludedIdxs = (() => {
+    if (!model) return [] as number[];
+    const set = new Set(effectiveExcludedSpecies);
+    const out: number[] = [];
+    for (let i = 0; i < model.V; i++) {
+      if (set.has(model.speciesOf[i])) out.push(i);
+    }
+    return out;
+  })();
 
   // Attribute toggle. Today the only track is "item"; deactivating it drives
   // species-only mode (marginalize + hide the item, no reroll, no uniqueness).
@@ -178,12 +203,18 @@ export function CompleterPage() {
         const name = resolveSpeciesSlug(slugIndex, model, slug);
         if (name) excluded.push(name);
       }
+      const included: string[] = [];
+      for (const slug of d.includedSlugs) {
+        const name = resolveSpeciesSlug(slugIndex, model, slug);
+        if (name) included.push(name);
+      }
       appliedRef.current = identity;
       const inactive = d.inactiveTracks.filter((t) => t >= 0 && t < model.tracks.length);
       setCompleter({
         roster: newRoster.slice(0, TEAM_SIZE),
         inactiveTracks: inactive,
         excludedSpecies: excluded,
+        includedSpecies: included,
         fieldWeight: d.fieldWeight,
         usePT: d.usePT,
         temperature: d.temperature,
@@ -268,12 +299,26 @@ export function CompleterPage() {
     overlap.length > 0
       ? `Cannot be both pinned and excluded: ${overlap.join(", ")}`
       : null;
+  const excludedSet = new Set(excludedSpecies);
+  const includeExcludeOverlap = includedSpecies.filter((s) => excludedSet.has(s));
+  const includeExcludeError =
+    includeExcludeOverlap.length > 0
+      ? `Cannot be both included and excluded: ${includeExcludeOverlap.join(", ")}`
+      : null;
+  // With an include list active, the allowed pool (included ∪ pinned) must be
+  // large enough to fill all six slots.
+  const allowedCount = allowedSpeciesSet ? allowedSpeciesSet.size : 0;
+  const includeCountError =
+    includedSpecies.length > 0 && allowedCount < TEAM_SIZE
+      ? `Include at least ${TEAM_SIZE} Pokémon (included + pinned) to fill a team. Currently ${allowedCount}.`
+      : null;
   const ptTemperatureError =
     usePT && temperature >= PT_HOT_T
       ? `Temperature (${temperature}) must be strictly less than hot-T (${PT_HOT_T}) for the parallel-tempered sampler.`
       : null;
 
-  const formError = overlapError ?? ptTemperatureError;
+  const formError =
+    overlapError ?? includeExcludeError ?? includeCountError ?? ptTemperatureError;
   const canRun = !formError && !running;
 
   // True iff the most recent PT result was generated from the exact
@@ -281,11 +326,7 @@ export function CompleterPage() {
   // swap on the primary button.
   const isPTRerun = (() => {
     if (!usePT || runState?.mode !== "pt") return false;
-    const excludedNow: number[] = [];
-    const excludedSet = new Set(excludedSpecies);
-    for (let i = 0; i < (model?.V ?? 0); i++) {
-      if (excludedSet.has(model!.speciesOf[i])) excludedNow.push(i);
-    }
+    const excludedNow = effectiveExcludedIdxs;
     const fp = runState.fingerprint;
     if (fp.speciesOnly !== speciesOnly) return false;
     if (fp.fieldWeight !== fieldWeight) return false;
@@ -324,9 +365,15 @@ export function CompleterPage() {
   const fixedSitesKey = fixedSites.join(",");
   const inactiveKey = inactiveTracks.join(",");
   const excludedKey = [...excludedSpecies].sort().join(",");
+  const includedKey = [...includedSpecies].sort().join(",");
   const shareParams = useMemo(() => {
     if (!model) return null;
-    if (totalPins === 0 && excludedSpecies.length === 0) return null;
+    if (
+      totalPins === 0 &&
+      excludedSpecies.length === 0 &&
+      includedSpecies.length === 0
+    )
+      return null;
     return encodeCompleter(
       {
         modelId,
@@ -335,6 +382,7 @@ export function CompleterPage() {
         fixedSites,
         inactiveTracks,
         excludedSpecies,
+        includedSpecies,
         usePT,
         temperature,
         ptRuns,
@@ -348,7 +396,7 @@ export function CompleterPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     model, modelId, fieldWeight, fixedKey, fixedSitesKey, inactiveKey,
-    excludedKey, usePT, temperature, ptRuns, ptLadder, ptSweeps,
+    excludedKey, includedKey, usePT, temperature, ptRuns, ptLadder, ptSweeps,
     ptSwapInterval, seedForUrl,
   ]);
   useEffect(() => {
@@ -418,7 +466,7 @@ export function CompleterPage() {
         const r = runFastPath(effectiveModel, {
           fixed: fixedIdxs,
           fixedSites,
-          excludedSpecies,
+          excludedSpecies: effectiveExcludedSpecies,
           fieldWeight,
         });
         if (r.ok) {
@@ -432,12 +480,8 @@ export function CompleterPage() {
       return;
     }
 
-    // PT path — in a Web Worker.
-    const excluded: number[] = [];
-    const excludedSet = new Set(excludedSpecies);
-    for (let i = 0; i < model.V; i++) {
-      if (excludedSet.has(model.speciesOf[i])) excluded.push(i);
-    }
+    // PT path — in a Web Worker. `excluded` folds in the include allow-list.
+    const excluded = effectiveExcludedIdxs;
     const t0 = startTimer();
     // Total sweeps include the locked burn-in so the user-displayed
     // "Samples per run" matches what's actually kept post burn-in.
@@ -535,7 +579,12 @@ export function CompleterPage() {
           type="button"
           className="lab-analyze-btn lab-copy-paste-btn"
           onClick={clearAll}
-          disabled={roster.length === 0 && excludedSpecies.length === 0 && inactiveTracks.length === 0}
+          disabled={
+            roster.length === 0 &&
+            excludedSpecies.length === 0 &&
+            includedSpecies.length === 0 &&
+            inactiveTracks.length === 0
+          }
         >
           Clear all
         </button>
@@ -547,6 +596,7 @@ export function CompleterPage() {
         ))}
       </div>
       <ExcludedRow names={excludedSpecies} />
+      <IncludedRow names={includedSpecies} />
 
       <SectionLabel num="02" title="Constraints" />
       <div style={{ marginBottom: 16 }}>
@@ -557,6 +607,22 @@ export function CompleterPage() {
           onChange={(v) => setCompleter({ excludedSpecies: v })}
           placeholder="Choose Pokémon to exclude"
           ariaLabel="Exclude Pokémon"
+        />
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <label className="lab-form-label">Include (only these may appear)</label>
+        <div className="lab-form-caption">
+          Restrict the completer to only these Pokémon (plus any you've pinned).
+          Handy if you only own part of the roster. Leave empty to allow every
+          legal Pokémon. With a list set, included plus pinned must total at
+          least {TEAM_SIZE}.
+        </div>
+        <SpeciesSelect
+          options={speciesOpts}
+          value={includedSpecies}
+          onChange={(v) => setCompleter({ includedSpecies: v })}
+          placeholder="Choose the only Pokémon to allow"
+          ariaLabel="Include Pokémon"
         />
       </div>
 

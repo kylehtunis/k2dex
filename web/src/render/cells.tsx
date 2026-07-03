@@ -107,6 +107,28 @@ export function ExcludedRow({ names, note }: ExcludedRowProps) {
   );
 }
 
+// ----- Included row ---------------------------------------------------
+
+export interface IncludedRowProps {
+  names: readonly string[];
+  note?: string;
+}
+
+export function IncludedRow({ names, note }: IncludedRowProps) {
+  if (names.length === 0 && !note) return null;
+  return (
+    <div className="lab-excluded-row">
+      {names.length > 0 && <span className="lab-excluded-label">only</span>}
+      {names.map((n) => (
+        <span key={n} className="lab-included-tag">
+          {extractSpecies(n)}
+        </span>
+      ))}
+      {note && <span className="lab-excluded-note">— {note}</span>}
+    </div>
+  );
+}
+
 // ----- Comp mon / inline mon / pair / swap ----------------------------
 
 export interface CompMonCellProps {
