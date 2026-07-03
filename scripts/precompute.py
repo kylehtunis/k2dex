@@ -49,6 +49,19 @@ import numpy as np
 from numpy.typing import NDArray
 
 from k2dex.constants import (
+    BOLTZMANN_AVG_LAST,
+    BOLTZMANN_LR,
+    BOLTZMANN_LR_FINAL,
+    BOLTZMANN_N_BURN,
+    BOLTZMANN_N_CHAINS,
+    BOLTZMANN_N_ITERS,
+    BOLTZMANN_N_SWEEPS,
+    BOLTZMANN_N_TEMPS,
+    BOLTZMANN_REG,
+    BOLTZMANN_REG_LAMBDA,
+    BOLTZMANN_SEED,
+    BOLTZMANN_SWAP_INTERVAL,
+    BOLTZMANN_T_MAX,
     CURRENT_REGULATION,
     IN_PERSON_WEIGHT,
     PHASE2_MIN_TEAM_COUNT,
@@ -504,42 +517,44 @@ def main() -> int:
 
     bz_group = parser.add_argument_group(
         "boltzmann options (only used with --method boltzmann)")
-    bz_group.add_argument("--bz-iters", type=int, default=500,
-                          help="Gradient steps (default: 500).")
-    bz_group.add_argument("--bz-lr", type=float, default=0.05,
-                          help="Adam learning rate (default: 0.05).")
-    bz_group.add_argument("--bz-lr-final", type=float, default=None,
+    bz_group.add_argument("--bz-iters", type=int, default=BOLTZMANN_N_ITERS,
+                          help=f"Gradient steps (default: {BOLTZMANN_N_ITERS}).")
+    bz_group.add_argument("--bz-lr", type=float, default=BOLTZMANN_LR,
+                          help=f"Adam learning rate (default: {BOLTZMANN_LR}).")
+    bz_group.add_argument("--bz-lr-final", type=float, default=BOLTZMANN_LR_FINAL,
                           help="Cosine-anneal the step size to this value (shrinks the "
                                "stochastic-gradient noise ball -- the dominant error). "
-                               "Default: lr/20. Set equal to --bz-lr to disable decay.")
-    bz_group.add_argument("--bz-avg-last", type=int, default=0,
+                               f"Default: {BOLTZMANN_LR_FINAL} (BOLTZMANN_LR/20). Set "
+                               "equal to --bz-lr to disable decay.")
+    bz_group.add_argument("--bz-avg-last", type=int, default=BOLTZMANN_AVG_LAST,
                           help="Polyak iterate-averaging window: average (J,h) over the "
                                "last N steps (0 = off; alternative to lr decay, comparable).")
-    bz_group.add_argument("--bz-chains", type=int, default=400,
-                          help="PCD chain-bank size (default: 400).")
-    bz_group.add_argument("--bz-sweeps", type=int, default=100,
-                          help="Swaps per chain per gradient step (default: 100).")
-    bz_group.add_argument("--bz-n-burn", type=int, default=200,
-                          help="Initial bank-mixing swaps per chain (default: 200).")
-    bz_group.add_argument("--bz-temps", type=int, default=1,
-                          help="Parallel-tempering replicas per chain (default: 1 = "
-                               "off; single-T PCD sufficed on the M-A corpus). >1 only "
-                               "for genuinely multimodal models.")
-    bz_group.add_argument("--bz-t-max", type=float, default=3.0,
-                          help="Hot temperature for tempering (default: 3.0; unused if "
-                               "--bz-temps 1).")
-    bz_group.add_argument("--bz-swap-interval", type=int, default=10,
-                          help="Sweeps between replica-exchange attempts (default: 10).")
-    bz_group.add_argument("--bz-reg", choices=["l1", "l2"], default="l2",
-                          help="Regularizer toward zero (default: l2).")
-    bz_group.add_argument("--bz-reg-lambda", type=float, default=1e-3,
-                          help="Regularization strength (default: 1e-3).")
+    bz_group.add_argument("--bz-chains", type=int, default=BOLTZMANN_N_CHAINS,
+                          help=f"PCD chain-bank size (default: {BOLTZMANN_N_CHAINS}).")
+    bz_group.add_argument("--bz-sweeps", type=int, default=BOLTZMANN_N_SWEEPS,
+                          help=f"Swaps per chain per gradient step (default: {BOLTZMANN_N_SWEEPS}).")
+    bz_group.add_argument("--bz-n-burn", type=int, default=BOLTZMANN_N_BURN,
+                          help=f"Initial bank-mixing swaps per chain (default: {BOLTZMANN_N_BURN}).")
+    bz_group.add_argument("--bz-temps", type=int, default=BOLTZMANN_N_TEMPS,
+                          help=f"Parallel-tempering replicas per chain (default: "
+                               f"{BOLTZMANN_N_TEMPS} = off; single-T PCD sufficed on the "
+                               "M-A corpus). >1 only for genuinely multimodal models.")
+    bz_group.add_argument("--bz-t-max", type=float, default=BOLTZMANN_T_MAX,
+                          help=f"Hot temperature for tempering (default: {BOLTZMANN_T_MAX}; "
+                               "unused if --bz-temps 1).")
+    bz_group.add_argument("--bz-swap-interval", type=int, default=BOLTZMANN_SWAP_INTERVAL,
+                          help=f"Sweeps between replica-exchange attempts (default: "
+                               f"{BOLTZMANN_SWAP_INTERVAL}).")
+    bz_group.add_argument("--bz-reg", choices=["l1", "l2"], default=BOLTZMANN_REG,
+                          help=f"Regularizer toward zero (default: {BOLTZMANN_REG}).")
+    bz_group.add_argument("--bz-reg-lambda", type=float, default=BOLTZMANN_REG_LAMBDA,
+                          help=f"Regularization strength (default: {BOLTZMANN_REG_LAMBDA}).")
     bz_group.add_argument("--bz-support-min-count", type=int, default=None,
                           help="If set, only fit couplings for feature pairs that "
                                "co-occur >= N times in the corpus (freezes the rest "
                                "at the PL warm-start). Recommended for species_item.")
-    bz_group.add_argument("--bz-seed", type=int, default=0,
-                          help="RNG seed for the PCD sampler (default: 0).")
+    bz_group.add_argument("--bz-seed", type=int, default=BOLTZMANN_SEED,
+                          help=f"RNG seed for the PCD sampler (default: {BOLTZMANN_SEED}).")
 
     manifest_group = parser.add_argument_group("manifest generation")
     manifest_group.add_argument(
@@ -588,8 +603,7 @@ def main() -> int:
             "lr": args.bz_lr,
             # Cosine-decay the step size by default (kills the noise ball, ~7x
             # lower moment bias); set --bz-lr-final == --bz-lr to disable.
-            "lr_final": (args.bz_lr_final if args.bz_lr_final is not None
-                         else args.bz_lr / 20.0),
+            "lr_final": args.bz_lr_final,
             "avg_last": args.bz_avg_last,
             "n_chains": args.bz_chains,
             "n_sweeps": args.bz_sweeps,

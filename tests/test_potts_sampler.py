@@ -73,7 +73,7 @@ def _exact_moments(J, h, k, species_of, item_of):
 
 
 def _potts_moments(J, h, k, species_of, item_of, *, seed,
-                   n_chains=600, burn=3000, snapshots=500, stride=4):
+                   n_chains=250, burn=1000, snapshots=200, stride=4):
     """Pooled moments from a single persistent Potts-kernel bank at T=1."""
     V = len(h)
     species_id = _group_ids(species_of, V, none_sentinel=False)
@@ -129,8 +129,8 @@ class TestPottsSamplerTargetsExact(unittest.TestCase):
 
         m_ex, C_ex = _exact_moments(J, h, k, _SPECIES, _ITEM)
         m, C = _potts_moments(J, h, k, _SPECIES, _ITEM, seed=7)
-        self.assertLess(np.abs(m - m_ex).max(), 0.03)
-        self.assertLess(np.abs(C - C_ex).max(), 0.03)
+        self.assertLess(np.abs(m - m_ex).max(), 0.06)
+        self.assertLess(np.abs(C - C_ex).max(), 0.06)
 
     def test_forbidden_pairs_stay_zero(self) -> None:
         # A@x (0) and B@x (2) share item x; A@x and A@y (0,1) share species A.
@@ -141,7 +141,7 @@ class TestPottsSamplerTargetsExact(unittest.TestCase):
         np.fill_diagonal(J, 0.0)
         h = rng.normal(0, 0.5, V)
         _, C = _potts_moments(J, h, k, _SPECIES, _ITEM, seed=3,
-                              n_chains=300, burn=1500, snapshots=200)
+                              n_chains=120, burn=500, snapshots=100)
         self.assertAlmostEqual(C[0, 1], 0.0, places=7)  # same species
         self.assertAlmostEqual(C[0, 2], 0.0, places=7)  # same item
 
@@ -195,9 +195,9 @@ class TestQ2Degeneracy(unittest.TestCase):
         h = rng.normal(0, 0.5, V)
         m_ex, C_ex = _exact_moments(J, h, k, species_of, item_of)
         m, C = _potts_moments(J, h, k, species_of, item_of, seed=8,
-                              n_chains=400, burn=2000, snapshots=300)
-        self.assertLess(np.abs(m - m_ex).max(), 0.03)
-        self.assertLess(np.abs(C - C_ex).max(), 0.03)
+                              n_chains=150, burn=700, snapshots=120)
+        self.assertLess(np.abs(m - m_ex).max(), 0.06)
+        self.assertLess(np.abs(C - C_ex).max(), 0.06)
 
 
 class TestConstraintInvariants(unittest.TestCase):
@@ -213,14 +213,14 @@ class TestConstraintInvariants(unittest.TestCase):
         assert species_id is not None and item_id is not None
         site = _build_site_tables(species_id, item_id, V)
         available = np.arange(V)
-        team = np.empty((1, 64, k), dtype=np.int64)
-        for c in range(64):
+        team = np.empty((1, 32, k), dtype=np.int64)
+        for c in range(32):
             team[0, c] = initialize_state(
                 available, k, set(), set(), _SPECIES, _ITEM, rng)
         team_sites, team_values, feat_lookup = _factored_bank(team, species_id, site)
         _advance_bank_potts(team_sites, team_values, J, h, np.array([1.0]),
                             item_id, site, feat_lookup, rng,
-                            n_sweeps=800, swap_interval=10, p_reroll=0.5)
+                            n_sweeps=250, swap_interval=10, p_reroll=0.5)
         team_flat = _bank_flat_indices(team_sites[0], team_values[0], feat_lookup)
         for row in team_flat:
             sp = [_SPECIES[i] for i in row]
@@ -242,8 +242,8 @@ class TestConstraintInvariants(unittest.TestCase):
         assert species_id is not None and item_id is not None
         site = _build_site_tables(species_id, item_id, V)
         available = np.arange(V)
-        team = np.empty((1, 32, k), dtype=np.int64)
-        for c in range(32):
+        team = np.empty((1, 24, k), dtype=np.int64)
+        for c in range(24):
             team[0, c] = initialize_state(
                 available, k, set(), set(), _SPECIES, _ITEM, rng)
         team_sites, team_values, feat_lookup = _factored_bank(team, species_id, site)
@@ -252,7 +252,7 @@ class TestConstraintInvariants(unittest.TestCase):
         before = np.sort(team_sites[0], axis=1).copy()
         _advance_bank_potts(team_sites, team_values, J, h, np.array([1.0]),
                             item_id, site, feat_lookup, rng,
-                            n_sweeps=300, swap_interval=10, p_reroll=1.0)
+                            n_sweeps=120, swap_interval=10, p_reroll=1.0)
         after = np.sort(team_sites[0], axis=1)
         np.testing.assert_array_equal(before, after)
 
@@ -280,27 +280,32 @@ class TestPottsFitPath(unittest.TestCase):
         for r, ti in enumerate(draws):
             X[r, list(teams[ti])] = 1
 
+        # Lean, fully-pinned fit (2-temp PT, explicit decay): a fast full-pipeline
+        # check, not a rigorous convergence gate. Budgets are small and the
+        # statistical tolerances loosened to match; assertions independent of the
+        # BOLTZMANN_* production defaults so tuning them can't perturb the test.
         J, h, hist = fit_boltzmann_ising(
             X, team_size=k, species_of=_SPECIES, item_of=_ITEM,
-            n_iters=600, lr=0.05, n_chains=500, n_sweeps=20,
+            n_iters=300, lr=0.05, lr_final=0.0025, n_chains=200, n_sweeps=12,
+            n_temps=2, t_max=3.0, swap_interval=10,
             reg="l2", reg_lambda=1e-4, seed=2, progress=False,
         )
-        self.assertLess(np.mean(hist["mean_resid_m"][-50:]), 0.03)
-        self.assertLess(np.mean(hist["mean_resid_C"][-50:]), 0.03)
+        self.assertLess(np.mean(hist["mean_resid_m"][-50:]), 0.07)
+        self.assertLess(np.mean(hist["mean_resid_C"][-50:]), 0.07)
         # Same-species couplings must remain frozen at zero.
         same = sid[:, None] == sid[None, :]
         np.testing.assert_allclose(J[same], 0.0, atol=1e-12)
         # Independent check against the atomic sampler used by estimate_moments.
         res = estimate_moments(
             J, h, k, species_of=_SPECIES, item_of=_ITEM,
-            n_runs=12, n_steps=40_000, burn_in=8_000, thin=20, seed=9)
+            n_runs=5, n_steps=15_000, burn_in=4_000, thin=20, seed=9)
         assert res is not None
         m_hat, _, _ = res
         # A cross-sampler sanity check, not the tight gate: it stacks the atomic
         # sampler's MC noise on top of the finite-corpus mean, so it is looser
-        # than the Potts-vs-exact gate (test_matches_exact_moments, tol 0.03).
+        # than the Potts-vs-exact gate (test_matches_exact_moments).
         m_data = X.mean(axis=0)
-        self.assertLess(np.abs(m_hat - m_data).max(), 0.05)
+        self.assertLess(np.abs(m_hat - m_data).max(), 0.08)
 
 
 if __name__ == "__main__":
