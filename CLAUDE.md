@@ -48,6 +48,7 @@ web/                    Static React/TS webapp (Vite + React 18)
   src/sampler/          1:1 port of k2dex/sampling.py
   src/render/           1:1 port of k2dex/rendering.py + rendering_html.py
   src/science/          "The Science of k2dex" article body (toy primitives independent of production sampler)
+  src/validation/       "Why Not Just Count?" article body (co-occurrence baseline vs model)
   src/articles/         Article registry (articles.ts metadata + components.tsx slug→lazy component)
   src/components/       Shared UI incl. FeatureModal (global feature-detail modal)
   public/models/        Precomputed model artifacts (committed)
@@ -98,7 +99,8 @@ Read the code for full APIs. These are the non-obvious parts:
 ## Articles surface
 
 - **Registry-driven** (webapp-only). `src/articles/articles.ts` holds the article metadata list (`ARTICLES`: slug/title/description/date) and is **deliberately React-free** so `siteMeta.ts` and the Node prerender script can import it; `src/articles/components.tsx` maps each slug to its lazy component. Adding an article = one entry in each. The `/articles` index (`ArticlesPage`) lists cards newest-first; `/articles/:slug` (`ArticlePage`) resolves the slug and renders the body inside a "← Articles" shell (unknown slug → index).
-- **First article is "The Science of k2dex"** (slug `the-science-of-k2dex`), whose body is `SciencePage` rendering the `src/science/` sections. The nav's right-aligned tab is **"Articles"** (was "Science"); the model picker + model-error banner hide on `/articles*` (as they did on `/science`).
+- **"The Science of k2dex"** (slug `the-science-of-k2dex`), body `SciencePage` rendering the `src/science/` sections. The nav's right-aligned tab is **"Articles"** (was "Science"); the model picker + model-error banner hide on `/articles*` (as they did on `/science`).
+- **"Why Not Just Count?"** (slug `model-vs-counting`), body `pages/ValidationArticlePage` rendering the two `src/validation/sections/` sections. Makes the case that the fitted model beats the raw co-occurrence baseline every other teambuilder uses. §1 `SpeciesComparison` — live "Teammates %" table (`widgets/TeammateTable`) + side-by-side co-occurrence-vs-model recommendations (`widgets/ComparisonColumns`), all species-level via `validation/cooccurrenceSpecies.ts` (folds the feature-level `sampler/cooccurrence.ts` matrix + model MF marginals down to sites). §2 `ItemInteractions` — curated `ItemModulationCard` examples (Charizard×Garchomp, Venusaur×Charizard) reading the live model's `J` to show how one item flips a pairing's synergy sign, which co-occurrence (species-level) is blind to. Card synergy is **usage-weighted** mean `J` over the partner species' item builds (matches `potts.py`'s weighting). New `lab-teammate-*` / `lab-comparison-*` / `lab-vs-*` / `lab-modulation-*` classes join the "never rename" set (responsive: columns stack at 900px).
 - **Legacy `/science`** redirects to the article at runtime (App.tsx `<Navigate>`); its prerendered static file sets `canonical`/`og:url` to the article URL and is excluded from the sitemap (`RouteMeta.canonical` override in `siteMeta.ts` + prerender). `ROUTE_META` appends one entry per article from `ARTICLES` plus the science-redirect entry, so prerender/sitemap/runtime head stay in sync.
 
 ## /science article gotchas
@@ -144,6 +146,9 @@ Read the code for full APIs. These are the non-obvious parts:
 | `rendering.intra_team_sum_j` | `render/observables.ts:intraTeamSumJ` | `test_parity.py::test_obs_cases` |
 | `rendering.pairwise_j_rows` | `render/observables.ts:pairwiseJRows` | `test_parity.py::test_obs_cases` |
 | `rendering.nearest_observed` | `render/corpus.ts:nearestObserved` | `test_parity.py::test_corpus_cases` |
+| `rendering.build_cooccurrence` | `sampler/cooccurrence.ts:buildCooccurrence` | `test_parity.py::test_cooccurrence_cases` |
+| `rendering.score_cooccurrence` | `sampler/cooccurrence.ts:scoreCooccurrence` | `test_parity.py::test_cooccurrence_cases` |
+| `rendering.cooccurrence_greedy` | `sampler/cooccurrence.ts:cooccurrenceGreedy` | `test_parity.py::test_cooccurrence_cases` |
 | `rendering_html.species_to_slug` | `render/sprite-url.ts:speciesToSlug` | `test_parity.py::test_species_to_slug_cases` |
 | `rendering_html.extract_species/item` | `render/format.ts:extractSpecies/Item` | indirect via baseline |
 | `loaders.format_pair` | `render/format.ts:formatPair` | indirect (precompute writes vocab) |

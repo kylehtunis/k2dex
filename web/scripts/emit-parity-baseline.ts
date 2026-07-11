@@ -22,6 +22,11 @@ import { meanfieldMarginals } from "../src/sampler/meanfield";
 import { greedyOptimize } from "../src/sampler/greedy";
 import { rankSingleSwaps } from "../src/sampler/rank";
 import { nearestObserved, teamKey } from "../src/render/corpus";
+import {
+  buildCooccurrence,
+  scoreCooccurrence,
+  cooccurrenceGreedy,
+} from "../src/sampler/cooccurrence";
 import { speciesToSlug } from "../src/render/sprite-url";
 import { intraTeamSumJ, pairwiseJRows } from "../src/render/observables";
 
@@ -388,6 +393,74 @@ for (const c of [
   });
 }
 
+// --- Co-occurrence cases ---------------------------------------------
+
+// A richer synthetic corpus than the nearest_observed one so co-occurrence
+// counts have structure: features 0..11 laid out as 6 species × 2 items.
+// Teams are size-4 and legal (distinct species). Kept separate from the
+// nearest_observed corpus so those hand-computed expectations stay stable.
+const coocEntries: Array<{ team: number[]; count: number }> = [
+  { team: [0, 2, 4, 6], count: 8 },
+  { team: [0, 3, 4, 7], count: 5 },
+  { team: [1, 2, 5, 8], count: 6 },
+  { team: [0, 2, 5, 9], count: 4 },
+  { team: [1, 3, 6, 10], count: 3 },
+  { team: [0, 4, 8, 10], count: 2 },
+];
+const coocTeamCounts: TeamCounts = new Map();
+for (const e of coocEntries) coocTeamCounts.set(teamKey(e.team), e.count);
+
+const cooc = buildCooccurrence(coocTeamCounts, V);
+
+interface CoocScoreCase {
+  name: string;
+  heldIn: number[];
+  scores: number[];
+}
+const coocScoreCases: CoocScoreCase[] = [];
+for (const c of [
+  { name: "cooc_score_single", heldIn: [0] },
+  { name: "cooc_score_pair", heldIn: [0, 2] },
+  { name: "cooc_score_empty", heldIn: [] as number[] },
+]) {
+  coocScoreCases.push({
+    name: c.name,
+    heldIn: c.heldIn,
+    scores: Array.from(scoreCooccurrence(cooc.C, V, c.heldIn)),
+  });
+}
+
+interface CoocGreedyCase {
+  name: string;
+  input: { fixed: number[]; excluded: number[] };
+  finalTeam: number[];
+}
+const coocGreedyCases: CoocGreedyCase[] = [];
+for (const c of [
+  { name: "cooc_greedy_from_pair", fixed: [0, 2], excluded: [] as number[] },
+  { name: "cooc_greedy_with_exclude", fixed: [0], excluded: [2, 3] },
+]) {
+  coocGreedyCases.push({
+    name: c.name,
+    input: { fixed: c.fixed, excluded: c.excluded },
+    finalTeam: cooccurrenceGreedy(cooc, model, {
+      fixed: c.fixed,
+      excluded: c.excluded,
+    }),
+  });
+}
+
+const coocExpected = {
+  rosters: coocEntries,
+  build: {
+    C: Array.from(cooc.C),
+    m: Array.from(cooc.m),
+    nTeams: cooc.nTeams,
+  },
+  scoreCases: coocScoreCases,
+  greedyCases: coocGreedyCases,
+};
+
 // --- Write baseline ---------------------------------------------------
 
 const baseline = {
@@ -416,9 +489,10 @@ const baseline = {
   obs: obsCases,
   siteTables: siteTablesExpected,
   siteConditional: siteCondCases,
+  cooccurrence: coocExpected,
 };
 
 mkdirSync(dirname(OUT_PATH), { recursive: true });
 writeFileSync(OUT_PATH, JSON.stringify(baseline, null, 2));
 console.log(`Wrote ${OUT_PATH}`);
-console.log(`  ${mfCases.length} MF cases, ${greedyCases.length} greedy cases, ${rankCases.length} rank cases, ${corpusCases.length} corpus cases, ${slugCases.length} slug cases, ${obsCases.length} obs cases, ${siteCondCases.length} site-conditional cases`);
+console.log(`  ${mfCases.length} MF cases, ${greedyCases.length} greedy cases, ${rankCases.length} rank cases, ${corpusCases.length} corpus cases, ${slugCases.length} slug cases, ${obsCases.length} obs cases, ${siteCondCases.length} site-conditional cases, ${coocScoreCases.length} cooc-score + ${coocGreedyCases.length} cooc-greedy cases`);

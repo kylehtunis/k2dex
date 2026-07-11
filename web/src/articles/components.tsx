@@ -5,5 +5,6 @@
 import { lazy, type LazyExoticComponent, type ComponentType } from "react";
 
 export const ARTICLE_COMPONENTS: Record<string, LazyExoticComponent<ComponentType>> = {
+  "model-vs-counting": lazy(() => import("../pages/ValidationArticlePage")),
   "the-science-of-k2dex": lazy(() => import("../pages/SciencePage")),
 };

@@ -20,6 +20,13 @@ export interface ArticleMeta {
 
 export const ARTICLES: readonly ArticleMeta[] = [
   {
+    slug: "model-vs-counting",
+    title: "Why Not Just Count?",
+    description:
+      "An interactive comparison showing why the k2dex model gives better team recommendations than the raw co-occurrence counting every other teambuilder uses.",
+    date: "2026-07-11",
+  },
+  {
     slug: "the-science-of-k2dex",
     title: "The Science of k2dex",
     description:
