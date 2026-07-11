@@ -202,6 +202,14 @@ _ITEM_ALIASES: dict[str, str] = {
     "Glimmorite": "Glimmoranite",
 }
 
+# Item strings that mean "no held item". The raw API uses several spellings
+# (plus a genuinely absent field); all collapse to Python ``None`` so a single
+# itemless bucket forms downstream. Values are the ``normalize_name`` (title-
+# cased) forms, since normalization runs before this lookup.
+_ITEMLESS_SPELLINGS: frozenset[str] = frozenset({
+    "None", "No Item", "Nothing", "Null",
+})
+
 _ILLEGAL_ITEMS_BY_REGULATION: dict[str, frozenset[str]] = {
     "M-A": frozenset({
         "Covert Cloak",
@@ -529,6 +537,8 @@ def _parse_members(
         name = strip_mega_prefix(name)
         name = _SPECIES_ALIASES.get(name, name)
         item = normalize_name(mon.get("item"))
+        if item in _ITEMLESS_SPELLINGS:
+            item = None
         if item:
             item = _ITEM_ALIASES.get(item, item)
             if item in illegal_items:
@@ -538,6 +548,12 @@ def _parse_members(
         return None
     # Reject teams with duplicate species (game rule)
     if len({species for species, _ in members}) != TEAM_SIZE:
+        return None
+    # Reject teams with no item reported on any member: a complete VGC teamsheet
+    # always lists items, so an all-itemless roster is a species-only submission
+    # (items simply weren't captured), not six mons genuinely holding nothing.
+    # Kept out of the corpus so unreported items don't masquerade as itemless.
+    if all(item is None for _, item in members):
         return None
     return frozenset(members)
 
