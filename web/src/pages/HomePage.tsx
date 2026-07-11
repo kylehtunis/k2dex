@@ -195,7 +195,7 @@ export function HomePage() {
           <span className="lab-section-num">§</span>
           <span className="lab-section-title">The science</span>
         </div>
-        <Link to="/science/" className="lab-home-science-card">
+        <Link to="/articles/the-science-of-k2dex/" className="lab-home-science-card">
           <div className="lab-home-science-inner">
             <div>
               <div className="lab-home-science-label">The Science of k2dex</div>

@@ -1,4 +1,5 @@
-// Top-level shell for the /science page.
+// Body of the "The Science of k2dex" article (rendered by ArticlePage at
+// /articles/the-science-of-k2dex; the legacy /science URL redirects here).
 // Imports KaTeX CSS once; renders each section in order.
 
 import { useEffect } from "react";

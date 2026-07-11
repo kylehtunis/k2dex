@@ -9,7 +9,8 @@ import { CompleterPage } from "./pages/CompleterPage";
 import { AnalysisPage } from "./pages/AnalysisPage";
 import { MetaPage } from "./pages/MetaPage";
 
-const SciencePage = lazy(() => import("./pages/SciencePage"));
+const ArticlesPage = lazy(() => import("./pages/ArticlesPage"));
+const ArticlePage = lazy(() => import("./pages/ArticlePage"));
 
 export default function App() {
   return (
@@ -24,7 +25,13 @@ export default function App() {
                 <Route path="completer" element={<CompleterPage />} />
                 <Route path="analysis" element={<AnalysisPage />} />
                 <Route path="meta" element={<MetaPage />} />
-                <Route path="science" element={<SciencePage />} />
+                <Route path="articles" element={<ArticlesPage />} />
+                <Route path="articles/:slug" element={<ArticlePage />} />
+                {/* Legacy /science URL: the explainer now lives as an article. */}
+                <Route
+                  path="science"
+                  element={<Navigate to="/articles/the-science-of-k2dex/" replace />}
+                />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>

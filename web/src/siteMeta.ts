@@ -21,14 +21,22 @@
 export const SITE_URL = "https://k2dex.kyletunis.com";
 export const SITE_NAME = "k2dex";
 
+import { ARTICLES, articlePath } from "./articles/articles";
+
 export interface RouteMeta {
   /** Path relative to the app base, no slashes. "" is the home page. */
   path: string;
   title: string;
   description: string;
+  /** Absolute canonical URL override. Set for routes that redirect elsewhere
+   *  (e.g. legacy /science → the article) so crawlers consolidate onto the
+   *  target. When present, the route is also omitted from the sitemap. */
+  canonical?: string;
 }
 
-export const ROUTE_META: readonly RouteMeta[] = [
+/** Primary, indexable routes. Article routes are appended below from the shared
+ *  ARTICLES list; the legacy /science redirect is appended after that. */
+const BASE_ROUTES: readonly RouteMeta[] = [
   {
     path: "",
     title: "k2dex | Competitive Pokemon Team Analysis",
@@ -54,11 +62,33 @@ export const ROUTE_META: readonly RouteMeta[] = [
       "Explore the VGC metagame at a glance: Pokemon usage rates, the strongest synergies and anti-synergies between species, and format-wide coupling statistics.",
   },
   {
-    path: "science",
-    title: "The Science of k2dex",
+    path: "articles",
+    title: "Articles | k2dex",
     description:
-      "An interactive explainer on the statistical physics behind k2dex. Walk through Ising models, Metropolis sampling, parallel tempering, and mean field with live simulations.",
+      "Write-ups on the ideas, findings, and implementation details behind k2dex — starting with an interactive explainer on the statistical physics under the hood.",
   },
+];
+
+/** One indexable route per article, derived from the shared ARTICLES list. */
+const ARTICLE_ROUTES: readonly RouteMeta[] = ARTICLES.map((a) => ({
+  path: articlePath(a.slug),
+  title: a.title,
+  description: a.description,
+}));
+
+/** Legacy /science URL, retained only to redirect (App.tsx) and to canonicalize
+ *  onto the article for any crawler that still holds the old URL. */
+const SCIENCE_REDIRECT: RouteMeta = {
+  path: "science",
+  title: "The Science of k2dex",
+  description: ARTICLES.find((a) => a.slug === "the-science-of-k2dex")?.description ?? "",
+  canonical: canonicalUrl(articlePath("the-science-of-k2dex")),
+};
+
+export const ROUTE_META: readonly RouteMeta[] = [
+  ...BASE_ROUTES,
+  ...ARTICLE_ROUTES,
+  SCIENCE_REDIRECT,
 ];
 
 /** Strip surrounding slashes so a router pathname ("/completer", "/") maps to

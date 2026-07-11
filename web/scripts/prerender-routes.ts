@@ -55,7 +55,9 @@ function replaceCanonical(html: string, url: string): string {
 }
 
 function applyMeta(template: string, meta: RouteMeta): string {
-  const url = canonicalUrl(meta.path);
+  // Redirecting routes (meta.canonical set) point their canonical + og:url at
+  // the target so crawlers consolidate onto it; all others self-reference.
+  const url = meta.canonical ?? canonicalUrl(meta.path);
   let html = replaceTitle(template, meta.title);
   html = replaceMetaContent(html, "name", "description", meta.description);
   html = replaceMetaContent(html, "property", "og:title", meta.title);
@@ -78,7 +80,9 @@ for (const meta of ROUTE_META) {
 const sitemap =
   '<?xml version="1.0" encoding="UTF-8"?>\n' +
   '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
-  ROUTE_META.map((m) => `  <url>\n    <loc>${canonicalUrl(m.path)}</loc>\n  </url>`).join("\n") +
+  ROUTE_META.filter((m) => !m.canonical)
+    .map((m) => `  <url>\n    <loc>${canonicalUrl(m.path)}</loc>\n  </url>`)
+    .join("\n") +
   "\n</urlset>\n";
 writeFileSync(resolve(distDir, "sitemap.xml"), sitemap);
 console.log("wrote: sitemap.xml");

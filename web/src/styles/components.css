@@ -587,6 +587,121 @@ button.lab-comp-tile {
   color: var(--lab-accent);
 }
 
+/* ----- /articles index ----- */
+
+.lab-articles {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 16px 64px;
+}
+.lab-articles-header {
+  margin: 32px 0 28px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--lab-accent);
+}
+.lab-articles-header h1 {
+  font-family: var(--lab-font-serif, "Source Serif 4", Georgia, serif);
+  margin: 0 0 8px;
+}
+.lab-articles-lede {
+  font-family: var(--lab-font-serif, "Source Serif 4", Georgia, serif);
+  font-style: italic;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--lab-ink-soft);
+  margin: 0;
+}
+.lab-articles-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.lab-article-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  background: var(--lab-panel-alt);
+  border: 1px solid var(--lab-rule);
+  border-left: 4px solid var(--lab-accent);
+  border-radius: 0 3px 3px 0;
+  padding: 22px 28px;
+  text-decoration: none;
+  color: inherit;
+  transition: background 80ms ease;
+}
+.lab-article-card:hover,
+.lab-article-card:focus-visible {
+  background: color-mix(in oklch, var(--lab-accent) 5%, var(--lab-panel-alt));
+}
+.lab-article-card-date {
+  font-family: var(--lab-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+  margin-bottom: 6px;
+}
+.lab-article-card-title {
+  font-family: var(--lab-font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--lab-ink);
+  margin-bottom: 8px;
+}
+.lab-article-card-desc {
+  font-family: var(--lab-font-serif);
+  font-style: italic;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--lab-ink-soft);
+  margin: 0;
+  max-width: 72ch;
+}
+.lab-article-card-arrow {
+  font-family: var(--lab-font-mono);
+  font-size: 22px;
+  color: var(--lab-ink-muted);
+  flex-shrink: 0;
+  display: inline-block;
+  transition: color 80ms ease, transform 80ms ease;
+}
+.lab-article-card:hover .lab-article-card-arrow,
+.lab-article-card:focus-visible .lab-article-card-arrow {
+  color: var(--lab-accent);
+  transform: translateX(4px);
+}
+
+/* ----- article shell ----- */
+
+.lab-article-nav {
+  max-width: 880px;
+  margin: 24px auto 0;
+  padding: 0 16px;
+}
+.lab-article-back {
+  font-family: var(--lab-font-mono);
+  font-size: 13px;
+  color: var(--lab-ink-muted);
+  text-decoration: none;
+  transition: color 80ms ease;
+}
+.lab-article-back:hover,
+.lab-article-back:focus-visible {
+  color: var(--lab-accent);
+}
+
+@media (max-width: 640px) {
+  .lab-article-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+}
+
 /* ----- /science page ----- */
 
 .lab-science {
