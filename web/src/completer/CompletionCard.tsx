@@ -12,7 +12,6 @@ import { useFeatureModal } from "../components/FeatureModalContext";
 import type { IsingModel } from "../sampler/types";
 import { speciesToSlug } from "../render/sprite-url";
 import { encodeCore } from "../render/shareLink";
-import { usePageState } from "../state/PageStateContext";
 
 /** One team member tile: sprite on top, name + item below. Clickable into the
  * feature modal wherever a provider is mounted. Pinned mons (locked by the
@@ -57,9 +56,12 @@ export interface CompletionCardProps {
   fullTeam: readonly number[];
   /** The completer-filled members (order-agnostic); the rest are pinned. */
   freeIdxs: readonly number[];
-  scoreAdj: number;
-  scoreRaw: number;
+  score: number;
+  /** Hover title for the Score (its corpus percentile), when available. */
+  scoreTitle?: string | null;
   coherence: number;
+  /** Hover title for the Coherence, when available. */
+  coherenceTitle?: string | null;
   corpus: { delta: number; count: number } | null;
   /** Optional %-share for top-K distribution mode (PT). Omitted in fast path. */
   freqPct?: number;
@@ -73,9 +75,10 @@ export interface CompletionCardProps {
 export function CompletionCard({
   fullTeam,
   freeIdxs,
-  scoreAdj,
-  scoreRaw,
+  score,
+  scoreTitle = null,
   coherence,
+  coherenceTitle = null,
   corpus,
   freqPct,
   isTopRow,
@@ -83,19 +86,13 @@ export function CompletionCard({
   model,
   hideItems = false,
 }: CompletionCardProps) {
-  const { completer } = usePageState();
   // Pinned tiles first (in vocab order), then the completer-filled ones.
   const freeSet = new Set(freeIdxs);
   const pinned = fullTeam.filter((i) => !freeSet.has(i)).sort((a, b) => a - b);
   const free = [...freeIdxs].sort((a, b) => a - b);
   const ordered = [...pinned, ...free];
 
-  const analyzeUrl = `/analysis?t=${encodeCore(
-    model.id,
-    completer.fieldWeight,
-    fullTeam,
-    model,
-  )}`;
+  const analyzeUrl = `/analysis?t=${encodeCore(model.id, fullTeam, model)}`;
 
   const [copied, setCopied] = useState(false);
   const handleCopyPaste = useCallback(() => {
@@ -137,16 +134,12 @@ export function CompletionCard({
 
       <div className="lab-comp-card-stats">
         <div className="lab-comp-stat">
-          <span className="lab-comp-stat-label">Score (adj)</span>
-          <ScoreChip value={scoreAdj} />
-        </div>
-        <div className="lab-comp-stat">
-          <span className="lab-comp-stat-label">Score (raw)</span>
-          <ScoreChip value={scoreRaw} />
+          <span className="lab-comp-stat-label">Score</span>
+          <ScoreChip value={score} title={scoreTitle ?? undefined} />
         </div>
         <div className="lab-comp-stat">
           <span className="lab-comp-stat-label">Coherence</span>
-          <ScoreChip value={coherence} />
+          <ScoreChip value={coherence} title={coherenceTitle ?? undefined} />
         </div>
         <div className="lab-comp-stat">
           <span className="lab-comp-stat-label">Corpus</span>

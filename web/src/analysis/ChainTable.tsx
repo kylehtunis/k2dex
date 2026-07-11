@@ -7,28 +7,36 @@
 import { ScoreChip, CorpusCell } from "../render/atoms";
 import { SwapCell, TeamMiniStrip } from "../render/cells";
 import { nearestObserved } from "../render/corpus";
+import {
+  percentileTitle,
+  type CorpusScoreIndex,
+} from "../render/corpusScore";
 import { formatSigned } from "../render/format";
 import type { GreedyChainEntry, IsingModel, TeamCounts } from "../sampler/types";
 
 export interface ChainTableProps {
   startingTeam: readonly number[];
   chain: readonly GreedyChainEntry[];
-  startScoreAdj: number;
-  startScoreRaw: number;
+  startScore: number;
   startSumJ: number;
   model: IsingModel;
   teamCounts: TeamCounts | null;
+  /** When provided, each row's Score and Coherence expose their corpus
+   * percentile on hover. */
+  scoreIndex?: CorpusScoreIndex | null;
 }
 
 export function ChainTable({
   startingTeam,
   chain,
-  startScoreAdj,
-  startScoreRaw,
+  startScore,
   startSumJ,
   model,
   teamCounts,
+  scoreIndex,
 }: ChainTableProps) {
+  const scoreDist = scoreIndex?.score;
+  const coherenceDist = scoreIndex?.coherence;
   const startCorpus = nearestObserved(startingTeam, teamCounts);
   return (
     <table className="lab-comp-table lab-table-cards">
@@ -36,8 +44,7 @@ export function ChainTable({
         <tr>
           <th className="num">#</th>
           <th>swap</th>
-          <th className="num">Score (adj)</th>
-          <th className="num">Score (raw)</th>
+          <th className="num">Score</th>
           <th className="num">Coherence</th>
           <th className="num">corpus</th>
           <th>team after</th>
@@ -57,10 +64,18 @@ export function ChainTable({
               starting team
             </span>
           </td>
-          <td className="num" data-label="score adj">{formatSigned(startScoreAdj)}</td>
-          <td className="num" data-label="score raw">{formatSigned(startScoreRaw)}</td>
+          <td className="num" data-label="score">
+            <span
+              title={scoreDist && percentileTitle(scoreDist, startScore)}
+            >
+              {formatSigned(startScore)}
+            </span>
+          </td>
           <td className="num" data-label="coherence">
-            <ScoreChip value={startSumJ} />
+            <ScoreChip
+              value={startSumJ}
+              title={coherenceDist && percentileTitle(coherenceDist, startSumJ)}
+            />
           </td>
           <td className="num" data-label="corpus">
             {startCorpus !== null && (
@@ -73,10 +88,9 @@ export function ChainTable({
         </tr>
         {chain.map((ev) => {
           const afterCorpus = nearestObserved(ev.teamAfter, teamCounts);
-          // ev.energyAdjAfter and energyRawAfter are Hamiltonian-space
-          // (lower = better). Sign-flip to Score (higher = better).
-          const scoreAdj = -ev.energyAdjAfter;
-          const scoreRaw = -ev.energyRawAfter;
+          // ev.energyRawAfter is Hamiltonian-space (lower = better).
+          // Sign-flip to Score (higher = better).
+          const score = -ev.energyRawAfter;
           return (
             <tr key={ev.step}>
               <td className="rank">{ev.step.toString().padStart(2, "0")}</td>
@@ -86,10 +100,19 @@ export function ChainTable({
                   nameIn={model.vocab[ev.inIdx]}
                 />
               </td>
-              <td className="num" data-label="score adj">{formatSigned(scoreAdj)}</td>
-              <td className="num" data-label="score raw">{formatSigned(scoreRaw)}</td>
+              <td className="num" data-label="score">
+                <span title={scoreDist && percentileTitle(scoreDist, score)}>
+                  {formatSigned(score)}
+                </span>
+              </td>
               <td className="num" data-label="coherence">
-                <ScoreChip value={ev.sumJAfter} />
+                <ScoreChip
+                  value={ev.sumJAfter}
+                  title={
+                    coherenceDist &&
+                    percentileTitle(coherenceDist, ev.sumJAfter)
+                  }
+                />
               </td>
               <td className="num" data-label="corpus">
                 {afterCorpus !== null && (

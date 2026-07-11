@@ -1,8 +1,12 @@
-// Feature detail modal: opens from any feature name/sprite across the app and
-// shows the model's view of that single feature — Bias / usage / meta ranks,
-// its strongest structural couplings (drill-through to a coupled feature, with
-// Back), the most-played corpus rosters that ran it, and context-aware quick
-// actions keyed off the active route.
+// Feature detail modal: a species-level mini-meta page.
+//
+// Opens from any feature name/sprite across the app, resolves to the species
+// (site), and shows:
+//   - Species-level stats (weighted-average bias, total usage, corpus count)
+//   - Top synergy / antisynergy couplings with expandable item-modulation rows
+//     (same interaction pattern as /meta §02)
+//   - Corpus appearances with an optional item filter (clearable to "All items")
+//   - Route-gated quick actions (completer: pin/exclude; analysis: add/swap)
 //
 // The provider is mounted once near the app root (App.tsx). The context/hook
 // lives in FeatureModalContext.ts to avoid a cycle with render/cells.tsx.
@@ -24,12 +28,11 @@ import { usePageState } from "../state/PageStateContext";
 import { SpriteBox } from "../render/Sprite";
 import { InlineMon, TeamMiniStrip } from "../render/cells";
 import { ScoreChip, SignedBar, StatStrip } from "../render/atoms";
-import { extractSpecies, formatPct, formatSigned } from "../render/format";
+import { formatPct, formatSigned } from "../render/format";
 import {
   featureCorpusAppearances,
-  featureCouplings,
-  featureRanks,
-  type FeatureCoupling,
+  siteCorpusAppearances,
+  speciesCouplings,
 } from "../render/featureDetail";
 import { TEAM_SIZE } from "../constants";
 import type { IsingModel } from "../sampler/types";
@@ -39,67 +42,51 @@ const DOCK_QUERY = "(min-width: 1200px)";
 
 export function FeatureModalProvider({ children }: { children: ReactNode }) {
   const { model } = useModel();
-  // Navigation stack of vocab indices; last = currently shown. A fresh open
-  // (page/cell click) resets to a single entry; in-panel drill-through pushes;
-  // Back pops; close / model-switch clears.
+  // Navigation stack of site indices. A fresh open (page/cell click) resets to
+  // a single entry; in-panel drill-through pushes; Back pops; close clears.
   const [stack, setStack] = useState<number[]>([]);
 
-  // Page/cell click → start a fresh inspection (no Back history). Used by the
-  // outer context that the page's shared cells read.
   const openFeature = useCallback(
     (name: string) => {
       if (!model) return;
       const idx = model.indexOf.get(name);
       if (idx === undefined) return;
-      setStack([idx]);
+      setStack([model.siteOf[idx]]);
     },
     [model],
   );
 
-  // Partner click *inside the panel* → drill, pushing onto Back history. The
-  // panel re-provides this as its context value (see FeatureModalBody), so the
-  // very same InlineMon pushes when rendered in-panel but resets on the page.
-  const drillTo = useCallback(
-    (name: string) => {
-      if (!model) return;
-      const idx = model.indexOf.get(name);
-      if (idx === undefined) return;
-      setStack((s) => (s.length > 0 && s[s.length - 1] === idx ? s : [...s, idx]));
+  const drillToSite = useCallback(
+    (site: number) => {
+      setStack((s) => {
+        const top = s.length > 0 ? s[s.length - 1] : -1;
+        return top === site ? s : [...s, site];
+      });
     },
-    [model],
+    [],
   );
 
   const close = useCallback(() => setStack([]), []);
   const back = useCallback(() => setStack((s) => s.slice(0, -1)), []);
 
-  // Attribute change on the current feature → swap which feature is shown
-  // without touching Back history (it's a refinement, not a navigation).
-  const replaceTop = useCallback(
-    (i: number) =>
-      setStack((s) => (s.length > 0 ? [...s.slice(0, -1), i] : [i])),
-    [],
-  );
-
-  // Indices are model-specific — drop any open feature when the model changes.
   useEffect(() => {
     setStack([]);
   }, [model?.id]);
 
   const value = useMemo(() => ({ openFeature }), [openFeature]);
-  const currentIdx = stack.length > 0 ? stack[stack.length - 1] : null;
+  const currentSite = stack.length > 0 ? stack[stack.length - 1] : null;
 
   return (
     <FeatureModalContext.Provider value={value}>
       {children}
-      {currentIdx !== null && model && (
+      {currentSite !== null && model && (
         <FeatureModalBody
           model={model}
-          idx={currentIdx}
+          site={currentSite}
           canGoBack={stack.length > 1}
           onBack={back}
           onClose={close}
-          onDrill={drillTo}
-          onReplace={replaceTop}
+          onDrillSite={drillToSite}
         />
       )}
     </FeatureModalContext.Provider>
@@ -108,48 +95,77 @@ export function FeatureModalProvider({ children }: { children: ReactNode }) {
 
 interface BodyProps {
   model: IsingModel;
-  idx: number;
+  site: number;
   canGoBack: boolean;
   onBack: () => void;
   onClose: () => void;
-  /** Drill-through handler re-provided to in-panel partner links (pushes). */
-  onDrill: (name: string) => void;
-  /** Attribute change → replace the shown feature (no Back entry). */
-  onReplace: (idx: number) => void;
+  onDrillSite: (site: number) => void;
 }
 
 function FeatureModalBody({
   model,
-  idx,
+  site,
   canGoBack,
   onBack,
   onClose,
-  onDrill,
-  onReplace,
+  onDrillSite,
 }: BodyProps) {
-  const { teamCounts } = useModel();
+  const { teamCounts, speciesGraph } = useModel();
   const { pathname } = useLocation();
   const { completer, setCompleter, analysis, setAnalysis } = usePageState();
   const docked = useMediaQuery(DOCK_QUERY);
 
-  // In-panel context: partner InlineMons read this (push) instead of the outer
-  // page context (fresh-select). Same component, location decides behavior.
-  const drillValue = useMemo(() => ({ openFeature: onDrill }), [onDrill]);
-
-  const name = model.vocab[idx];
-  const species = extractSpecies(name);
-
-  const couplings = useMemo(() => featureCouplings(model, idx, 10), [model, idx]);
-  const corpus = useMemo(
-    () => featureCorpusAppearances(model, teamCounts, idx, 10),
-    [model, teamCounts, idx],
+  // Drill-through context: clicking a partner species in the coupling list
+  // pushes onto the stack (same InlineMon, behavior decided by render location).
+  const drillValue = useMemo(
+    () => ({
+      openFeature: (name: string) => {
+        const idx = model.indexOf.get(name);
+        if (idx !== undefined) onDrillSite(model.siteOf[idx]);
+      },
+    }),
+    [model, onDrillSite],
   );
-  const ranks = useMemo(() => featureRanks(model, idx), [model, idx]);
 
-  const maxJ = useMemo(() => {
+  const species = model.sites[site];
+
+  // Item filter for corpus section only.
+  const [corpusFeatureIdx, setCorpusFeatureIdx] = useState<number | null>(null);
+  useEffect(() => setCorpusFeatureIdx(null), [site]);
+
+  // Species-level couplings (always site-level, no item shift).
+  const couplings = useMemo(
+    () => speciesGraph ? speciesCouplings(model, speciesGraph, site, 10) : null,
+    [model, speciesGraph, site],
+  );
+
+  // Corpus: scoped by corpusFeatureIdx when an item is selected.
+  const corpus = useMemo(
+    () =>
+      corpusFeatureIdx !== null
+        ? featureCorpusAppearances(model, teamCounts, corpusFeatureIdx, 10)
+        : siteCorpusAppearances(model, teamCounts, site, 10),
+    [model, teamCounts, corpusFeatureIdx, site],
+  );
+
+  // Species-level aggregates.
+  const siteAggregates = useMemo(() => {
+    const feats = model.siteFeatures[site];
+    let totalM = 0;
+    let weightedH = 0;
+    for (const f of feats) {
+      totalM += model.m[f];
+      weightedH += model.m[f] * model.h[f];
+    }
+    const avgH = totalM > 0 ? weightedH / totalM : 0;
+    return { totalM, avgH, nFeatures: feats.length };
+  }, [model, site]);
+
+  const maxSynergy = useMemo(() => {
+    if (!couplings) return 1;
     let m = 0;
-    for (const c of couplings.synergies) m = Math.max(m, Math.abs(c.jValue));
-    for (const c of couplings.antisynergies) m = Math.max(m, Math.abs(c.jValue));
+    for (const c of couplings.synergies) m = Math.max(m, Math.abs(c.synergy));
+    for (const c of couplings.antisynergies) m = Math.max(m, Math.abs(c.synergy));
     return m || 1;
   }, [couplings]);
 
@@ -180,25 +196,23 @@ function FeatureModalBody({
             </button>
           </div>
           <div className="lab-feature-modal-identity">
-            <SpriteBox name={name} size={64} />
+            <SpriteBox name={species} size={64} />
             <div>
               <h2 id={TITLE_ID} className="lab-feature-modal-title">
                 {species}
               </h2>
             </div>
           </div>
-          <AttributeSelectors model={model} idx={idx} onReplace={onReplace} />
           <StatStrip
             cells={[
               {
-                label: "Bias",
-                value: formatSigned(model.h[idx]),
-                sub: `#${ranks.biasRank} of ${model.V}`,
+                label: "Avg. Bias",
+                value: formatSigned(siteAggregates.avgH),
+                sub: `${siteAggregates.nFeatures} variants`,
               },
               {
-                label: "Usage",
-                value: formatPct(model.m[idx]),
-                sub: `#${ranks.marginalRank} of ${model.V}`,
+                label: "Total usage",
+                value: formatPct(siteAggregates.totalM),
               },
               {
                 label: "In corpus",
@@ -210,10 +224,10 @@ function FeatureModalBody({
         </header>
 
         <div className="lab-feature-modal-body">
-          <FeatureActions
+          <SpeciesActions
             pathname={pathname}
             model={model}
-            idx={idx}
+            site={site}
             species={species}
             completer={completer}
             setCompleter={setCompleter}
@@ -222,27 +236,41 @@ function FeatureModalBody({
             onClose={onClose}
           />
 
+          {couplings && (
           <div className="lab-feature-modal-couplings">
-            <CouplingList
+            <ExpandableCouplingList
               title="Top synergies"
               cls="lab-subheading-pos"
               rows={couplings.synergies}
-              maxJ={maxJ}
+              maxSynergy={maxSynergy}
               model={model}
+              site={site}
+              onDrillSite={onDrillSite}
               empty="No positive couplings."
             />
-            <CouplingList
+            <ExpandableCouplingList
               title="Top antisynergies"
               cls="lab-subheading-neg"
               rows={couplings.antisynergies}
-              maxJ={maxJ}
+              maxSynergy={maxSynergy}
               model={model}
+              site={site}
+              onDrillSite={onDrillSite}
               empty="No negative couplings."
             />
           </div>
+          )}
 
           <div className="lab-feature-modal-section">
-            <div className="lab-subheading">Top corpus appearances</div>
+            <div className="lab-subheading">
+              Top corpus appearances
+            </div>
+            <CorpusItemSelector
+              model={model}
+              site={site}
+              featureIdx={corpusFeatureIdx}
+              onChange={setCorpusFeatureIdx}
+            />
             {corpus.teams.length === 0 ? (
               <p className="lab-feature-modal-empty">
                 Not seen in any observed roster.
@@ -276,86 +304,61 @@ function FeatureModalBody({
   );
 }
 
-interface AttrOpt {
-  label: string;
-  value: string;
-}
-const attrPortalStyles = {
-  menuPortal: (base: Record<string, unknown>) => ({ ...base, zIndex: 9999 }),
-};
+// ----- Expandable coupling rows (same pattern as /meta §02) -----
 
-/** One dropdown per attribute track (today: item). Each option is a concrete
- * feature of this species — picking one re-points the modal at that feature so
- * every panel below recomputes. Defaults to the feature the user clicked. */
-function AttributeSelectors({
-  model,
-  idx,
-  onReplace,
-}: {
-  model: IsingModel;
-  idx: number;
-  onReplace: (idx: number) => void;
-}) {
-  const site = model.siteOf[idx];
-  if (model.tracks.length === 0) return null;
-  return (
-    <div className="lab-feature-attrs">
-      {model.tracks.map((track, ti) => {
-        // Options = this species' features, distinct on the track's value and
-        // consistent with the current choice on every other track; most-used
-        // value first. Each option's value is its feature index.
-        const seen = new Set<string>();
-        const rows: { opt: AttrOpt; m: number }[] = [];
-        for (const f of model.siteFeatures[site]) {
-          const matchesOthers = model.trackValues[f].every(
-            (v, t) => t === ti || v === model.trackValues[idx][t],
-          );
-          if (!matchesOthers) continue;
-          const val = model.trackValues[f][ti];
-          const key = val ?? " ";
-          if (seen.has(key)) continue;
-          seen.add(key);
-          rows.push({ opt: { label: val ?? "—", value: String(f) }, m: model.m[f] });
-        }
-        rows.sort((a, b) => b.m - a.m);
-        const options = rows.map((r) => r.opt);
-        const current = options.find((o) => o.value === String(idx)) ?? null;
-        return (
-          <label key={track.name} className="lab-feature-attr">
-            <span className="lab-feature-attr-label">{track.name}</span>
-            <Select
-              classNamePrefix="lab-select"
-              className="lab-feature-attr-select"
-              options={options}
-              value={current}
-              onChange={(o: SingleValue<AttrOpt>) => o && onReplace(Number(o.value))}
-              isSearchable={options.length > 8}
-              menuPortalTarget={document.body}
-              styles={attrPortalStyles}
-              aria-label={`${track.name} for ${model.sites[site]}`}
-            />
-          </label>
-        );
-      })}
-    </div>
-  );
+interface ModulationEntry {
+  featureA: number;
+  featureB: number;
+  jValue: number;
+  deviation: number;
 }
 
-function CouplingList({
+function topModulationEntries(
+  model: IsingModel,
+  siteA: number,
+  siteB: number,
+  synergy: number,
+  topN = 8,
+): ModulationEntry[] {
+  const { siteFeatures, J, V, itemOf } = model;
+  const featA = siteFeatures[siteA];
+  const featB = siteFeatures[siteB];
+  if (siteA === siteB) return [];
+  const entries: ModulationEntry[] = [];
+  for (const fa of featA) {
+    for (const fb of featB) {
+      const itA = itemOf[fa];
+      const itB = itemOf[fb];
+      if (itA !== null && itB !== null && itA === itB) continue;
+      const jValue = J[fa * V + fb];
+      entries.push({ featureA: fa, featureB: fb, jValue, deviation: jValue - synergy });
+    }
+  }
+  entries.sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation));
+  return entries.slice(0, topN);
+}
+
+function ExpandableCouplingList({
   title,
   cls,
   rows,
-  maxJ,
+  maxSynergy,
   model,
+  site: mySite,
+  onDrillSite,
   empty,
 }: {
   title: string;
   cls: string;
-  rows: readonly FeatureCoupling[];
-  maxJ: number;
+  rows: readonly { species: string; synergy: number }[];
+  maxSynergy: number;
   model: IsingModel;
+  site: number;
+  onDrillSite: (site: number) => void;
   empty: string;
 }) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+
   return (
     <div className="lab-feature-modal-section">
       <div className={`lab-subheading ${cls}`}>{title}</div>
@@ -363,25 +366,182 @@ function CouplingList({
         <p className="lab-feature-modal-empty">{empty}</p>
       ) : (
         <ul className="lab-feature-coupling-list">
-          {rows.map((c) => (
-            <li key={c.idx} className="lab-feature-coupling-row">
-              <InlineMon name={model.vocab[c.idx]} size={32} />
-              <span className="lab-feature-coupling-val">
-                <SignedBar value={c.jValue} maxValue={maxJ} width={70} />
-                <ScoreChip value={c.jValue} />
-              </span>
-            </li>
-          ))}
+          {rows.map((c) => {
+            const partnerSite = model.sites.indexOf(c.species);
+            const isOpen = expanded === c.species;
+            return (
+              <li key={c.species} className="lab-feature-coupling-row-wrap">
+                <div
+                  className={`lab-feature-coupling-row${isOpen ? " lab-expanded" : ""}`}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => setExpanded(isOpen ? null : c.species)}
+                >
+                  <button
+                    type="button"
+                    className="lab-feature-link"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (partnerSite >= 0) onDrillSite(partnerSite);
+                    }}
+                  >
+                    <SpriteBox name={c.species} size={32} />
+                    <span className="lab-comp-mon-name">{c.species}</span>
+                  </button>
+                  <span className="lab-feature-coupling-val">
+                    <SignedBar value={c.synergy} maxValue={maxSynergy} width={70} />
+                    <ScoreChip value={c.synergy} />
+                  </span>
+                </div>
+                {isOpen && partnerSite >= 0 && (
+                  <ModulationDetail
+                    model={model}
+                    siteA={mySite}
+                    siteB={partnerSite}
+                    synergy={c.synergy}
+                  />
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
   );
 }
 
+function ModulationDetail({
+  model,
+  siteA,
+  siteB,
+  synergy,
+}: {
+  model: IsingModel;
+  siteA: number;
+  siteB: number;
+  synergy: number;
+}) {
+  const entries = useMemo(
+    () => topModulationEntries(model, siteA, siteB, synergy),
+    [model, siteA, siteB, synergy],
+  );
+
+  const maxDev = useMemo(() => {
+    let m = 0;
+    for (const e of entries) {
+      const a = Math.abs(e.deviation);
+      if (a > m) m = a;
+    }
+    return m || 1;
+  }, [entries]);
+
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="lab-modulation-list">
+      <div className="lab-modulation-header">Item modulation (deviation from base synergy)</div>
+      <table className="lab-modulation-table">
+        <thead>
+          <tr>
+            <th>item pair</th>
+            <th className="num">J</th>
+            <th className="num">deviation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((e) => (
+            <tr key={`${e.featureA}-${e.featureB}`}>
+              <td className="pair">
+                <div className="lab-pair-cell lab-pair-cell-compact">
+                  <InlineMon name={model.vocab[e.featureA]} size={24} />
+                  <span className="lab-pair-sep">&times;</span>
+                  <InlineMon name={model.vocab[e.featureB]} size={24} />
+                </div>
+              </td>
+              <td className="num">
+                <ScoreChip value={e.jValue} />
+              </td>
+              <td className="num">
+                <div className="lab-coupling-val">
+                  <SignedBar value={e.deviation} maxValue={maxDev} width={50} />
+                  <ScoreChip value={e.deviation} />
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ----- Corpus item filter -----
+
+interface AttrOpt {
+  label: string;
+  value: string;
+}
+const attrPortalStyles = {
+  menuPortal: (base: Record<string, unknown>) => ({ ...base, zIndex: 9999 }),
+};
+const ALL_ITEMS_VALUE = "__all__";
+
+function CorpusItemSelector({
+  model,
+  site,
+  featureIdx,
+  onChange,
+}: {
+  model: IsingModel;
+  site: number;
+  featureIdx: number | null;
+  onChange: (featureIdx: number | null) => void;
+}) {
+  if (model.tracks.length === 0) return null;
+  const track = model.tracks[0];
+  const seen = new Set<string>();
+  const rows: { opt: AttrOpt; m: number }[] = [];
+  for (const f of model.siteFeatures[site]) {
+    const val = model.trackValues[f][0];
+    const key = val ?? " ";
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({ opt: { label: val ?? "—", value: String(f) }, m: model.m[f] });
+  }
+  rows.sort((a, b) => b.m - a.m);
+  const options: AttrOpt[] = [
+    { label: `All ${track.name}s`, value: ALL_ITEMS_VALUE },
+    ...rows.map((r) => r.opt),
+  ];
+  const current = featureIdx !== null
+    ? options.find((o) => o.value === String(featureIdx)) ?? options[0]
+    : options[0];
+  return (
+    <div className="lab-feature-corpus-filter">
+      <Select
+        classNamePrefix="lab-select"
+        className="lab-feature-attr-select"
+        options={options}
+        value={current}
+        onChange={(o: SingleValue<AttrOpt>) => {
+          if (!o) return;
+          onChange(o.value === ALL_ITEMS_VALUE ? null : Number(o.value));
+        }}
+        isSearchable={options.length > 8}
+        menuPortalTarget={document.body}
+        styles={attrPortalStyles}
+        aria-label={`Filter by ${track.name}`}
+      />
+    </div>
+  );
+}
+
+// ----- Route-gated actions (species-level) -----
+
 interface ActionsProps {
   pathname: string;
   model: IsingModel;
-  idx: number;
+  site: number;
   species: string;
   completer: ReturnType<typeof usePageState>["completer"];
   setCompleter: ReturnType<typeof usePageState>["setCompleter"];
@@ -390,12 +550,10 @@ interface ActionsProps {
   onClose: () => void;
 }
 
-/** Route-gated quick actions. Completer: pin / exclude. Analysis: add-to-team
- * or swap-in for a current member. Meta / science: nothing. */
-function FeatureActions({
+function SpeciesActions({
   pathname,
   model,
-  idx,
+  site,
   species,
   completer,
   setCompleter,
@@ -404,15 +562,12 @@ function FeatureActions({
   onClose,
 }: ActionsProps) {
   if (pathname.includes("/completer")) {
-    const site = model.siteOf[idx];
-    const pinnedExact = completer.roster.some((s) => s.feature === idx);
     const speciesInRoster = completer.roster.some((s) => s.site === site);
     const rosterFull = completer.roster.length >= TEAM_SIZE;
     const excluded = completer.excludedSpecies.includes(species);
-    const pin = () => {
-      // Pin this exact build (species + item) as a roster slot.
+    const pinSite = () => {
       setCompleter({
-        roster: [...completer.roster, { site, feature: idx }],
+        roster: [...completer.roster, { site, feature: null }],
         excludedSpecies: completer.excludedSpecies.filter((s) => s !== species),
       });
       onClose();
@@ -429,10 +584,10 @@ function FeatureActions({
         <button
           type="button"
           className="lab-button-primary lab-feature-action"
-          onClick={pin}
-          disabled={pinnedExact || rosterFull || speciesInRoster}
+          onClick={pinSite}
+          disabled={speciesInRoster || rosterFull}
         >
-          {pinnedExact ? "Pinned to roster" : "Pin to roster"}
+          {speciesInRoster ? "On roster" : "Pin to roster"}
         </button>
         <button
           type="button"
@@ -447,20 +602,16 @@ function FeatureActions({
   }
 
   if (pathname.includes("/analysis")) {
-    // Feature-level team = the roster slots with an item pinned.
-    const team = analysis.roster
-      .filter((s) => s.feature !== null)
-      .map((s) => s.feature as number);
-    const onTeam = team.includes(idx);
-    const teamFull = team.length >= TEAM_SIZE;
-    if (onTeam) {
+    const speciesOnTeam = analysis.roster.some((s) => s.site === site);
+    const rosterFull = analysis.roster.length >= TEAM_SIZE;
+    if (speciesOnTeam) {
       return (
         <div className="lab-feature-modal-actions">
           <span className="lab-feature-modal-note">Already on your team.</span>
         </div>
       );
     }
-    if (!teamFull) {
+    if (!rosterFull) {
       return (
         <div className="lab-feature-modal-actions">
           <button
@@ -470,7 +621,7 @@ function FeatureActions({
               setAnalysis({
                 roster: [
                   ...analysis.roster,
-                  { site: model.siteOf[idx], feature: idx },
+                  { site, feature: null },
                 ],
               });
               onClose();
@@ -481,34 +632,7 @@ function FeatureActions({
         </div>
       );
     }
-    // Full team: pick which member to swap out.
-    return (
-      <div className="lab-feature-modal-actions lab-feature-modal-swap">
-        <span className="lab-feature-modal-note">Swap in for:</span>
-        <div className="lab-feature-swap-targets">
-          {team.map((memberIdx) => (
-            <button
-              key={memberIdx}
-              type="button"
-              className="lab-feature-swap-target"
-              onClick={() => {
-                setAnalysis({
-                  roster: analysis.roster.map((s) =>
-                    s.feature === memberIdx
-                      ? { site: model.siteOf[idx], feature: idx }
-                      : s,
-                  ),
-                });
-                onClose();
-              }}
-            >
-              <SpriteBox name={model.vocab[memberIdx]} size={32} />
-              <span>{extractSpecies(model.vocab[memberIdx])}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return null;

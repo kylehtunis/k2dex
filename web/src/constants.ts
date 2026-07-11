@@ -8,10 +8,6 @@ export const CURRENT_REGULATION = "M-B";
 
 export const TEAM_SIZE = 6;
 
-export const FIELD_WEIGHT_OPTIONS = [
-  0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0,
-] as const;
-
 export const TEMPERATURE_OPTIONS = [
   0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.5, 2.0,
 ] as const;

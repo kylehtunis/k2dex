@@ -3,13 +3,15 @@
 Fits a single PL inverse-Ising model per invocation and serializes the
 artifacts the JS client needs into `web/public/models/<slug>/`:
 
-    meta.json         — vocab, sites, site_of, tracks, track_values,
-                        scalars, fit hyperparams (schema v3, factored)
-    J.bin             — float32 lower triangle, V*(V-1)/2 entries
-                        ordering: [J[i,j] for i in range(1,V) for j in range(i)]
-    h.bin             — float32, V entries
-    m.bin             — float32, V entries
-    team_counts.json  — sorted-index "-"-joined roster keys -> int count
+    meta.json           — vocab, sites, site_of, tracks, track_values,
+                          scalars, fit hyperparams (schema v3, factored)
+    J.bin               — float32 lower triangle, V*(V-1)/2 entries
+                          ordering: [J[i,j] for i in range(1,V) for j in range(i)]
+    h.bin               — float32, V entries
+    m.bin               — float32, V entries
+    team_counts.json    — sorted-index "-"-joined roster keys -> int count
+    species_graph.json  — APC-corrected species-pair synergy graph
+                          (species+item models only; from potts.species_apc_graph)
 
 Run locally; inspect artifacts; commit. Not invoked from CI per the
 static-deploy plan: humans should eyeball every model refresh before it
@@ -77,6 +79,7 @@ from k2dex.constants import (
     TEAM_SIZE,
 )
 from k2dex.loaders import build_species_item_model, build_species_model
+from k2dex.potts import FittedModel as PottsFittedModel, species_apc_graph
 
 DEFAULT_OUT_DIR = Path(__file__).resolve().parent.parent / "web" / "public" / "models"
 
@@ -346,6 +349,32 @@ def write_model(
     tc_path = model_dir / "team_counts.json"
     print(f"  team_counts.json: {tc_path.stat().st_size:,} bytes "
           f"({len(tc_serialized):,} unique rosters)")
+
+    # Species-pair interaction graph (APC-corrected synergy). Only meaningful
+    # for species+item models where each species has multiple item-states.
+    if feature_dimensions == 2:
+        fitted = PottsFittedModel(
+            vocab=vocab, species_of=species_of, item_of=item_of,
+            J=J, h=h, m=m, team_size=TEAM_SIZE, n_corpus_teams=n_teams,
+        )
+        sg = species_apc_graph(fitted)
+        S = len(sg.species)
+        synergy_ut: list[float] = []
+        corrected_ut: list[float] = []
+        for i in range(S):
+            for j in range(i + 1, S):
+                synergy_ut.append(round(float(sg.synergy[i, j]), 6))
+                corrected_ut.append(round(float(sg.corrected[i, j]), 6))
+        sg_data = {
+            "species": sg.species,
+            "synergy_ut": synergy_ut,
+            "corrected_ut": corrected_ut,
+        }
+        with open(model_dir / "species_graph.json", "w") as f:
+            json.dump(sg_data, f, indent=None, separators=(",", ":"))
+        sg_path = model_dir / "species_graph.json"
+        print(f"  species_graph.json: {sg_path.stat().st_size:,} bytes "
+              f"({S} species, {len(synergy_ut)} pairs)")
 
 
 def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> None:

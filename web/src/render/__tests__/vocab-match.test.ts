@@ -199,11 +199,10 @@ describe("shareLink core token", () => {
   const model = buildModel();
 
   it("round-trips a team to features", () => {
-    const token = encodeCore("test-species-item", 0.3, [3, 0], model);
-    expect(token).toBe("test-species-item.3.incineroar~sitrus-berry_calyrex-shadow~life-orb");
+    const token = encodeCore("test-species-item", [3, 0], model);
+    expect(token).toBe("test-species-item.incineroar~sitrus-berry_calyrex-shadow~life-orb");
     const decoded = decodeCore(token)!;
     expect(decoded.modelId).toBe("test-species-item");
-    expect(decoded.fieldWeight).toBeCloseTo(0.3);
     const slugIndex = buildSlugIndex(model);
     const idxs = decoded.features.map(
       (f) => resolveFeature(slugIndex, model, f.speciesSlug, f.itemSlug).idx,
@@ -220,9 +219,16 @@ describe("shareLink core token", () => {
     expect(decoded3.modelId).toBe("reg-m-a");
   });
 
+  it("drops the legacy Bias Adjustment segment on decode", () => {
+    const legacy = decodeCore("reg-m-a.3.incineroar~sitrus-berry_amoonguss")!;
+    const current = decodeCore("reg-m-a.incineroar~sitrus-berry_amoonguss")!;
+    expect(legacy.features).toEqual(current.features);
+    expect(legacy.modelId).toBe("reg-m-a");
+  });
+
   it("encodes itemless features without a tilde", () => {
-    const token = encodeCore("test-species", 0.5, [4], model);
-    expect(token).toBe("test-species.5.amoonguss");
+    const token = encodeCore("test-species", [4], model);
+    expect(token).toBe("test-species.amoonguss");
     expect(decodeCore(token)!.features[0].itemSlug).toBeNull();
   });
 
@@ -240,14 +246,13 @@ describe("shareLink completer token", () => {
     const params = encodeCompleter(
       {
         modelId: "test-species-item",
-        fieldWeight: 0.3,
         fixedIdxs: [0],
         fixedSites: [],
         inactiveTracks: [],
         excludedSpecies: ["Amoonguss"],
         includedSpecies: [],
         usePT: true,
-        temperature: 0.5, // default — omitted
+        temperature: 1.0, // default — omitted
         ptRuns: 10,
         ptLadder: 7,
         ptSweeps: 20000,
@@ -264,7 +269,7 @@ describe("shareLink completer token", () => {
 
     const d = decodeCompleter(params)!;
     expect(d.usePT).toBe(true);
-    expect(d.temperature).toBe(0.5);
+    expect(d.temperature).toBe(1.0);
     expect(d.ptRuns).toBe(10);
     expect(d.excludedSlugs).toEqual(["amoonguss"]);
     expect(d.seed).toBeNull();
@@ -274,14 +279,13 @@ describe("shareLink completer token", () => {
     const params = encodeCompleter(
       {
         modelId: "test-species-item",
-        fieldWeight: 0.3,
         fixedIdxs: [],
         fixedSites: [],
         inactiveTracks: [],
         excludedSpecies: [],
         includedSpecies: ["Amoonguss", "Incineroar"],
         usePT: true,
-        temperature: 0.5,
+        temperature: 1.0,
         ptRuns: 10,
         ptLadder: 7,
         ptSweeps: 20000,
@@ -302,14 +306,13 @@ describe("shareLink completer token", () => {
     const params = encodeCompleter(
       {
         modelId: "test-species-item",
-        fieldWeight: 0.8,
         fixedIdxs: [0],
         fixedSites: [],
         inactiveTracks: [],
         excludedSpecies: [],
         includedSpecies: [],
         usePT: false,
-        temperature: 0.5,
+        temperature: 1.0,
         ptRuns: 10,
         ptLadder: 7,
         ptSweeps: 20000,
@@ -327,14 +330,13 @@ describe("shareLink completer token", () => {
     const params = encodeCompleter(
       {
         modelId: "reg-m-a",
-        fieldWeight: 0.3,
         fixedIdxs: [3], // feature pin: Calyrex-Shadow @ Life Orb
         fixedSites: [1], // site pin: Alolan Ninetales (any item)
         inactiveTracks: [],
         excludedSpecies: [],
         includedSpecies: [],
         usePT: true,
-        temperature: 0.5,
+        temperature: 1.0,
         ptRuns: 10,
         ptLadder: 7,
         ptSweeps: 20000,
@@ -355,14 +357,13 @@ describe("shareLink completer token", () => {
     const params = encodeCompleter(
       {
         modelId: "reg-m-a",
-        fieldWeight: 0.3,
         fixedIdxs: [],
         fixedSites: [1],
         inactiveTracks: [0], // item track off
         excludedSpecies: [],
         includedSpecies: [],
         usePT: true,
-        temperature: 0.5,
+        temperature: 1.0,
         ptRuns: 10,
         ptLadder: 7,
         ptSweeps: 20000,
@@ -379,7 +380,6 @@ describe("shareLink completer token", () => {
     const params = encodeCompleter(
       {
         modelId: "test-species-item",
-        fieldWeight: 0.3,
         fixedIdxs: [0],
         fixedSites: [],
         inactiveTracks: [],

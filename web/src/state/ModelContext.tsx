@@ -9,16 +9,22 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
-import { loadModel, loadTeamCounts } from "../sampler/model";
-import type { IsingModel, TeamCounts } from "../sampler/types";
+import { loadModel, loadSpeciesGraph, loadTeamCounts } from "../sampler/model";
+import {
+  buildCorpusScoreIndex,
+  type CorpusScoreIndex,
+} from "../render/corpusScore";
+import type { IsingModel, SpeciesGraph, TeamCounts } from "../sampler/types";
 import { loadManifest, type Manifest } from "./manifest";
 
 interface CacheEntry {
   model: IsingModel;
   teamCounts: TeamCounts;
+  speciesGraph: SpeciesGraph | null;
 }
 
 interface ModelContextValue {
@@ -26,6 +32,12 @@ interface ModelContextValue {
   setModelId: (id: string) => void;
   model: IsingModel | null;
   teamCounts: TeamCounts | null;
+  /** Precomputed species-pair interaction graph (APC-corrected synergy).
+   * Null for species-only models or before load completes. */
+  speciesGraph: SpeciesGraph | null;
+  /** Empirical corpus Score distribution (every observed roster scored at
+   * fw = 1), built once per loaded model. Feeds the Percentile displays. */
+  corpusScoreIndex: CorpusScoreIndex | null;
   manifest: Manifest | null;
   status: "idle" | "loading" | "ready" | "error";
   error: Error | null;
@@ -113,10 +125,10 @@ export function ModelProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     setStatus("loading");
     setError(null);
-    Promise.all([loadModel(modelId), loadTeamCounts(modelId)])
-      .then(([model, teamCounts]) => {
+    Promise.all([loadModel(modelId), loadTeamCounts(modelId), loadSpeciesGraph(modelId)])
+      .then(([model, teamCounts, speciesGraph]) => {
         if (cancelled) return;
-        setCache((c) => ({ ...c, [modelId]: { model, teamCounts } }));
+        setCache((c) => ({ ...c, [modelId]: { model, teamCounts, speciesGraph } }));
         setStatus("ready");
       })
       .catch((e: Error) => {
@@ -128,11 +140,18 @@ export function ModelProvider({ children }: { children: ReactNode }) {
   }, [modelId, manifest, cache]);
 
   const entry = cache[modelId] ?? null;
+  const corpusScoreIndex = useMemo(
+    () =>
+      entry ? buildCorpusScoreIndex(entry.model, entry.teamCounts) : null,
+    [entry],
+  );
   const value: ModelContextValue = {
     modelId,
     setModelId,
     model: entry?.model ?? null,
     teamCounts: entry?.teamCounts ?? null,
+    speciesGraph: entry?.speciesGraph ?? null,
+    corpusScoreIndex,
     manifest,
     status,
     error,

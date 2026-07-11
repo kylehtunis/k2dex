@@ -158,16 +158,17 @@
   border-radius: 1px;
 }
 
-/* ----- Corpus badge (merged obs / Δswaps) ----- */
+/* ----- Corpus badge (merged obs / Δswaps) -----
+ * Plain colored mono text, matching .lab-chip's weight/size, so it reads
+ * as a metric alongside Score/Coherence rather than a pill button. */
 .lab-badge {
   display: inline-block;
   font-family: var(--lab-font-mono);
-  font-size: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.06em;
   text-transform: lowercase;
-  padding: 2px 8px;
-  border-radius: 2px;
-  border: 1px solid currentColor;
 }
 .lab-badge-seen { color: var(--lab-pos); }
 .lab-badge-near { color: var(--lab-warn); }
@@ -1565,4 +1566,88 @@ button.lab-comp-tile {
   body.feature-docked {
     padding-right: 460px;
   }
+}
+
+/* ----- Species coupling table: expandable rows ----- */
+.lab-species-coupling-row:hover {
+  background: var(--lab-surface-hover, rgba(128, 128, 128, 0.06));
+}
+.lab-species-coupling-row.lab-expanded {
+  background: var(--lab-surface-hover, rgba(128, 128, 128, 0.06));
+}
+.lab-modulation-detail td {
+  padding: 0 !important;
+}
+.lab-modulation-list {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--lab-border);
+}
+.lab-modulation-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lab-ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.lab-modulation-table {
+  width: 100%;
+  font-size: 13px;
+  border-collapse: collapse;
+}
+.lab-modulation-table th {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--lab-ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: left;
+  padding: 2px 8px 4px 0;
+  border-bottom: 1px solid var(--lab-border);
+}
+.lab-modulation-table th.num {
+  text-align: right;
+}
+.lab-modulation-table td {
+  padding: 4px 8px 4px 0;
+  vertical-align: middle;
+}
+.lab-modulation-table td.num {
+  text-align: right;
+  font-family: var(--lab-font-mono);
+}
+.lab-pair-cell-compact {
+  gap: 4px;
+}
+.lab-pair-cell-compact .lab-pair-sep {
+  font-size: 12px;
+}
+
+/* ----- Feature modal: item-shift annotation ----- */
+.lab-feature-item-shift {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  color: var(--lab-ink-muted);
+  margin-left: 4px;
+}
+
+/* ----- Feature modal: expandable coupling rows ----- */
+.lab-feature-coupling-row-wrap {
+  list-style: none;
+}
+.lab-feature-coupling-row-wrap .lab-feature-coupling-row:hover {
+  background: var(--lab-surface-hover, rgba(128, 128, 128, 0.06));
+}
+.lab-feature-coupling-row-wrap .lab-feature-coupling-row.lab-expanded {
+  background: var(--lab-surface-hover, rgba(128, 128, 128, 0.06));
+}
+.lab-feature-coupling-row-wrap .lab-modulation-list {
+  padding: 4px 0 8px;
+  border-top: 1px solid var(--lab-border);
+}
+
+/* ----- Feature modal: corpus item filter ----- */
+.lab-feature-corpus-filter {
+  margin-bottom: 8px;
+  max-width: 240px;
 }

@@ -3,7 +3,7 @@
 // Layout mirrors app.py:_render_analysis:
 //   PageTitle
 //   §01  Team       (slot strip + multiselect, exactly TEAM_SIZE mons)
-//   §02  Observables strip (Score adj/raw, Coherence, Corpus)
+//   §02  Observables strip (Score, Coherence, Corpus)
 //   §03  Pairwise coupling decomposition (15 rows)
 //   §04  Top single swaps from this team (TOP_SINGLE_SWAPS rows, independent)
 //   §05  Greedy critique — single-swap chain
@@ -13,7 +13,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  FIELD_WEIGHT_OPTIONS,
   GREEDY_MAX_SWAPS,
   TEAM_SIZE,
   TOP_SINGLE_SWAPS,
@@ -29,6 +28,7 @@ import {
   teamObservables,
 } from "../render/observables";
 import { nearestObserved } from "../render/corpus";
+import { percentileTitle } from "../render/corpusScore";
 import { rankSingleSwaps } from "../sampler/rank";
 import { greedyOptimize } from "../sampler/greedy";
 import { buildPartialPaste, formatSigned } from "../render/format";
@@ -47,10 +47,11 @@ function idxsToRoster(model: IsingModel, idxs: readonly number[]): RosterSlot[] 
 }
 
 export function AnalysisPage() {
-  const { model, teamCounts, status, modelId, setModelId } = useModel();
+  const { model, teamCounts, corpusScoreIndex, status, modelId, setModelId } =
+    useModel();
   const [searchParams, setSearchParams] = useSearchParams();
   const { analysis, setAnalysis } = usePageState();
-  const { roster, fieldWeight } = analysis;
+  const { roster } = analysis;
   // The complete team = roster slots with an item pinned. Species-only slots
   // are in-progress picks that don't count until an item is chosen.
   const teamIdxs = useMemo(
@@ -92,7 +93,6 @@ export function AnalysisPage() {
       appliedTokenRef.current = key;
       setAnalysis({
         roster: idxsToRoster(model, idxs.slice(0, TEAM_SIZE)),
-        fieldWeight: decoded.fieldWeight,
       });
       return;
     }
@@ -107,7 +107,7 @@ export function AnalysisPage() {
       setAnalysis({ roster: idxsToRoster(model, idxs.slice(0, TEAM_SIZE)) });
   }, [status, model, modelId, searchParams, setAnalysis, setModelId]);
 
-  // Live-sync the URL from state (debounced so a slider drag settles into
+  // Live-sync the URL from state (debounced so rapid edits settle into
   // one write). Skipped while an incoming token is still pending decode.
   const teamKey = useMemo(
     () => [...teamIdxs].sort((a, b) => a - b).join(","),
@@ -117,7 +117,7 @@ export function AnalysisPage() {
     if (!model || teamIdxs.length === 0) return;
     const incoming = searchParams.get("t");
     if (incoming && incoming !== appliedTokenRef.current) return;
-    const token = encodeCore(modelId, fieldWeight, teamIdxs, model);
+    const token = encodeCore(modelId, teamIdxs, model);
     if (token === searchParams.get("t")) return;
     const handle = setTimeout(() => {
       appliedTokenRef.current = token;
@@ -125,7 +125,7 @@ export function AnalysisPage() {
     }, 300);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model, modelId, teamKey, fieldWeight]);
+  }, [model, modelId, teamKey]);
 
   // Import a pokepaste from the clipboard into the team.
   const [importMsg, setImportMsg] = useState<{
@@ -186,32 +186,34 @@ export function AnalysisPage() {
   }, [model, teamIdxs]);
 
   // Heavy diagnostics — only compute when the team is valid + complete.
+  // Everything is scored on the fitted model as-is (fieldWeight = 1).
   const diagnostics = useMemo(() => {
     if (!model || !teamComplete || uniquenessError) return null;
-    const obs = teamObservables(model, teamSorted, fieldWeight);
+    const obs = teamObservables(model, teamSorted, 1);
     const pjRows = pairwiseJRows(teamSorted, model.vocab, model.J, model.V);
     const swaps = rankSingleSwaps(model, {
       team: teamSorted,
-      fieldWeight,
+      fieldWeight: 1,
       topN: TOP_SINGLE_SWAPS,
     });
     const greedy = greedyOptimize(model, {
       startingTeam: teamSorted,
       pinned: [],
       excluded: [],
-      fieldWeight,
+      fieldWeight: 1,
       maxSwaps: GREEDY_MAX_SWAPS,
     });
-    const finalObs = teamObservables(model, greedy.finalTeam, fieldWeight);
+    const finalObs = teamObservables(model, greedy.finalTeam, 1);
     const finalSumJ = intraTeamSumJ(model.J, model.V, greedy.finalTeam);
     return { obs, pjRows, swaps, greedy, finalObs, finalSumJ };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model, teamSorted.join(","), fieldWeight, teamComplete, uniquenessError]);
+  }, [model, teamSorted.join(","), teamComplete, uniquenessError]);
 
   const corpus =
     model && teamComplete && !uniquenessError
       ? nearestObserved(teamSorted, teamCounts)
       : null;
+
 
   const corpusCaption = model
     ? `Reg ${model.regulation} · ${model.nCorpusTeams.toLocaleString()} teams`
@@ -286,46 +288,19 @@ export function AnalysisPage() {
 
       {teamComplete && !uniquenessError && diagnostics && (
         <>
-          <div style={{ marginTop: 16, marginBottom: 12 }}>
-            <label className="lab-form-label">
-              Bias Adjustment · {fieldWeight.toFixed(1)}
-            </label>
-            <p className="lab-form-caption" style={{ marginBottom: 6 }}>
-              Rescales the Bias before computing Score (adj) and choosing
-              greedy swaps. Score (raw) always uses Bias Adj. = 1.
-            </p>
-            <input
-              type="range"
-              className="lab-slider"
-              aria-label="Bias Adjustment"
-              min={0}
-              max={FIELD_WEIGHT_OPTIONS.length - 1}
-              step={1}
-              value={FIELD_WEIGHT_OPTIONS.indexOf(fieldWeight as 0)}
-              onChange={(e) =>
-                setAnalysis({ fieldWeight: FIELD_WEIGHT_OPTIONS[Number(e.target.value)] })
-              }
-            />
-          </div>
-
           <SectionLabel num="02" title="Observables" />
           <StatStrip
             cells={[
               {
-                label: "Score (adj)",
-                value: formatSigned(diagnostics.obs.scoreAdj),
-                sub: `Bias Adj. = ${fieldWeight}`,
-                tooltip:
-                  "Hamiltonian-space score sign-flipped so higher = better, " +
-                  "with h rescaled by the Bias Adjustment slider.",
-              },
-              {
-                label: "Score (raw)",
+                label: "Score",
                 value: formatSigned(diagnostics.obs.scoreRaw),
-                sub: "Bias Adj. = 1.0",
+                sub: "model team score",
                 tooltip:
-                  "Same as Score (adj) but always at Bias Adj. = 1. The " +
-                  "model's data-calibrated team score.",
+                  "Hamiltonian-space score sign-flipped so higher = better. " +
+                  "The model's data-calibrated team score." +
+                  (corpusScoreIndex
+                    ? ` ${percentileTitle(corpusScoreIndex.score, diagnostics.obs.scoreRaw)}.`
+                    : ""),
               },
               {
                 label: "Coherence",
@@ -334,7 +309,10 @@ export function AnalysisPage() {
                 tooltip:
                   "Σ J_ij over the C(team_size,2) unordered pairs. Positive " +
                   "= synergistic archetype; negative = balance team the " +
-                  "pairwise model can't see what makes it work.",
+                  "pairwise model can't see what makes it work." +
+                  (corpusScoreIndex
+                    ? ` ${percentileTitle(corpusScoreIndex.coherence, diagnostics.obs.coherence)}.`
+                    : ""),
               },
               ...(corpus !== null
                 ? [
@@ -371,7 +349,7 @@ export function AnalysisPage() {
           <SectionLabel
             num="04"
             title="Top single swaps from this team"
-            right="independent one-step alternatives · ranked by ΔScore (adj)"
+            right="independent one-step alternatives · ranked by ΔScore"
           />
           {diagnostics.swaps.length === 0 ? (
             <p style={{ color: "var(--lab-ink-muted)", fontStyle: "italic" }}>
@@ -408,14 +386,7 @@ export function AnalysisPage() {
                 sub: "to local min",
               },
               {
-                label: "Δ Score (adj)",
-                value: formatSigned(
-                  diagnostics.finalObs.scoreAdj - diagnostics.obs.scoreAdj,
-                ),
-                sub: "vs starting",
-              },
-              {
-                label: "Δ Score (raw)",
+                label: "Δ Score",
                 value: formatSigned(
                   diagnostics.finalObs.scoreRaw - diagnostics.obs.scoreRaw,
                 ),
@@ -432,19 +403,18 @@ export function AnalysisPage() {
           />
           {diagnostics.greedy.chain.length === 0 ? (
             <p style={{ color: "var(--lab-ink-muted)", fontStyle: "italic" }}>
-              No improving single-swap exists — this team is a local maximum
-              of Score (adj). Try a different Bias Adjustment to see if the
-              model re-ranks under a different objective.
+              No improving single-swap exists: this team is a local
+              maximum of Score.
             </p>
           ) : (
             <ChainTable
               startingTeam={teamSorted}
               chain={diagnostics.greedy.chain}
-              startScoreAdj={diagnostics.obs.scoreAdj}
-              startScoreRaw={diagnostics.obs.scoreRaw}
+              startScore={diagnostics.obs.scoreRaw}
               startSumJ={diagnostics.obs.coherence}
               model={model}
               teamCounts={teamCounts}
+              scoreIndex={corpusScoreIndex}
             />
           )}
         </>

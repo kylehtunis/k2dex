@@ -34,8 +34,7 @@ export function SwapsTable({
         <tr>
           <th className="num">#</th>
           <th>swap</th>
-          <th className="num">Δ Score (adj)</th>
-          <th className="num">Δ Score (raw)</th>
+          <th className="num">Δ Score</th>
           <th className="num">Δ Coherence</th>
           <th className="num">corpus</th>
           <th>team after</th>
@@ -57,10 +56,7 @@ export function SwapsTable({
                   nameIn={model.vocab[sw.inIdx]}
                 />
               </td>
-              <td className="num" data-label="Δ score adj">
-                <ScoreChip value={-sw.deltaEAdj} />
-              </td>
-              <td className="num" data-label="Δ score raw">
+              <td className="num" data-label="Δ score">
                 <ScoreChip value={-sw.deltaERaw} />
               </td>
               <td className="num" data-label="Δ coherence">

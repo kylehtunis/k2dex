@@ -9,7 +9,7 @@
 //   m.bin             float32, V entries
 //   team_counts.json  { "0-1-2-3-4-5": count, ... } (loaded separately)
 
-import type { IsingModel, TeamCounts } from "./types";
+import type { IsingModel, SpeciesGraph, TeamCounts } from "./types";
 
 interface MetaJson {
   id?: string;
@@ -243,4 +243,47 @@ export async function loadTeamCounts(
     out.set(k, v);
   }
   return out;
+}
+
+interface SpeciesGraphJson {
+  species: string[];
+  synergy_ut: number[];
+  corrected_ut: number[];
+}
+
+/** Unpack a strict upper-triangle flat array into a symmetric S×S
+ * Float64Array (row-major, zero diagonal). */
+function unpackUpperTriangle(ut: number[], S: number): Float64Array {
+  const out = new Float64Array(S * S);
+  let k = 0;
+  for (let i = 0; i < S; i++) {
+    for (let j = i + 1; j < S; j++) {
+      const v = ut[k++];
+      out[i * S + j] = v;
+      out[j * S + i] = v;
+    }
+  }
+  return out;
+}
+
+/** Load the precomputed species-pair interaction graph. Returns null if
+ * the artifact doesn't exist (species-only models don't have one). */
+export async function loadSpeciesGraph(
+  modelName: string,
+  basePath = "models",
+): Promise<SpeciesGraph | null> {
+  const base = `${import.meta.env.BASE_URL}${basePath}/${modelName}`;
+  const url = `${base}/species_graph.json`;
+  const r = await fetch(url);
+  if (!r.ok) return null;
+  const data: SpeciesGraphJson = await r.json();
+  const S = data.species.length;
+  const indexOf = new Map<string, number>();
+  for (let i = 0; i < S; i++) indexOf.set(data.species[i], i);
+  return {
+    species: data.species,
+    synergy: unpackUpperTriangle(data.synergy_ut, S),
+    corrected: unpackUpperTriangle(data.corrected_ut, S),
+    indexOf,
+  };
 }

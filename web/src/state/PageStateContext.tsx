@@ -42,13 +42,15 @@ export interface CompleterInputs {
   /** Inclusion allow-list (species names). When non-empty, the completer may
    * only place these Pokémon (plus pinned ones); empty = all legal Pokémon. */
   includedSpecies: string[];
-  fieldWeight: number;
   temperature: number;
   usePT: boolean;
   ptRuns: number;
   ptLadder: number;
   ptSweeps: number;
   ptSwapInterval: number;
+  /** Show the sampler-diagnostic observables (top-5 mass, acceptance rates)
+   * that only matter when the advanced PT knobs are being tuned. */
+  showDiagnostics: boolean;
 }
 
 export interface AnalysisInputs {
@@ -56,7 +58,6 @@ export interface AnalysisInputs {
    * complete team is the slots whose `feature` is set; a species-only slot is
    * simply an in-progress pick that doesn't count toward the team yet. */
   roster: RosterSlot[];
-  fieldWeight: number;
 }
 
 const COMPLETER_DEFAULTS: CompleterInputs = {
@@ -64,18 +65,17 @@ const COMPLETER_DEFAULTS: CompleterInputs = {
   inactiveTracks: [],
   excludedSpecies: [],
   includedSpecies: [],
-  fieldWeight: 0.5,
-  temperature: 0.5,
+  temperature: 1.0,
   usePT: true,
   ptRuns: PT_RUNS,
   ptLadder: PT_LADDER_LEVELS,
   ptSweeps: PT_SWEEPS,
   ptSwapInterval: PT_SWAP_INTERVAL,
+  showDiagnostics: false,
 };
 
 const ANALYSIS_DEFAULTS: AnalysisInputs = {
   roster: [],
-  fieldWeight: 0.5,
 };
 
 interface PageStateContextValue {

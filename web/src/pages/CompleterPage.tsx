@@ -10,18 +10,18 @@
 //   §06        — Suggested completion table (post-run)
 //
 // Full statistical sampler (default): PT MCMC in a Web Worker. Returns a
-// distribution of completions; PT options (temperature + advanced) are
-// shown.
+// distribution of completions. Samples the fitted model as-is (fw = 1,
+// T = 1 by default) — the Boltzmann fit is moment-matched, so no bias or
+// temperature correction is needed; temperature remains a tunable under
+// the advanced PT options.
 //
 // Greedy sampling (toggle on): MF marginals → uniqueness-respecting
-// greedy fill → greedy descent. Returns one team, fast, but can descend
-// into incoherent basins at low Bias Adjustment with few pins — so
-// checking it bumps Bias Adjustment to 0.8 and hides the PT options.
+// greedy fill → greedy descent. Returns one team, fast, hides the PT
+// options.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  FIELD_WEIGHT_OPTIONS,
   GREEDY_MAX_SWAPS,
   PT_BURN_IN,
   PT_HOT_T,
@@ -39,10 +39,15 @@ import { runFastPath, type FastPathResult } from "../completer/fastPath";
 import { withInactiveTracks } from "../sampler/model";
 import { teamObservables } from "../render/observables";
 import { nearestObserved } from "../render/corpus";
+import { percentileTitle } from "../render/corpusScore";
 import {
   CompletionCard,
   CompletionList,
 } from "../completer/CompletionCard";
+import {
+  meanPairwiseDifference,
+  noveltyScore,
+} from "../completer/completionStats";
 import { formatSigned } from "../render/format";
 import {
   buildSlugIndex,
@@ -61,7 +66,6 @@ interface PTInputFingerprint {
   fixedSites: readonly number[];
   speciesOnly: boolean;
   excluded: readonly number[];
-  fieldWeight: number;
   temperature: number;
   ptRuns: number;
   ptLadder: number;
@@ -73,7 +77,6 @@ type RunState =
   | {
       mode: "fast";
       result: FastPathResult;
-      fieldWeight: number;
       hideItems: boolean;
     }
   | {
@@ -84,7 +87,6 @@ type RunState =
       swapAccept: number;
       fixed: readonly number[];
       excluded: readonly number[];
-      fieldWeight: number;
       temperature: number;
       elapsedMs: number;
       seed: number;
@@ -98,8 +100,9 @@ export function CompleterPage() {
   const { completer, setCompleter } = usePageState();
 
   const {
-    roster, inactiveTracks, excludedSpecies, includedSpecies, fieldWeight,
+    roster, inactiveTracks, excludedSpecies, includedSpecies,
     temperature, usePT, ptRuns, ptLadder, ptSweeps, ptSwapInterval,
+    showDiagnostics,
   } = completer;
   const setRoster = (next: RosterSlot[]) => setCompleter({ roster: next });
   // Reset every input on the page back to an empty query.
@@ -215,7 +218,6 @@ export function CompleterPage() {
         inactiveTracks: inactive,
         excludedSpecies: excluded,
         includedSpecies: included,
-        fieldWeight: d.fieldWeight,
         usePT: d.usePT,
         temperature: d.temperature,
         ptRuns: d.ptRuns,
@@ -329,7 +331,6 @@ export function CompleterPage() {
     const excludedNow = effectiveExcludedIdxs;
     const fp = runState.fingerprint;
     if (fp.speciesOnly !== speciesOnly) return false;
-    if (fp.fieldWeight !== fieldWeight) return false;
     if (fp.temperature !== temperature) return false;
     if (fp.ptRuns !== ptRuns) return false;
     if (fp.ptLadder !== ptLadder) return false;
@@ -377,7 +378,6 @@ export function CompleterPage() {
     return encodeCompleter(
       {
         modelId,
-        fieldWeight,
         fixedIdxs,
         fixedSites,
         inactiveTracks,
@@ -395,7 +395,7 @@ export function CompleterPage() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    model, modelId, fieldWeight, fixedKey, fixedSitesKey, inactiveKey,
+    model, modelId, fixedKey, fixedSitesKey, inactiveKey,
     excludedKey, includedKey, usePT, temperature, ptRuns, ptLadder, ptSweeps,
     ptSwapInterval, seedForUrl,
   ]);
@@ -467,10 +467,10 @@ export function CompleterPage() {
           fixed: fixedIdxs,
           fixedSites,
           excludedSpecies: effectiveExcludedSpecies,
-          fieldWeight,
+          fieldWeight: 1,
         });
         if (r.ok) {
-          setRunState({ mode: "fast", result: r.result, fieldWeight, hideItems: speciesOnly });
+          setRunState({ mode: "fast", result: r.result, hideItems: speciesOnly });
         } else {
           setErrorMsg(r.error.message);
           setRunState(null);
@@ -492,7 +492,6 @@ export function CompleterPage() {
       fixedSites: [...fixedSites],
       speciesOnly,
       excluded: [...excluded],
-      fieldWeight,
       temperature,
       ptRuns,
       ptLadder,
@@ -503,7 +502,7 @@ export function CompleterPage() {
       fixed: fixedIdxs,
       fixedSites,
       excluded,
-      fieldWeight,
+      fieldWeight: 1,
       coldT: temperature,
       hotT: PT_HOT_T,
       ladderLevels: ptLadder,
@@ -528,7 +527,6 @@ export function CompleterPage() {
           swapAccept: r.swapAccept,
           fixed: fixedIdxs,
           excluded,
-          fieldWeight,
           temperature,
           elapsedMs: elapsedFinal,
           seed,
@@ -649,69 +647,11 @@ export function CompleterPage() {
       )}
 
       <SectionLabel num="03" title="Sampler" />
-      <div
-        className={usePT ? "lab-form-grid" : "lab-form-grid lab-form-grid-1"}
-        style={{ marginBottom: 12 }}
-      >
-        <div>
-          <label className="lab-form-label">
-            Bias Adjustment · {fieldWeight.toFixed(1)}
-          </label>
-          <div className="lab-form-caption">
-            Scales the Bias before sampling. 1.0 = popularity bias at
-            full strength. 0.0 = pure coherence,
-            popularity disregarded. Useful operating range 0.2–0.8. The higher this 
-            value, the more the model will prioritize the most commonly used Pokémon.
-          </div>
-          <input
-            type="range"
-            className="lab-slider"
-            aria-label="Bias Adjustment"
-            min={0}
-            max={FIELD_WEIGHT_OPTIONS.length - 1}
-            step={1}
-            value={FIELD_WEIGHT_OPTIONS.indexOf(fieldWeight as 0)}
-            onChange={(e) =>
-              setCompleter({ fieldWeight: FIELD_WEIGHT_OPTIONS[Number(e.target.value)] })
-            }
-          />
-        </div>
-        {usePT && (
-          <div>
-            <label className="lab-form-label">
-              Temperature · {temperature}
-            </label>
-            <div className="lab-form-caption">
-              Controls the tradeoff between exploring more teams (higher) and concentrating
-              on the most likely teams (lower). The range 0.3-0.7 is generally reasonable. Raise if you
-              aren't getting enough unique teams and lower if the top 5 mass drops below ~5-10%.
-            </div>
-            <input
-              type="range"
-              className="lab-slider"
-              aria-label="Temperature"
-              min={0}
-              max={TEMPERATURE_OPTIONS.length - 1}
-              step={1}
-              value={TEMPERATURE_OPTIONS.indexOf(temperature as 0.5)}
-              onChange={(e) =>
-                setCompleter({ temperature: TEMPERATURE_OPTIONS[Number(e.target.value)] })
-              }
-            />
-          </div>
-        )}
-      </div>
       <label className="lab-checkbox-row" style={{ marginBottom: 12 }}>
         <input
           type="checkbox"
           checked={!usePT}
-          onChange={(e) => {
-            const greedy = e.target.checked;
-            // Greedy descends into incoherent basins at low Bias Adjustment
-            // with few pins, so seed it high (0.8); the full sampler is fine
-            // at the discrimination-optimal 0.3 (energy_discrimination.ipynb).
-            setCompleter({ usePT: !greedy, fieldWeight: greedy ? 0.8 : 0.3 });
-          }}
+          onChange={(e) => setCompleter({ usePT: !e.target.checked })}
         />
         Greedy sampling (faster, only one result per query)
       </label>
@@ -719,6 +659,28 @@ export function CompleterPage() {
         <details className="lab-expander" style={{ marginBottom: 12 }}>
           <summary>Advanced sampler parameters</summary>
           <div className="lab-form-grid lab-form-grid-airy">
+            <div>
+              <label className="lab-form-label">
+                Temperature · {temperature}
+              </label>
+              <div className="lab-form-caption">
+                Sampling temperature. 1.0 samples the model&apos;s fitted
+                distribution of teams; lower to concentrate on the most
+                likely teams, raise to explore more variety.
+              </div>
+              <input
+                type="range"
+                className="lab-slider"
+                aria-label="Temperature"
+                min={0}
+                max={TEMPERATURE_OPTIONS.length - 1}
+                step={1}
+                value={TEMPERATURE_OPTIONS.indexOf(temperature as 0.5)}
+                onChange={(e) =>
+                  setCompleter({ temperature: TEMPERATURE_OPTIONS[Number(e.target.value)] })
+                }
+              />
+            </div>
             <div>
               <label className="lab-form-label">Runs · {ptRuns}</label>
               <div className="lab-form-caption">
@@ -784,7 +746,8 @@ export function CompleterPage() {
                 exchange attempts → faster cold-chain mixing, but each
                 attempt is less likely to accept (smaller energy gap
                 accumulated between attempts). Tune watching the Replica
-                swap acceptance; healthy band is 20–80%.
+                swap acceptance (enable sampler diagnostics below);
+                healthy band is 20–80%.
               </div>
               <input
                 type="range"
@@ -799,6 +762,16 @@ export function CompleterPage() {
               />
             </div>
           </div>
+          <label className="lab-checkbox-row" style={{ marginTop: 8 }}>
+            <input
+              type="checkbox"
+              checked={showDiagnostics}
+              onChange={(e) =>
+                setCompleter({ showDiagnostics: e.target.checked })
+              }
+            />
+            Show sampler diagnostics (acceptance rates, concentration)
+          </label>
         </details>
       )}
       <button
@@ -825,7 +798,12 @@ export function CompleterPage() {
         <FastResults runState={runState} model={model} teamCounts={teamCounts} />
       )}
       {runState?.mode === "pt" && (
-        <PTResults runState={runState} model={model} teamCounts={teamCounts} />
+        <PTResults
+          runState={runState}
+          model={model}
+          teamCounts={teamCounts}
+          showDiagnostics={showDiagnostics}
+        />
       )}
       </>}
     </>
@@ -841,8 +819,15 @@ function FastResults({
   model: ReturnType<typeof useModel>["model"] & object;
   teamCounts: ReturnType<typeof useModel>["teamCounts"];
 }) {
-  const { result, fieldWeight } = runState;
-  const obs = teamObservables(model, result.finalTeam, fieldWeight);
+  const { corpusScoreIndex } = useModel();
+  const { result } = runState;
+  const obs = teamObservables(model, result.finalTeam, 1);
+  const scoreTitle = corpusScoreIndex
+    ? percentileTitle(corpusScoreIndex.score, obs.scoreRaw)
+    : null;
+  const coherenceTitle = corpusScoreIndex
+    ? percentileTitle(corpusScoreIndex.coherence, obs.coherence)
+    : null;
   const corpus = nearestObserved(result.finalTeam, teamCounts);
   const fixedSet = new Set(result.fixed);
   const freeFinal = result.finalTeam.filter((i) => !fixedSet.has(i));
@@ -852,14 +837,21 @@ function FastResults({
       <StatStrip
         cells={[
           {
-            label: "Score (adj)",
-            value: formatSigned(obs.scoreAdj),
-            sub: `Bias Adj. = ${fieldWeight}`,
+            label: "Score",
+            value: formatSigned(obs.scoreRaw),
+            sub: "model team score",
+            tooltip:
+              "Higher = better team under the model." +
+              (scoreTitle ? ` ${scoreTitle}.` : ""),
           },
           {
             label: "Coherence",
             value: formatSigned(obs.coherence),
             sub: "intra-team coupling",
+            tooltip:
+              "Intra-team coupling: the pure pairwise-synergy part of the " +
+              "Score." +
+              (coherenceTitle ? ` ${coherenceTitle}.` : ""),
           },
           {
             label: "Swaps taken",
@@ -877,9 +869,10 @@ function FastResults({
         <CompletionCard
           freeIdxs={freeFinal}
           fullTeam={result.finalTeam}
-          scoreAdj={obs.scoreAdj}
-          scoreRaw={obs.scoreRaw}
+          score={obs.scoreRaw}
+          scoreTitle={scoreTitle}
           coherence={obs.coherence}
+          coherenceTitle={coherenceTitle}
           corpus={corpus}
           isTopRow
           model={model}
@@ -894,20 +887,64 @@ function PTResults({
   runState,
   model,
   teamCounts,
+  showDiagnostics,
 }: {
   runState: Extract<RunState, { mode: "pt" }>;
   model: ReturnType<typeof useModel>["model"] & object;
   teamCounts: ReturnType<typeof useModel>["teamCounts"];
+  showDiagnostics: boolean;
 }) {
+  const { corpusScoreIndex } = useModel();
   const {
-    dist, nKept, localAccept, swapAccept, fixed, fieldWeight, elapsedMs,
+    dist, nKept, localAccept, swapAccept, fixed, elapsedMs,
   } = runState;
   const top5Mass =
     nKept > 0
       ? (dist.slice(0, 5).reduce((s, e) => s + e.count, 0) / nKept) * 100
       : 0;
+  // Sampler-health cells, only useful alongside the advanced PT knobs.
+  const diagnosticCells = [
+    {
+      label: "Top-5 mass",
+      value: `${top5Mass.toFixed(2)}%`,
+      sub: "concentration",
+      tooltip:
+        "Fraction of all samples in the top-5 completions. " +
+        "Healthy: 5%+ (upper bound depends on number of completions). " +
+        "Too high → distribution is too steep; lower Temperature. " +
+        "Below 5% → distribution is too flat; raise Temperature.",
+    },
+    {
+      label: "Local accept",
+      value: `${(localAccept * 100).toFixed(1)}%`,
+      sub: "within-chain",
+      tooltip:
+        "Within-chain Metropolis-Hastings acceptance rate, averaged " +
+        "across all replica chains. Healthy: 20–60%. " +
+        "Below 15% → chains too cold; raise target Temperature. " +
+        "Above 80% → chains too hot; lower target Temperature.",
+    },
+    {
+      label: "Replica swap",
+      value: `${(swapAccept * 100).toFixed(1)}%`,
+      sub: "between chains",
+      tooltip:
+        "Acceptance rate for replica exchange between adjacent " +
+        "temperature rungs. Healthy: 20–80%. " +
+        "Below 15% → rungs are spaced too far apart; increase ladder levels. " +
+        "Above 80% → rungs are too close; decrease ladder levels.",
+    },
+  ];
   const fixedSet = new Set(fixed);
   const topK = dist.slice(0, TOP_COMPLETIONS);
+  // Corpus lookup per shown completion, shared by the novelty cell and the
+  // per-card corpus chip (one nearestObserved scan each, not two).
+  const topKCorpus = topK.map((e) => nearestObserved(e.team, teamCounts));
+  const variety = meanPairwiseDifference(topK.map((e) => e.team));
+  const novelty = noveltyScore(
+    topK.map((e) => e.count),
+    topKCorpus.map((c) => (c === null ? null : c.delta)),
+  );
   return (
     <>
       <SectionLabel num="04" title="Observables · last run" />
@@ -923,36 +960,36 @@ function PTResults({
             value: dist.length.toLocaleString(),
             sub: "completions",
           },
-          {
-            label: "Top-5 mass",
-            value: `${top5Mass.toFixed(2)}%`,
-            sub: "concentration",
-            tooltip:
-              "Fraction of all samples in the top-5 completions. " +
-              "Healthy: 5%+ (upper bound depends on number of completions). " +
-              "Too high → distribution is too steep; lower Temperature. " +
-              "Below 5% → distribution is too flat; raise Temperature.",
-          },
-          {
-            label: "Local accept",
-            value: `${(localAccept * 100).toFixed(1)}%`,
-            sub: "within-chain",
-            tooltip:
-              "Within-chain Metropolis-Hastings acceptance rate, averaged " +
-              "across all replica chains. Healthy: 20–60%. " +
-              "Below 15% → chains too cold; raise target Temperature. " +
-              "Above 80% → chains too hot; lower target Temperature.",
-          },
-          {
-            label: "Replica swap",
-            value: `${(swapAccept * 100).toFixed(1)}%`,
-            sub: "between chains",
-            tooltip:
-              "Acceptance rate for replica exchange between adjacent " +
-              "temperature rungs. Healthy: 20–80%. " +
-              "Below 15% → rungs are spaced too far apart; increase ladder levels. " +
-              "Above 80% → rungs are too close; decrease ladder levels.",
-          },
+          ...(variety !== null
+            ? [
+                {
+                  label: "Variety",
+                  value: variety.toFixed(1),
+                  sub: "avg differing Pokémon",
+                  tooltip:
+                    "Average number of team members that differ between " +
+                    "two of the shown completions. Pinned Pokémon always " +
+                    "match, so only the completer-filled slots can differ. " +
+                    "0 = every suggestion is the same team.",
+                },
+              ]
+            : []),
+          ...(novelty !== null
+            ? [
+                {
+                  label: "Novelty",
+                  value: `${Math.round(novelty)}%`,
+                  sub: "vs tournament teams",
+                  tooltip:
+                    "How far the shown completions sit from rosters " +
+                    "observed in tournament data, weighted by how often " +
+                    "each was sampled. 0% = every suggestion is a team " +
+                    "that has been played; 100% = every suggestion is 3+ " +
+                    "member changes from anything observed.",
+                },
+              ]
+            : []),
+          ...(showDiagnostics ? diagnosticCells : []),
           {
             label: "Runtime",
             value: `${(elapsedMs / 1000).toFixed(1)}s`,
@@ -968,8 +1005,8 @@ function PTResults({
       <CompletionList>
         {topK.map((entry, idx) => {
           const freeIdxs = entry.team.filter((i) => !fixedSet.has(i));
-          const obs = teamObservables(model, entry.team, fieldWeight);
-          const corpus = nearestObserved(entry.team, teamCounts);
+          const obs = teamObservables(model, entry.team, 1);
+          const corpus = topKCorpus[idx];
           const freqPct = nKept > 0 ? (entry.count / nKept) * 100 : 0;
           return (
             <CompletionCard
@@ -977,9 +1014,18 @@ function PTResults({
               rank={idx + 1}
               freeIdxs={freeIdxs}
               fullTeam={entry.team}
-              scoreAdj={obs.scoreAdj}
-              scoreRaw={obs.scoreRaw}
+              score={obs.scoreRaw}
+              scoreTitle={
+                corpusScoreIndex
+                  ? percentileTitle(corpusScoreIndex.score, obs.scoreRaw)
+                  : null
+              }
               coherence={obs.coherence}
+              coherenceTitle={
+                corpusScoreIndex
+                  ? percentileTitle(corpusScoreIndex.coherence, obs.coherence)
+                  : null
+              }
               corpus={corpus}
               freqPct={freqPct}
               isTopRow={idx === 0}

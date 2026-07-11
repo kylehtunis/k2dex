@@ -6,15 +6,18 @@
 // contain [a-z0-9-]. base64/gzip would inflate a payload this short, so
 // the readable delimited form is also the most wieldy.
 //
-// Core token `t` (shared by both pages): "<modelSlug>.<fwIndex>.<mons>"
+// Core token `t` (shared by both pages): "<modelSlug>.<mons>"
 //   <modelSlug>  the model's id slug, now a per-regulation slug (e.g. "reg-m-a")
-//   <fwIndex>    index into FIELD_WEIGHT_OPTIONS
 //   <mons>       "_"-joined; each mon is one of:
 //                  "speciesSlug~itemSlug"  a feature pin (species + item locked;
 //                                          itemless builds encode "...~none")
 //                  "speciesSlug"           a site pin (species locked, item free)
 //                Feature mons come first (ascending index) so pre-site-pin
 //                tokens stay byte-identical; site mons are appended.
+//
+// Legacy tokens carried a "<fwIndex>" segment between the model slug and the
+// mons (the retired Bias Adjustment slider position, always all-digits). It is
+// no longer encoded; decode detects and silently drops it.
 //
 // Legacy model codes (the short "s"/"si" and the retired split-model slugs)
 // decode to the unified per-regulation slug for backward compatibility.
@@ -24,7 +27,6 @@
 // the exact PT run while inputs still match it).
 
 import {
-  FIELD_WEIGHT_OPTIONS,
   TEMPERATURE_OPTIONS,
   PT_RUNS,
   PT_LADDER_LEVELS,
@@ -44,7 +46,7 @@ const LEGACY_CODE_TO_SLUG: Record<string, string> = {
   "reg-m-b-species-item-boltzmann": "reg-m-b",
 };
 
-const DEFAULT_TEMPERATURE = 0.5;
+const DEFAULT_TEMPERATURE = 1.0;
 
 export interface FeatureSlug {
   speciesSlug: string;
@@ -59,27 +61,11 @@ function featureSlug(model: IsingModel, i: number): string {
   return it === null ? sp : `${sp}~${itemToSlug(it)}`;
 }
 
-function fieldWeightIndex(fieldWeight: number): number {
-  const exact = (FIELD_WEIGHT_OPTIONS as readonly number[]).indexOf(fieldWeight);
-  if (exact >= 0) return exact;
-  let best = 0;
-  let bestD = Infinity;
-  FIELD_WEIGHT_OPTIONS.forEach((v, i) => {
-    const d = Math.abs(v - fieldWeight);
-    if (d < bestD) {
-      bestD = d;
-      best = i;
-    }
-  });
-  return best;
-}
-
 /** Build the shared core token from feature pins (`idxs`) and optional site
  * pins (`siteIdxs`, site indices). Feature mons keep ascending-index order and
  * come first; site mons are appended, so a feature-only token is unchanged. */
 export function encodeCore(
   modelId: string,
-  fieldWeight: number,
   idxs: readonly number[],
   model: IsingModel,
   siteIdxs: readonly number[] = [],
@@ -91,12 +77,11 @@ export function encodeCore(
     .sort((a, b) => a - b)
     .map((s) => speciesToSlug(model.sites[s]));
   const mons = [...featureMons, ...siteMons].join("_");
-  return `${modelId}.${fieldWeightIndex(fieldWeight)}.${mons}`;
+  return `${modelId}.${mons}`;
 }
 
 export interface DecodedCore {
   modelId: string;
-  fieldWeight: number;
   features: FeatureSlug[];
 }
 
@@ -121,17 +106,18 @@ export function decodeCore(t: string | null): DecodedCore | null {
   if (parts.length < 2) return null;
   const modelId = resolveModelSlug(parts[0]);
   if (!modelId) return null;
-  const fieldWeight = FIELD_WEIGHT_OPTIONS[Number(parts[1])] ?? 0.3;
-  const monsStr = parts.slice(2).join(".");
+  // Legacy tokens carry an all-digit Bias Adjustment index before the mons;
+  // slugs always contain a letter, so plain digits can only be that segment.
+  const monsParts = /^\d+$/.test(parts[1]) ? parts.slice(2) : parts.slice(1);
+  const monsStr = monsParts.join(".");
   const features = monsStr
     ? monsStr.split("_").filter(Boolean).map(parseMon)
     : [];
-  return { modelId, fieldWeight, features };
+  return { modelId, features };
 }
 
 export interface CompleterShareState {
   modelId: string;
-  fieldWeight: number;
   fixedIdxs: readonly number[];
   /** Site-level pins (site indices). Encoded as bare species slugs. */
   fixedSites: readonly number[];
@@ -156,7 +142,7 @@ export function encodeCompleter(
   model: IsingModel,
 ): URLSearchParams {
   const p = new URLSearchParams();
-  p.set("t", encodeCore(s.modelId, s.fieldWeight, s.fixedIdxs, model, s.fixedSites));
+  p.set("t", encodeCore(s.modelId, s.fixedIdxs, model, s.fixedSites));
   if (s.excludedSpecies.length) {
     p.set(
       "x",
@@ -194,7 +180,6 @@ export function encodeCompleter(
 
 export interface DecodedCompleter {
   modelId: string;
-  fieldWeight: number;
   features: FeatureSlug[];
   inactiveTracks: number[];
   excludedSlugs: string[];
@@ -249,7 +234,6 @@ export function decodeCompleter(params: URLSearchParams): DecodedCompleter | nul
 
   return {
     modelId: core.modelId,
-    fieldWeight: core.fieldWeight,
     features: core.features,
     inactiveTracks,
     excludedSlugs,
