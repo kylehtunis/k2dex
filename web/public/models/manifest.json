@@ -7,11 +7,11 @@
       "display_name": "Reg. M-B (Experimental)",
       "regulation": "M-B",
       "feature_dimensions": 2,
-      "V": 591,
-      "n_corpus_teams": 6905,
-      "latest_tournament_date": "2026-07-02T23:00:00.000Z",
+      "V": 626,
+      "n_corpus_teams": 8946,
+      "latest_tournament_date": "2026-07-10T22:40:00.000Z",
       "team_size": 6,
-      "description": "A new model for M-B. Vocabulary is currently small due to the limited data, will improve over time.",
+      "description": "A new model for M-B",
       "new": true
     },
     {
