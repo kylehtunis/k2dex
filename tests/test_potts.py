@@ -134,6 +134,36 @@ class TestAPC(unittest.TestCase):
         np.testing.assert_allclose(g.synergy, g.synergy.T, atol=1e-12)
         np.testing.assert_allclose(np.diag(g.corrected), 0.0, atol=1e-12)
 
+    def test_synergy_is_usage_weighted_mean(self) -> None:
+        # A has 2 items, B has 2 items. Skew A's marginals so item i1
+        # dominates; the graph synergy must equal the m-weighted block mean,
+        # not the flat grand mean.
+        J = _random_symmetric(5, seed=3)
+        model = _toy_model(J)
+        model.m[0], model.m[1] = 0.30, 0.02   # A: i1 dominant
+        model.m[2], model.m[3] = 0.05, 0.15   # B: j2 dominant
+        g = potts.species_apc_graph(model)
+        wA = model.item_weights("A")
+        wB = model.item_weights("B")
+        B = J[np.ix_([0, 1], [2, 3])]
+        expected = float(wA @ B @ wB)
+        ai, bi = g.species.index("A"), g.species.index("B")
+        self.assertAlmostEqual(g.synergy[ai, bi], expected, places=12)
+        # It should differ from the flat grand mean under skewed usage.
+        self.assertNotAlmostEqual(g.synergy[ai, bi], float(B.mean()), places=4)
+
+    def test_single_item_species_synergy_unchanged(self) -> None:
+        # C has one item, so its weight is 1 and its synergy equals the plain
+        # per-partner-item mean regardless of usage weighting.
+        J = _random_symmetric(5, seed=7)
+        model = _toy_model(J)
+        g = potts.species_apc_graph(model)
+        wA = model.item_weights("A")
+        block = J[np.ix_([4], [0, 1])]  # C x A
+        expected = float(block[0] @ wA)
+        ci, ai = g.species.index("C"), g.species.index("A")
+        self.assertAlmostEqual(g.synergy[ci, ai], expected, places=12)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -84,6 +84,23 @@ class FittedModel:
         the support figure the modulation table must be read against."""
         return float(self.m[self.site_index[species]].sum() * self.n_corpus_teams)
 
+    def item_weights(self, species: str) -> NDArray[np.float64]:
+        """Empirical item-usage distribution for `species`, conditional on the
+        species being present: the weighted corpus marginals ``m`` of its
+        item-states, renormalized over the species' item alphabet to sum to 1
+        (flat-index order, matching :meth:`item_alphabet`).
+
+        ``m`` is the sample-weighted empirical appearance rate per feature (from
+        the data, not the fitted ``(J, h)``), so these weights answer "when this
+        species is on a team, how often does it hold each item?" Falls back to
+        uniform if the species has no marginal mass."""
+        idx = self.site_index[species]
+        w = self.m[idx].astype(np.float64)
+        total = w.sum()
+        if total <= 1e-12:
+            return np.full(len(idx), 1.0 / len(idx))
+        return w / total
+
 
 def load_fitted_model(model_dir: str | Path) -> FittedModel:
     """Load a precompute artifact (``meta.json`` + ``J.bin``/``h.bin``/``m.bin``)
@@ -308,8 +325,8 @@ class SpeciesGraph:
     each zero-sum species-pair block (the plmDCA contact score, all-positive).
     ``apc`` is the average-product correction ``F_i. * F_.j / F_..`` and
     ``corrected = frob - apc`` strips the popularity/degree background. ``synergy``
-    is the *signed* species-level coupling (grand mean per block) -- use it when
-    the sign of the interaction (synergy vs anti-synergy) matters.
+    is the *signed* species-level coupling (usage-weighted mean per block) -- use
+    it when the sign of the interaction (synergy vs anti-synergy) matters.
     """
     species: list[str]
     frob: NDArray[np.float64]
@@ -328,10 +345,23 @@ def species_apc_graph(model: FittedModel) -> SpeciesGraph:
     which busy/popular species couple to everything -- the same confound the
     field ``h`` carries -- giving a cleaner graph than thresholding raw
     magnitudes. The diagonal is zero (no self-interaction).
+
+    The signed ``synergy`` is the **usage-weighted** mean of the block: each
+    item-state is weighted by its empirical appearance rate (:meth:`item_weights`)
+    rather than treated as equally likely. A flat grand mean dilutes a species
+    with many rarely-run items (its block is mostly near-zero entries) while
+    concentrating one with a single dominant item, so it partly ranks by
+    ``1/alphabet_size``. Weighting by how players actually pick items makes
+    ``synergy`` the expected pairwise coupling the pair contributes to a team --
+    a species with one item is unchanged, a many-item species is no longer
+    penalized for its long tail. ``frob`` keeps the unweighted zero-sum gauge:
+    it is the standard plmDCA contact norm (spread around the block center), not
+    a signed strength, and is not what the meta ranking sorts on.
     """
     sites = model.sites
     idx = model.site_index
     S = len(sites)
+    weights = {P: model.item_weights(P) for P in sites}
     frob = np.zeros((S, S), dtype=np.float64)
     synergy = np.zeros((S, S), dtype=np.float64)
     for a, P in enumerate(sites):
@@ -344,7 +374,8 @@ def species_apc_graph(model: FittedModel) -> SpeciesGraph:
             zs = B - dec.synergy
             f = float(np.linalg.norm(zs))
             frob[a, b] = frob[b, a] = f
-            synergy[a, b] = synergy[b, a] = dec.synergy
+            syn = float(weights[P] @ B @ weights[Q])
+            synergy[a, b] = synergy[b, a] = syn
     apc = _apc(frob)
     corrected = frob - apc
     np.fill_diagonal(corrected, 0.0)
