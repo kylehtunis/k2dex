@@ -1447,15 +1447,17 @@ button.lab-comp-tile {
   gap: 10px;
   min-width: 0;
 }
-/* Let the partner label shrink + wrap so long "Species @ Item" names never
- * force the two-up grid wider than the modal (would cause horizontal scroll). */
-.lab-feature-coupling-row .lab-feature-link {
+/* Let the partner label shrink + wrap so long species names never force the
+ * row wider than the modal (would cause horizontal scroll). */
+.lab-feature-coupling-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
   flex: 1 1 auto;
   flex-wrap: wrap;
 }
-.lab-feature-coupling-row .lab-comp-mon-name,
-.lab-feature-coupling-row .lab-comp-mon-item {
+.lab-feature-coupling-row .lab-comp-mon-name {
   overflow-wrap: break-word;
 }
 .lab-feature-coupling-val,
@@ -1621,6 +1623,31 @@ button.lab-comp-tile {
 }
 .lab-pair-cell-compact .lab-pair-sep {
   font-size: 12px;
+}
+/* Modulation table row: whole row drills into the partner species. */
+.lab-modulation-row:hover {
+  background: var(--lab-surface-hover, rgba(128, 128, 128, 0.06));
+}
+/* Item pair cell shows sprite + item only (species are fixed for the table),
+ * so the row stays narrow and the J / deviation columns never clip. */
+.lab-mod-pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.lab-mod-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.lab-mod-item-label {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--lab-ink);
+  overflow-wrap: anywhere;
 }
 
 /* ----- Feature modal: item-shift annotation ----- */

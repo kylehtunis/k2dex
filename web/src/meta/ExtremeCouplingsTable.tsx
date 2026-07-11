@@ -67,7 +67,7 @@ function topModulationEntries(
       entries.push({ featureA: fa, featureB: fb, jValue, deviation: jValue - synergy });
     }
   }
-  entries.sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation));
+  entries.sort((a, b) => Math.abs(b.jValue) - Math.abs(a.jValue));
   return entries.slice(0, topN);
 }
 
@@ -143,11 +143,11 @@ function ExpandableRow({
     [isOpen, model, speciesA, speciesB, synergy],
   );
 
-  const maxDev = useMemo(() => {
+  const maxJ = useMemo(() => {
     if (modEntries.length === 0) return 1;
     let m = 0;
     for (const e of modEntries) {
-      const a = Math.abs(e.deviation);
+      const a = Math.abs(e.jValue);
       if (a > m) m = a;
     }
     return m || 1;
@@ -179,15 +179,7 @@ function ExpandableRow({
         <tr className="lab-modulation-detail">
           <td colSpan={3}>
             <div className="lab-modulation-list">
-              <div className="lab-modulation-header">Item modulation (deviation from base synergy)</div>
               <table className="lab-modulation-table">
-                <thead>
-                  <tr>
-                    <th>item pair</th>
-                    <th className="num">J</th>
-                    <th className="num">deviation</th>
-                  </tr>
-                </thead>
                 <tbody>
                   {modEntries.map((e) => (
                     <tr key={`${e.featureA}-${e.featureB}`}>
@@ -199,12 +191,9 @@ function ExpandableRow({
                         </div>
                       </td>
                       <td className="num">
-                        <ScoreChip value={e.jValue} />
-                      </td>
-                      <td className="num">
                         <div className="lab-coupling-val">
-                          <SignedBar value={e.deviation} maxValue={maxDev} width={50} />
-                          <ScoreChip value={e.deviation} />
+                          <SignedBar value={e.jValue} maxValue={maxJ} width={50} />
+                          <ScoreChip value={e.jValue} />
                         </div>
                       </td>
                     </tr>

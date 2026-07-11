@@ -26,9 +26,9 @@ import { useMediaQuery } from "./useMediaQuery";
 import { useModel } from "../state/ModelContext";
 import { usePageState } from "../state/PageStateContext";
 import { SpriteBox } from "../render/Sprite";
-import { InlineMon, TeamMiniStrip } from "../render/cells";
+import { TeamMiniStrip } from "../render/cells";
 import { ScoreChip, SignedBar, StatStrip } from "../render/atoms";
-import { formatPct, formatSigned } from "../render/format";
+import { extractItem, formatPct, formatSigned } from "../render/format";
 import {
   featureCorpusAppearances,
   siteCorpusAppearances,
@@ -334,7 +334,7 @@ function topModulationEntries(
       entries.push({ featureA: fa, featureB: fb, jValue, deviation: jValue - synergy });
     }
   }
-  entries.sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation));
+  entries.sort((a, b) => Math.abs(b.jValue) - Math.abs(a.jValue));
   return entries.slice(0, topN);
 }
 
@@ -369,25 +369,28 @@ function ExpandableCouplingList({
           {rows.map((c) => {
             const partnerSite = model.sites.indexOf(c.species);
             const isOpen = expanded === c.species;
+            // Clicking the row header toggles the expander. Drilling into the
+            // partner species happens by clicking one of its modulation rows.
+            const activate = () => setExpanded(isOpen ? null : c.species);
             return (
               <li key={c.species} className="lab-feature-coupling-row-wrap">
                 <div
                   className={`lab-feature-coupling-row${isOpen ? " lab-expanded" : ""}`}
+                  role="button"
+                  tabIndex={0}
                   style={{ cursor: "pointer" }}
-                  onClick={() => setExpanded(isOpen ? null : c.species)}
+                  onClick={activate}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      activate();
+                    }
+                  }}
                 >
-                  <button
-                    type="button"
-                    className="lab-feature-link"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (partnerSite >= 0) onDrillSite(partnerSite);
-                    }}
-                  >
+                  <span className="lab-feature-coupling-name">
                     <SpriteBox name={c.species} size={32} />
                     <span className="lab-comp-mon-name">{c.species}</span>
-                  </button>
+                  </span>
                   <span className="lab-feature-coupling-val">
                     <SignedBar value={c.synergy} maxValue={maxSynergy} width={70} />
                     <ScoreChip value={c.synergy} />
@@ -399,6 +402,7 @@ function ExpandableCouplingList({
                     siteA={mySite}
                     siteB={partnerSite}
                     synergy={c.synergy}
+                    onDrillSite={onDrillSite}
                   />
                 )}
               </li>
@@ -415,21 +419,23 @@ function ModulationDetail({
   siteA,
   siteB,
   synergy,
+  onDrillSite,
 }: {
   model: IsingModel;
   siteA: number;
   siteB: number;
   synergy: number;
+  onDrillSite: (site: number) => void;
 }) {
   const entries = useMemo(
     () => topModulationEntries(model, siteA, siteB, synergy),
     [model, siteA, siteB, synergy],
   );
 
-  const maxDev = useMemo(() => {
+  const maxJ = useMemo(() => {
     let m = 0;
     for (const e of entries) {
-      const a = Math.abs(e.deviation);
+      const a = Math.abs(e.jValue);
       if (a > m) m = a;
     }
     return m || 1;
@@ -439,32 +445,26 @@ function ModulationDetail({
 
   return (
     <div className="lab-modulation-list">
-      <div className="lab-modulation-header">Item modulation (deviation from base synergy)</div>
       <table className="lab-modulation-table">
-        <thead>
-          <tr>
-            <th>item pair</th>
-            <th className="num">J</th>
-            <th className="num">deviation</th>
-          </tr>
-        </thead>
         <tbody>
           {entries.map((e) => (
-            <tr key={`${e.featureA}-${e.featureB}`}>
+            <tr
+              key={`${e.featureA}-${e.featureB}`}
+              className="lab-modulation-row"
+              style={{ cursor: "pointer" }}
+              onClick={() => onDrillSite(siteB)}
+            >
               <td className="pair">
-                <div className="lab-pair-cell lab-pair-cell-compact">
-                  <InlineMon name={model.vocab[e.featureA]} size={24} />
+                <div className="lab-mod-pair">
+                  <ModItem name={model.vocab[e.featureA]} />
                   <span className="lab-pair-sep">&times;</span>
-                  <InlineMon name={model.vocab[e.featureB]} size={24} />
+                  <ModItem name={model.vocab[e.featureB]} />
                 </div>
               </td>
               <td className="num">
-                <ScoreChip value={e.jValue} />
-              </td>
-              <td className="num">
                 <div className="lab-coupling-val">
-                  <SignedBar value={e.deviation} maxValue={maxDev} width={50} />
-                  <ScoreChip value={e.deviation} />
+                  <SignedBar value={e.jValue} maxValue={maxJ} width={50} />
+                  <ScoreChip value={e.jValue} />
                 </div>
               </td>
             </tr>
@@ -472,6 +472,19 @@ function ModulationDetail({
         </tbody>
       </table>
     </div>
+  );
+}
+
+// Compact item cell for the modulation table: sprite + item label only. The
+// two species are fixed for the whole table (the modal's species and the
+// coupling partner), so repeating their names on every row is redundant.
+function ModItem({ name }: { name: string }) {
+  const item = extractItem(name);
+  return (
+    <span className="lab-mod-item">
+      <SpriteBox name={name} size={22} />
+      <span className="lab-mod-item-label">{item ?? "—"}</span>
+    </span>
   );
 }
 
