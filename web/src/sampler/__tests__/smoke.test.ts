@@ -6,9 +6,22 @@
 
 import { describe, expect, it } from "vitest";
 import type { IsingModel } from "../types";
-import { swapMcmc } from "../swap";
+import { initChain, swapMcmc } from "../swap";
 import { parallelTemperedMcmc } from "../pt";
 import { unpackLowerTriangle, factoredFromSpeciesItem, withInactiveTracks } from "../model";
+import {
+  availableIndices,
+  buildConstraintSets,
+  resolveSitePins,
+  teamEnergy,
+} from "../energy";
+import {
+  buildSiteTables,
+  pottsSpeciesSwap,
+  pottsTrackReroll,
+  type PottsContext,
+} from "../potts";
+import { Rng } from "../rng";
 
 function buildSyntheticModel(): IsingModel {
   const V = 12;
@@ -142,6 +155,90 @@ describe("parallelTemperedMcmc site pins", () => {
       assertValidTeam(team, model, [3]);
       expect(team.some((i) => model.siteOf[i] === 3)).toBe(true);
     }
+  });
+});
+
+describe("anchor-field tilt", () => {
+  it("stays valid with anchorStrength > 1 and mixed pins", () => {
+    const model = buildSyntheticModel();
+    const result = parallelTemperedMcmc(model, {
+      fixed: [3], fixedSites: [0], excluded: [], fieldWeight: 1.0,
+      tLadder: [1.0, 2.0, 4.0],
+      nSteps: 400, burnIn: 100, swapInterval: 10, seed: 21,
+      anchorStrength: 2.0,
+    });
+    expect(result).not.toBeNull();
+    for (const team of result!.samples) {
+      assertValidTeam(team, model, [3]);
+      expect(team.some((i) => model.siteOf[i] === 0)).toBe(true);
+    }
+  });
+
+  it("raises mean pin-integration vs alpha = 1", () => {
+    const model = buildSyntheticModel();
+    const pin = 9; // "E @ z"
+    const meanT = (alpha: number): number => {
+      const result = parallelTemperedMcmc(model, {
+        fixed: [pin], excluded: [], fieldWeight: 1.0,
+        tLadder: [1.0, 1.5, 2.5, 4.0],
+        nSteps: 2000, burnIn: 500, swapInterval: 10, seed: 77,
+        anchorStrength: alpha,
+      });
+      expect(result).not.toBeNull();
+      let total = 0;
+      for (const team of result!.samples) {
+        for (const i of team) if (i !== pin) total += model.J[pin * model.V + i];
+      }
+      return total / result!.samples.length;
+    };
+    expect(meanT(3.0)).toBeGreaterThan(meanT(1.0));
+  });
+
+  it("keeps the tracked chain energy consistent with recomputed H_alpha", () => {
+    const model = buildSyntheticModel();
+    const { V, J, h } = model;
+    const alpha = 2.0;
+    const fixed = [3]; // "B @ y" feature pin
+    const seeds = resolveSitePins(model, [0], fixed, []);
+    expect(seeds).not.toBeNull();
+    const available = availableIndices(model, fixed, []);
+    const nToFill = model.teamSize - fixed.length - seeds!.length;
+
+    const hEff = new Float64Array(V);
+    for (let i = 0; i < V; i++) hEff[i] = h[i];
+    const constraints = buildConstraintSets([...fixed, ...seeds!], model);
+    const tables = buildSiteTables(model);
+    const avail = new Uint8Array(V).fill(1);
+    for (const f of fixed) avail[f] = 0;
+    const lockedSlots = new Set<number>();
+    for (let i = 0; i < seeds!.length; i++) lockedSlots.add(i);
+    const ctx: PottsContext = { fixed, avail, tables, lockedSlots, anchorStrength: alpha };
+
+    // H_alpha recomputed from scratch: untilted team energy on hEff minus the
+    // (alpha-1)-weighted pin<->free cross-coupling sum.
+    const recompute = (c: { stateF: Float64Array; onNf: number[] }): number => {
+      const pins: number[] = [...fixed];
+      const free: number[] = [];
+      for (let s = 0; s < c.onNf.length; s++) {
+        (lockedSlots.has(s) ? pins : free).push(c.onNf[s]);
+      }
+      let cross = 0;
+      for (const p of pins) for (const j of free) cross += J[p * V + j];
+      return teamEnergy(c.stateF, J, hEff, V) - (alpha - 1) * cross;
+    };
+
+    const rng = new Rng(4242);
+    const chain = initChain(model, fixed, available, nToFill, constraints, hEff, rng, seeds!);
+    expect(chain).not.toBeNull();
+    chain!.energy = recompute(chain!);
+    for (let step = 0; step < 600; step++) {
+      if (rng.random() < 0.5) {
+        pottsTrackReroll(chain!, model, hEff, 1.0, tables, ctx, rng);
+      } else {
+        pottsSpeciesSwap(chain!, model, hEff, 1.0, tables, ctx, rng);
+      }
+    }
+    expect(chain!.energy).toBeCloseTo(recompute(chain!), 8);
   });
 });
 

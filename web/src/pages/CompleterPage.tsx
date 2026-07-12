@@ -22,6 +22,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+  ANCHOR_MAX,
+  ANCHOR_MIN,
+  ANCHOR_STEP,
   GREEDY_MAX_SWAPS,
   PT_BURN_IN,
   PT_HOT_T,
@@ -67,6 +70,7 @@ interface PTInputFingerprint {
   speciesOnly: boolean;
   excluded: readonly number[];
   temperature: number;
+  anchorStrength: number;
   ptRuns: number;
   ptLadder: number;
   ptSweeps: number;
@@ -101,8 +105,8 @@ export function CompleterPage() {
 
   const {
     roster, inactiveTracks, excludedSpecies, includedSpecies,
-    temperature, usePT, ptRuns, ptLadder, ptSweeps, ptSwapInterval,
-    showDiagnostics,
+    temperature, anchorStrength, usePT, ptRuns, ptLadder, ptSweeps,
+    ptSwapInterval, showDiagnostics,
   } = completer;
   const setRoster = (next: RosterSlot[]) => setCompleter({ roster: next });
   // Reset every input on the page back to an empty query.
@@ -220,6 +224,7 @@ export function CompleterPage() {
         includedSpecies: included,
         usePT: d.usePT,
         temperature: d.temperature,
+        anchorStrength: d.anchorStrength,
         ptRuns: d.ptRuns,
         ptLadder: d.ptLadder,
         ptSweeps: d.ptSweeps,
@@ -332,6 +337,7 @@ export function CompleterPage() {
     const fp = runState.fingerprint;
     if (fp.speciesOnly !== speciesOnly) return false;
     if (fp.temperature !== temperature) return false;
+    if (fp.anchorStrength !== anchorStrength) return false;
     if (fp.ptRuns !== ptRuns) return false;
     if (fp.ptLadder !== ptLadder) return false;
     if (fp.ptSweeps !== ptSweeps) return false;
@@ -385,6 +391,7 @@ export function CompleterPage() {
         includedSpecies,
         usePT,
         temperature,
+        anchorStrength,
         ptRuns,
         ptLadder,
         ptSweeps,
@@ -396,8 +403,8 @@ export function CompleterPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     model, modelId, fixedKey, fixedSitesKey, inactiveKey,
-    excludedKey, includedKey, usePT, temperature, ptRuns, ptLadder, ptSweeps,
-    ptSwapInterval, seedForUrl,
+    excludedKey, includedKey, usePT, temperature, anchorStrength, ptRuns,
+    ptLadder, ptSweeps, ptSwapInterval, seedForUrl,
   ]);
   useEffect(() => {
     if (!shareParams) return;
@@ -468,6 +475,7 @@ export function CompleterPage() {
           fixedSites,
           excludedSpecies: effectiveExcludedSpecies,
           fieldWeight: 1,
+          anchorStrength,
         });
         if (r.ok) {
           setRunState({ mode: "fast", result: r.result, hideItems: speciesOnly });
@@ -493,6 +501,7 @@ export function CompleterPage() {
       speciesOnly,
       excluded: [...excluded],
       temperature,
+      anchorStrength,
       ptRuns,
       ptLadder,
       ptSweeps,
@@ -503,6 +512,7 @@ export function CompleterPage() {
       fixedSites,
       excluded,
       fieldWeight: 1,
+      anchorStrength,
       coldT: temperature,
       hotT: PT_HOT_T,
       ladderLevels: ptLadder,
@@ -647,6 +657,28 @@ export function CompleterPage() {
       )}
 
       <SectionLabel num="03" title="Sampler" />
+      <div style={{ maxWidth: 480, marginBottom: 14 }}>
+        <label className="lab-form-label">
+          Anchor Strength · {anchorStrength.toFixed(1)}
+        </label>
+        <div className="lab-form-caption">
+          How strongly completions build around your pinned Pokémon.
+          1.0 is neutral, raise it to favor
+          teammates that pair well with your picks.
+        </div>
+        <input
+          type="range"
+          className="lab-slider"
+          aria-label="Anchor Strength"
+          min={ANCHOR_MIN}
+          max={ANCHOR_MAX}
+          step={ANCHOR_STEP}
+          value={anchorStrength}
+          onChange={(e) =>
+            setCompleter({ anchorStrength: Number(e.target.value) })
+          }
+        />
+      </div>
       <label className="lab-checkbox-row" style={{ marginBottom: 12 }}>
         <input
           type="checkbox"

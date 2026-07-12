@@ -84,6 +84,7 @@ class TestParity(unittest.TestCase):
                     field_weight=inp["fieldWeight"],
                     species_of=self.species_of, item_of=self.item_of,
                     n_iters=inp["nIters"], tol=inp["tol"], damp=inp["damp"],
+                    anchor_strength=inp.get("anchorStrength", 1.0),
                 )
                 expected = case["expected"]
                 if expected is None:
@@ -115,6 +116,7 @@ class TestParity(unittest.TestCase):
                     field_weight=inp["fieldWeight"],
                     species_of=self.species_of, item_of=self.item_of,
                     max_swaps=inp["maxSwaps"],
+                    anchor_strength=inp.get("anchorStrength", 1.0),
                 )
                 expected = case["expected"]
                 self.assertEqual(sorted(final_team), expected["finalTeam"],
@@ -237,9 +239,15 @@ class TestParity(unittest.TestCase):
                 inp = case["input"]
                 r_feat = inp["rFeat"]
                 r_item_id = [tables.item_id[f] for f in r_feat]
+                r_weights_raw = inp.get("rWeights")
+                r_weights = (
+                    np.array(r_weights_raw, dtype=np.float64)
+                    if r_weights_raw is not None else None
+                )
                 log_z, neg_e, valid, feats = site_conditional(
                     inp["site"], r_feat, r_item_id,
                     self.J, self.h, inp["invTemp"], tables, avail,
+                    r_weights,
                 )
                 exp = case["expected"]
                 self.assertEqual(list(feats), exp["feats"],

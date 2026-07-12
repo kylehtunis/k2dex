@@ -9,6 +9,7 @@
 // /analysis.
 
 import type { IsingModel, GreedyChainEntry } from "./types";
+import { anchorBoost } from "./energy";
 
 export interface GreedyOpts {
   startingTeam: readonly number[];
@@ -16,6 +17,10 @@ export interface GreedyOpts {
   excluded: readonly number[];
   fieldWeight: number;
   maxSwaps?: number;
+  /** Anchor-field tilt alpha: pinned→free couplings enter the adjusted field
+   * (alpha-1)-fold extra via `anchorBoost`, so the descent targets H_alpha.
+   * Raw energies in the chain are unaffected. Default 1 (no tilt). */
+  anchorStrength?: number;
 }
 
 const DEFAULT_MAX_SWAPS = 20;
@@ -52,8 +57,16 @@ export function greedyOptimize(
   const pinned = new Set<number>(opts.pinned);
   const excluded = new Set<number>(opts.excluded);
 
-  const eAdj = (team: number[]) =>
-    -fw * teamHSum(h, team) - teamSumJ(J, V, team);
+  // Adjusted field: fw*h plus the anchor-tilt boost (zero at alpha = 1).
+  const hAdj = new Float64Array(V);
+  for (let i = 0; i < V; i++) hAdj[i] = fw * h[i];
+  const alpha = opts.anchorStrength ?? 1;
+  if (alpha !== 1) {
+    const boost = anchorBoost(model, opts.pinned, alpha);
+    for (let i = 0; i < V; i++) hAdj[i] += boost[i];
+  }
+
+  const eAdj = (team: number[]) => -teamHSum(hAdj, team) - teamSumJ(J, V, team);
   const eRaw = (team: number[]) => -teamHSum(h, team) - teamSumJ(J, V, team);
 
   let energyAdj = eAdj([...current]);
@@ -106,14 +119,14 @@ export function greedyOptimize(
         }
       }
 
-      // Scan candidates. ΔE_adj[i] = -fw*(h[i]-h[out]) - (J[i,others].sum() - jOutOthers)
-      const hOut = h[outIdx];
+      // Scan candidates. ΔE_adj[i] = -(hAdj[i]-hAdj[out]) - (J[i,others].sum() - jOutOthers)
+      const hAdjOut = hAdj[outIdx];
       for (let i = 0; i < V; i++) {
         if (!valid[i]) continue;
         let jInOthers = 0;
         const baseI = i * V;
         for (const j of others) jInOthers += J[baseI + j];
-        const delta = -fw * (h[i] - hOut) - (jInOthers - jOutOthers);
+        const delta = -(hAdj[i] - hAdjOut) - (jInOthers - jOutOthers);
         if (delta < bestDelta) {
           bestDelta = delta;
           bestOut = outIdx;

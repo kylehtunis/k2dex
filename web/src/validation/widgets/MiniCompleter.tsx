@@ -14,6 +14,10 @@ import { teamObservables } from "../../render/observables";
 import { nearestObserved } from "../../render/corpus";
 import { runPT } from "../../completer/ptDriver";
 import {
+  ANCHOR_ARTICLE_DEFAULT,
+  ANCHOR_MAX,
+  ANCHOR_MIN,
+  ANCHOR_STEP,
   PT_HOT_T,
   PT_LADDER_LEVELS,
   PT_RUNS,
@@ -83,6 +87,12 @@ export function MiniCompleter({
     null,
     null,
   ]);
+  // Anchor Strength (anchor-field tilt alpha): how strongly the sampler
+  // commits to the picks. Defaults above neutral so a niche pick gets a team
+  // built AROUND it — the slider is right here so the reader can see (and
+  // undo) the thumb on the scale. Counting needs no equivalent: its greedy
+  // re-anchors on the picks by construction.
+  const [anchorStrength, setAnchorStrength] = useState(ANCHOR_ARTICLE_DEFAULT);
   const [result, setResult] = useState<Result | null>(null);
   const [running, setRunning] = useState(false);
 
@@ -109,6 +119,7 @@ export function MiniCompleter({
       fixedSites: picks,
       excluded: [],
       fieldWeight: 1,
+      anchorStrength,
       ...PT_ARTICLE,
     });
     const modelTeam = r.ok && r.dist.length > 0 ? r.dist[0].team : [];
@@ -139,6 +150,30 @@ export function MiniCompleter({
             aria-label={`Pick ${i + 1}`}
           />
         ))}
+      </div>
+
+      <div className="lab-vs-anchor">
+        <label className="lab-form-label">
+          Anchor Strength · {anchorStrength.toFixed(1)}
+        </label>
+        <div className="lab-form-caption">
+          How strongly k2dex builds around your picks. 1.0 is the model&apos;s
+          neutral distribution; we default higher so a niche pick gets a team
+          built around it.
+        </div>
+        <input
+          type="range"
+          className="lab-slider"
+          aria-label="Anchor Strength"
+          min={ANCHOR_MIN}
+          max={ANCHOR_MAX}
+          step={ANCHOR_STEP}
+          value={anchorStrength}
+          onChange={(e) => {
+            setAnchorStrength(Number(e.target.value));
+            setResult(null);
+          }}
+        />
       </div>
 
       <div className="lab-vs-actions">

@@ -58,7 +58,14 @@ export function SpeciesComparison() {
             popularity would predict?" To see what that's worth, pick a Pokémon
             or two below and let each method finish the team: counting fills the
             open slots with its top teammates, while k2dex runs the same sampler
-            the completer uses and returns its single most-likely team.
+            the completer uses and returns its single most-likely team. One
+            honest disclosure: we tell the sampler to commit to your picks. The
+            Anchor Strength dial below amplifies the couplings between your
+            picks and every candidate teammate, so the sampler builds
+            <em> around</em> them instead of treating them as passengers on an
+            otherwise-standard team. Counting gets the same courtesy for free
+            (its greedy always starts from your picks), and you can drag the
+            dial back to 1.0 to see the model's neutral answer.
           </p>
           <MiniCompleter model={model!} sc={sc} teamCounts={teamCounts} />
           <p>

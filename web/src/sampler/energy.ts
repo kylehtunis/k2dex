@@ -190,6 +190,33 @@ export function resolveSitePins(
   return seeds;
 }
 
+/** Anchor-field tilt boost for static (feature-pin) surfaces:
+ * `boost[j] = (alpha-1)·Σ_{p∈pins} J[p,j]`, zeroed on every feature of a
+ * pinned site (pin↔pin couplings are untilted, and pins never move). Adding
+ * this to hEff makes the pairwise energy equal
+ * `H_alpha = H - (alpha-1)·Σ_{p,j free} J[p,j]s_j`, so meanfield / greedy on
+ * the boosted field target the same tilted measure as the PT Potts kernel.
+ * Mirrors `sampling.anchor_boost` (parity-gated indirectly via the meanfield
+ * and greedy cases). */
+export function anchorBoost(
+  model: IsingModel,
+  pins: readonly number[],
+  anchorStrength: number,
+): Float64Array {
+  const { V, J, siteOf } = model;
+  const boost = new Float64Array(V);
+  if (anchorStrength === 1 || pins.length === 0) return boost;
+  const pinSites = new Set<number>();
+  for (const p of pins) pinSites.add(siteOf[p]);
+  for (let j = 0; j < V; j++) {
+    if (pinSites.has(siteOf[j])) continue;
+    let s = 0;
+    for (const p of pins) s += J[p * V + j];
+    boost[j] = (anchorStrength - 1) * s;
+  }
+  return boost;
+}
+
 /** Build the list of vocab indices available to fill free team slots
  * (i.e. not fixed, not excluded). Convenience used by every sampler. */
 export function availableIndices(

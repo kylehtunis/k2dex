@@ -19,6 +19,18 @@ export const META_TOP_FEATURES = 25;
 export const META_TOP_PAIRS = 25;
 export const META_TOP_TEAMS = 20;
 
+// Anchor Strength (anchor-field tilt alpha): how strongly completions build
+// around the pinned Pokémon. 1 = the untilted model conditional.
+export const DEFAULT_ANCHOR = 1.0;
+export const ANCHOR_MIN = 1.0;
+export const ANCHOR_MAX = 3.0;
+export const ANCHOR_STEP = 0.1;
+/** The article MiniCompleter's default alpha. Tuned on a headless niche-pin
+ * sweep (Camerupt / Vivillon / Torkoal / Crabominable, reg-m-a): 2.0 makes the
+ * completion decisively pin-centric without degrading raw score or variety;
+ * 3.0 starts pulling in fringe partners. */
+export const ANCHOR_ARTICLE_DEFAULT = 2.0;
+
 export const PT_HOT_T = 3.0;
 export const PT_LADDER_LEVELS = 7;
 export const PT_RUNS = 10;

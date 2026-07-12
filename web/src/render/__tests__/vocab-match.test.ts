@@ -253,6 +253,7 @@ describe("shareLink completer token", () => {
         includedSpecies: [],
         usePT: true,
         temperature: 1.0, // default — omitted
+        anchorStrength: 1.0, // default — omitted
         ptRuns: 10,
         ptLadder: 7,
         ptSweeps: 20000,
@@ -265,6 +266,7 @@ describe("shareLink completer token", () => {
     expect(params.get("a")).toBeNull();
     expect(params.get("g")).toBeNull();
     expect(params.get("seed")).toBeNull();
+    expect(params.get("anc")).toBeNull();
     expect(params.get("x")).toBe("amoonguss");
 
     const d = decodeCompleter(params)!;
@@ -286,6 +288,7 @@ describe("shareLink completer token", () => {
         includedSpecies: ["Amoonguss", "Incineroar"],
         usePT: true,
         temperature: 1.0,
+        anchorStrength: 1.0,
         ptRuns: 10,
         ptLadder: 7,
         ptSweeps: 20000,
@@ -313,6 +316,7 @@ describe("shareLink completer token", () => {
         includedSpecies: [],
         usePT: false,
         temperature: 1.0,
+        anchorStrength: 1.0,
         ptRuns: 10,
         ptLadder: 7,
         ptSweeps: 20000,
@@ -326,6 +330,36 @@ describe("shareLink completer token", () => {
     expect(decodeCompleter(params)!.usePT).toBe(false);
   });
 
+  it("round-trips a non-default Anchor Strength, including greedy mode", () => {
+    const base = {
+      modelId: "test-species-item",
+      fixedIdxs: [0],
+      fixedSites: [] as number[],
+      inactiveTracks: [] as number[],
+      excludedSpecies: [] as string[],
+      includedSpecies: [] as string[],
+      temperature: 1.0,
+      anchorStrength: 1.8,
+      ptRuns: 10,
+      ptLadder: 7,
+      ptSweeps: 20000,
+      ptSwapInterval: 10,
+      seed: null,
+    };
+    const pt = encodeCompleter({ ...base, usePT: true }, model);
+    expect(pt.get("anc")).toBe("1.8");
+    expect(decodeCompleter(pt)!.anchorStrength).toBe(1.8);
+    // Anchor Strength applies to the greedy path too, so it must survive
+    // the greedy early-return.
+    const greedy = encodeCompleter({ ...base, usePT: false }, model);
+    expect(greedy.get("anc")).toBe("1.8");
+    expect(decodeCompleter(greedy)!.anchorStrength).toBe(1.8);
+    // Out-of-range values fall back to the default on decode.
+    const bad = new URLSearchParams(pt);
+    bad.set("anc", "99");
+    expect(decodeCompleter(bad)!.anchorStrength).toBe(1.0);
+  });
+
   it("encodes site pins as bare species slugs alongside feature pins", () => {
     const params = encodeCompleter(
       {
@@ -337,6 +371,7 @@ describe("shareLink completer token", () => {
         includedSpecies: [],
         usePT: true,
         temperature: 1.0,
+        anchorStrength: 1.0,
         ptRuns: 10,
         ptLadder: 7,
         ptSweeps: 20000,
@@ -364,6 +399,7 @@ describe("shareLink completer token", () => {
         includedSpecies: [],
         usePT: true,
         temperature: 1.0,
+        anchorStrength: 1.0,
         ptRuns: 10,
         ptLadder: 7,
         ptSweeps: 20000,
@@ -387,6 +423,7 @@ describe("shareLink completer token", () => {
         includedSpecies: [],
         usePT: true,
         temperature: 0.7,
+        anchorStrength: 1.0,
         ptRuns: 15,
         ptLadder: 7,
         ptSweeps: 20000,

@@ -14,6 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  DEFAULT_ANCHOR,
   PT_LADDER_LEVELS,
   PT_RUNS,
   PT_SWEEPS,
@@ -43,6 +44,10 @@ export interface CompleterInputs {
    * only place these Pokémon (plus pinned ones); empty = all legal Pokémon. */
   includedSpecies: string[];
   temperature: number;
+  /** Anchor Strength (anchor-field tilt alpha): 1 = neutral; > 1 concentrates
+   * completions on teams that couple well to the pinned Pokémon. Applies to
+   * both the PT and greedy paths. */
+  anchorStrength: number;
   usePT: boolean;
   ptRuns: number;
   ptLadder: number;
@@ -66,6 +71,7 @@ const COMPLETER_DEFAULTS: CompleterInputs = {
   excludedSpecies: [],
   includedSpecies: [],
   temperature: 1.0,
+  anchorStrength: DEFAULT_ANCHOR,
   usePT: true,
   ptRuns: PT_RUNS,
   ptLadder: PT_LADDER_LEVELS,

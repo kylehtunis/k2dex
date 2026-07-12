@@ -1317,6 +1317,14 @@ button.lab-comp-tile {
   color: var(--lab-ink-muted);
   margin-top: 2px;
 }
+.lab-vs-anchor {
+  max-width: 360px;
+  margin: 16px auto 0;
+  text-align: center;
+}
+.lab-vs-anchor .lab-slider {
+  width: 100%;
+}
 .lab-vs-actions {
   margin: 18px 0 4px;
   text-align: center;

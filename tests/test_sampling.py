@@ -1,8 +1,10 @@
 import unittest
+from itertools import combinations
 
 import numpy as np
 
 from k2dex.sampling import (
+    anchor_boost,
     anneal_mcmc,
     build_constraint_sets,
     greedy_optimize,
@@ -208,6 +210,163 @@ class TestTeamEnergy(unittest.TestCase):
         J, h = _toy_model()
         state = np.zeros(len(h), dtype=bool)
         self.assertEqual(team_energy(state, J, h), 0.0)
+
+
+# A tiny species+item ensemble (shared item x -> item-exclusion in play).
+#   A: {x, y}   B: {x, None}   C: {z}   D: {None}   E: {w}   F: {None}
+_TILT_SPECIES = ["A", "A", "B", "B", "C", "D", "E", "F"]
+_TILT_ITEM = ["x", "y", "x", None, "z", None, "w", None]
+
+
+def _tilt_toy(seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
+    V = len(_TILT_SPECIES)
+    rng = np.random.default_rng(seed)
+    J = rng.normal(0, 0.6, (V, V))
+    J = 0.5 * (J + J.T)
+    np.fill_diagonal(J, 0.0)
+    # Same-species couplings never co-occur; zero them to match the fit
+    # convention so the exact enumeration is unambiguous.
+    for a in range(V):
+        for b in range(V):
+            if _TILT_SPECIES[a] == _TILT_SPECIES[b]:
+                J[a, b] = 0.0
+    h = rng.normal(0, 0.5, V)
+    return J, h
+
+
+def _exact_tilted_conditional(
+    J: np.ndarray, h: np.ndarray, k: int, pin: int, alpha: float,
+) -> tuple[list[tuple[int, ...]], np.ndarray]:
+    """Enumerate P_alpha(team | pin on team) over uniqueness-valid teams:
+    P_alpha ∝ exp(-H + (alpha-1) * sum_{j in team, j != pin} J[pin, j])."""
+    V = len(h)
+    teams = []
+    log_w = []
+    for rest in combinations([i for i in range(V) if i != pin], k - 1):
+        t = (pin, *rest)
+        sp = [_TILT_SPECIES[i] for i in t]
+        if len(set(sp)) != k:
+            continue
+        it = [_TILT_ITEM[i] for i in t if _TILT_ITEM[i] is not None]
+        if len(set(it)) != len(it):
+            continue
+        s = np.zeros(V)
+        s[list(t)] = 1.0
+        neg_h = h @ s + 0.5 * s @ J @ s
+        tilt = (alpha - 1.0) * sum(J[pin, j] for j in rest)
+        teams.append(t)
+        log_w.append(neg_h + tilt)
+    lw = np.array(log_w)
+    p = np.exp(lw - lw.max())
+    p /= p.sum()
+    return teams, p
+
+
+class TestAnchorFieldTilt(unittest.TestCase):
+    def test_anchor_boost_values_and_pinned_species_zeroed(self) -> None:
+        J, _h = _tilt_toy()
+        alpha = 2.0
+        boost = anchor_boost(J, [0], alpha, _TILT_SPECIES)
+        # Feature 1 shares species A with the pin -> zeroed; free features get
+        # (alpha-1) * J[pin, j]; the pin itself is zeroed.
+        self.assertEqual(boost[0], 0.0)
+        self.assertEqual(boost[1], 0.0)
+        for j in range(2, len(boost)):
+            self.assertAlmostEqual(boost[j], (alpha - 1.0) * J[0, j], places=12)
+
+    def test_anchor_boost_alpha_one_is_zero(self) -> None:
+        J, _h = _tilt_toy()
+        self.assertEqual(np.abs(anchor_boost(J, [0, 3], 1.0, _TILT_SPECIES)).max(), 0.0)
+
+    def test_pt_matches_exact_tilted_conditional(self) -> None:
+        # The strong gate: PT with a pinned feature and alpha != 1 must sample
+        # the exponentially tilted conditional exactly (up to MC error).
+        J, h = _tilt_toy()
+        k, pin, alpha = 3, 0, 2.0
+        teams, p = _exact_tilted_conditional(J, h, k, pin, alpha)
+        V = len(h)
+        m_ex = np.zeros(V)
+        for pt, t in zip(p, teams):
+            for j in t:
+                m_ex[j] += pt
+
+        result = parallel_tempered_mcmc(
+            J, h, k, [pin], [], 1.0,
+            np.array([1.0, 2.0]), 60_000, 10_000, 10, seed=11,
+            species_of=_TILT_SPECIES, item_of=_TILT_ITEM,
+            anchor_strength=alpha,
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        samples, _, _ = result
+        m_hat = samples.mean(axis=0)
+        self.assertLess(np.abs(m_hat - m_ex).max(), 0.03)
+
+    def test_pin_integration_monotone_in_alpha_exact(self) -> None:
+        # d/dalpha E[T] = Var(T) >= 0 on the exact tilted distribution.
+        J, h = _tilt_toy()
+        k, pin = 3, 0
+        means = []
+        for alpha in (1.0, 1.5, 2.0, 3.0):
+            teams, p = _exact_tilted_conditional(J, h, k, pin, alpha)
+            T = np.array([sum(J[pin, j] for j in t if j != pin) for t in teams])
+            means.append(float(p @ T))
+        for lo, hi in zip(means, means[1:]):
+            self.assertLessEqual(lo, hi + 1e-12)
+
+    def test_pt_alpha_one_reproduces_default(self) -> None:
+        J, h = _tilt_toy()
+        kwargs: dict = dict(
+            species_of=_TILT_SPECIES, item_of=_TILT_ITEM,
+        )
+        a = parallel_tempered_mcmc(
+            J, h, 3, [0], [], 1.0, np.array([1.0, 2.0]), 500, 100, 10,
+            seed=5, **kwargs,
+        )
+        b = parallel_tempered_mcmc(
+            J, h, 3, [0], [], 1.0, np.array([1.0, 2.0]), 500, 100, 10,
+            seed=5, anchor_strength=1.0, **kwargs,
+        )
+        assert a is not None and b is not None
+        np.testing.assert_array_equal(a[0], b[0])
+
+    def test_greedy_tilt_equals_greedy_on_boosted_field(self) -> None:
+        # At fw=1, greedy with anchor_strength=alpha must walk the same chain
+        # as untilted greedy on h' = h + anchor_boost (same H_alpha).
+        J, h = _tilt_toy(seed=3)
+        pin, alpha = 4, 2.5
+        start = [4, 0, 2]
+        tilted_final, tilted_chain = greedy_optimize(
+            J, h, 3, start, [pin], [], 1.0,
+            species_of=_TILT_SPECIES, item_of=_TILT_ITEM,
+            anchor_strength=alpha,
+        )
+        h_boosted = h + anchor_boost(J, [pin], alpha, _TILT_SPECIES)
+        manual_final, manual_chain = greedy_optimize(
+            J, h_boosted, 3, start, [pin], [], 1.0,
+            species_of=_TILT_SPECIES, item_of=_TILT_ITEM,
+        )
+        self.assertEqual(tilted_final, manual_final)
+        self.assertEqual(
+            [(c["out_idx"], c["in_idx"]) for c in tilted_chain],
+            [(c["out_idx"], c["in_idx"]) for c in manual_chain],
+        )
+
+    def test_meanfield_tilt_equals_meanfield_on_boosted_field(self) -> None:
+        J, h = _tilt_toy(seed=3)
+        pin, alpha = 4, 2.0
+        a = meanfield_marginals(
+            J, h, 3, [pin], [], 1.0,
+            species_of=_TILT_SPECIES, item_of=_TILT_ITEM,
+            anchor_strength=alpha,
+        )
+        h_boosted = h + anchor_boost(J, [pin], alpha, _TILT_SPECIES)
+        b = meanfield_marginals(
+            J, h_boosted, 3, [pin], [], 1.0,
+            species_of=_TILT_SPECIES, item_of=_TILT_ITEM,
+        )
+        assert a is not None and b is not None
+        np.testing.assert_allclose(a[0], b[0], atol=1e-12)
 
 
 if __name__ == "__main__":

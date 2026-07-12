@@ -310,16 +310,23 @@ def site_conditional(
     inv_temp: float,
     tables: SiteTables,
     avail: np.ndarray,
+    r_weights: np.ndarray | None = None,
 ) -> tuple[float, np.ndarray, np.ndarray, list[int]]:
     """Per-chain item conditional for placing ``site`` alongside retained members
     ``r_feat`` (item ids ``r_item_id``). Returns ``(log_z, neg_e, valid, feats)``:
-    ``neg_e = -E_slot / T`` with ``E_slot = -h_eff[f] - Σ_{r∈R} J[f, r]``,
+    ``neg_e = -E_slot / T`` with ``E_slot = -h_eff[f] - Σ_{r∈R} w_r J[f, r]``,
     ``valid`` gates availability + item-exclusion, ``log_z`` is the tempered log
-    item-partition. Parity-gated against ``potts.ts:siteConditional``."""
+    item-partition. ``r_weights`` (optional, default all-1) scales each retained
+    member's coupling -- the anchor-field tilt puts weight alpha on pin↔free
+    couplings. Parity-gated against ``potts.ts:siteConditional``."""
     feats = tables.site_features[site]
     feats_arr = np.asarray(feats, dtype=np.int64)
     if r_feat:
-        j_sum = J[np.ix_(feats_arr, np.asarray(r_feat, dtype=np.int64))].sum(axis=1)
+        j_block = J[np.ix_(feats_arr, np.asarray(r_feat, dtype=np.int64))]
+        if r_weights is not None:
+            j_sum = (j_block * r_weights).sum(axis=1)
+        else:
+            j_sum = j_block.sum(axis=1)
     else:
         j_sum = np.zeros(len(feats), dtype=np.float64)
     neg_e = (h_eff[feats_arr] + j_sum) * inv_temp
@@ -346,11 +353,33 @@ def _sample_categorical(
 
 
 def _slot_energy(
-    f: int, r_feat: list[int], J: np.ndarray, h_eff: np.ndarray,
+    f: int,
+    r_feat: list[int],
+    J: np.ndarray,
+    h_eff: np.ndarray,
+    r_weights: np.ndarray | None = None,
 ) -> float:
-    """E_slot(f) = -h_eff[f] - Σ_{r∈R} J[f, r]."""
-    j_sum = J[f, r_feat].sum() if r_feat else 0.0
+    """E_slot(f) = -h_eff[f] - Σ_{r∈R} w_r J[f, r] (w = 1 without weights)."""
+    if not r_feat:
+        return float(-h_eff[f])
+    row = J[f, r_feat]
+    j_sum = (row * r_weights).sum() if r_weights is not None else row.sum()
     return float(-h_eff[f] - j_sum)
+
+
+def _anchor_weights(
+    n_pins: int, n_retained: int, anchor_strength: float,
+) -> np.ndarray | None:
+    """Anchor-tilt coupling weights for one free-slot move: the retained pins
+    (the leading ``n_pins`` entries of ``r_feat``, per ``_retained``) get weight
+    alpha, free retained members 1. ``None`` at alpha = 1 (no-tilt fast path).
+    The Python kernel has no site pins (TS-only), so the mover is always free.
+    """
+    if anchor_strength == 1.0 or n_pins == 0:
+        return None
+    w = np.ones(n_retained, dtype=np.float64)
+    w[:n_pins] = anchor_strength
+    return w
 
 
 def _retained(chain: _SwapChainState, out_k: int, fixed: list[int]) -> list[int]:
@@ -373,6 +402,7 @@ def _potts_species_swap_step(
     fixed: list[int],
     rng: np.random.Generator,
     max_tries: int = 16,
+    anchor_strength: float = 1.0,
 ) -> tuple[bool, bool]:
     """One Metropolized-Gibbs species-swap on a random free slot. Mutates
     ``chain`` in place on accept (state / state_f / on_nf / energy; off_nf is
@@ -386,6 +416,7 @@ def _potts_species_swap_step(
     site_a = tables.site_of[out_feat]
     r_feat = _retained(chain, out_k, fixed)
     r_item_id = [tables.item_id[f] for f in r_feat]
+    r_weights = _anchor_weights(len(fixed), len(r_feat), anchor_strength)
 
     present: set[int] = {tables.site_of[f] for f in r_feat}
     present.add(site_a)
@@ -400,9 +431,9 @@ def _potts_species_swap_step(
         return False, False
 
     logz_a, _, _, _ = site_conditional(
-        site_a, r_feat, r_item_id, J, h_eff, inv_temp, tables, avail)
+        site_a, r_feat, r_item_id, J, h_eff, inv_temp, tables, avail, r_weights)
     logz_b, neg_e_b, valid_b, feats_b = site_conditional(
-        site_b, r_feat, r_item_id, J, h_eff, inv_temp, tables, avail)
+        site_b, r_feat, r_item_id, J, h_eff, inv_temp, tables, avail, r_weights)
     if not (np.isfinite(logz_a) and np.isfinite(logz_b)):
         return False, False
 
@@ -412,8 +443,8 @@ def _potts_species_swap_step(
         return True, False
     choice = _sample_categorical(neg_e_b, valid_b, rng)
     new_feat = feats_b[choice]
-    d_h = (_slot_energy(new_feat, r_feat, J, h_eff)
-           - _slot_energy(out_feat, r_feat, J, h_eff))
+    d_h = (_slot_energy(new_feat, r_feat, J, h_eff, r_weights)
+           - _slot_energy(out_feat, r_feat, J, h_eff, r_weights))
     chain.state[out_feat] = False
     chain.state[new_feat] = True
     chain.state_f[out_feat] = 0.0
@@ -433,6 +464,7 @@ def _potts_track_reroll_step(
     avail: np.ndarray,
     fixed: list[int],
     rng: np.random.Generator,
+    anchor_strength: float = 1.0,
 ) -> None:
     """One Gibbs item-reroll on a random free slot (species unchanged; always
     accepted). Mutates ``chain`` in place (off_nf not maintained)."""
@@ -444,16 +476,17 @@ def _potts_track_reroll_step(
     site = tables.site_of[out_feat]
     r_feat = _retained(chain, out_k, fixed)
     r_item_id = [tables.item_id[f] for f in r_feat]
+    r_weights = _anchor_weights(len(fixed), len(r_feat), anchor_strength)
     log_z, neg_e, valid, feats = site_conditional(
-        site, r_feat, r_item_id, J, h_eff, inv_temp, tables, avail)
+        site, r_feat, r_item_id, J, h_eff, inv_temp, tables, avail, r_weights)
     if not np.isfinite(log_z):
         return
     choice = _sample_categorical(neg_e, valid, rng)
     new_feat = feats[choice]
     if new_feat == out_feat:
         return
-    d_h = (_slot_energy(new_feat, r_feat, J, h_eff)
-           - _slot_energy(out_feat, r_feat, J, h_eff))
+    d_h = (_slot_energy(new_feat, r_feat, J, h_eff, r_weights)
+           - _slot_energy(out_feat, r_feat, J, h_eff, r_weights))
     chain.state[out_feat] = False
     chain.state[new_feat] = True
     chain.state_f[out_feat] = 0.0
@@ -605,6 +638,7 @@ def parallel_tempered_mcmc(
     species_of: list[str] | None = None,
     item_of: list[str | None] | None = None,
     p_reroll: float = 0.5,
+    anchor_strength: float = 1.0,
 ) -> tuple[np.ndarray, float, float] | None:
     """Parallel-tempered MCMC. K chains run in parallel at temperatures
     `t_ladder` (sorted ascending; index 0 is the target / cold chain). The inner
@@ -619,6 +653,11 @@ def parallel_tempered_mcmc(
     both chains are individually valid, so swapping whole states preserves
     validity. `p_reroll` matches the TS `pReroll` default so both surfaces use
     the same move proportions.
+
+    `anchor_strength` (alpha) is the anchor-field tilt: the target becomes
+    `H_alpha = H - (alpha-1) * sum_{p in fixed, j free} J[p, j] s_j`, scaling
+    pin<->free couplings by alpha so completions build around the pins.
+    1.0 = no tilt; no effect when `fixed` is empty.
 
     Returns (cold_chain_samples, mean_local_accept, mean_swap_accept) or None.
     """
@@ -663,6 +702,12 @@ def parallel_tempered_mcmc(
         )
         if c is None:
             return None
+        # _init_chain's energy is the untilted H(h_eff); correct it to H_alpha
+        # so move deltas (tilted slot energies) and replica exchange stay
+        # consistent. All of on_nf is free (Python has no site pins).
+        if anchor_strength != 1.0 and fixed_list and c.on_nf:
+            cross = float(J[np.ix_(fixed_list, c.on_nf)].sum())
+            c.energy -= (anchor_strength - 1.0) * cross
         chains.append(c)
 
     samples = np.zeros((n_steps, n), dtype=bool)
@@ -678,11 +723,13 @@ def parallel_tempered_mcmc(
                 _potts_track_reroll_step(
                     chains[k], J=J, h_eff=h_eff, T=t_ladder[k],
                     tables=tables, avail=avail, fixed=fixed_list, rng=rng,
+                    anchor_strength=anchor_strength,
                 )
                 continue
             prop, acc = _potts_species_swap_step(
                 chains[k], J=J, h_eff=h_eff, T=t_ladder[k],
                 tables=tables, avail=avail, fixed=fixed_list, rng=rng,
+                anchor_strength=anchor_strength,
             )
             local_propose += int(prop)
             local_accept += int(acc)
@@ -707,6 +754,38 @@ def parallel_tempered_mcmc(
     )
 
 
+# ---------- Anchor-field tilt (static surfaces) ----------
+
+def anchor_boost(
+    J: np.ndarray,
+    pins: list[int],
+    anchor_strength: float,
+    species_of: list[str] | None = None,
+) -> np.ndarray:
+    """Anchor-field tilt boost for static (feature-pin) surfaces:
+    ``boost[j] = (alpha-1) * sum_{p in pins} J[p, j]``, zeroed on every feature
+    of a pinned species (pin<->pin couplings are untilted, and pins never
+    move). Adding this to ``h_eff`` makes the pairwise energy equal
+    ``H_alpha = H - (alpha-1) * sum_{p, j free} J[p, j] s_j``, the same tilted
+    measure the PT Potts kernel targets via ``r_weights``. Mirrors
+    ``sampler/energy.ts:anchorBoost`` (parity-gated indirectly via the
+    meanfield and greedy cases)."""
+    V = J.shape[0]
+    boost = np.zeros(V, dtype=np.float64)
+    if anchor_strength == 1.0 or not pins:
+        return boost
+    pin_arr = np.asarray(pins, dtype=np.int64)
+    boost = (anchor_strength - 1.0) * J[pin_arr].sum(axis=0)
+    if species_of is not None:
+        pin_species = {species_of[int(p)] for p in pins}
+        for j in range(V):
+            if species_of[j] in pin_species:
+                boost[j] = 0.0
+    else:
+        boost[pin_arr] = 0.0
+    return boost
+
+
 # ---------- Mean-field marginals ----------
 
 def meanfield_marginals(
@@ -722,6 +801,7 @@ def meanfield_marginals(
     n_iters: int = 200,
     tol: float = 1e-5,
     damp: float = 0.5,
+    anchor_strength: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray, int] | None:
     """Damped mean-field iteration on the Ising-pair model with `fixed` clamped
     to 1 and `excluded` clamped to 0. Returns (marginals, valid_mask, iters)
@@ -738,6 +818,8 @@ def meanfield_marginals(
     """
     V = len(h)
     h_eff = field_weight * h
+    if anchor_strength != 1.0:
+        h_eff = h_eff + anchor_boost(J, fixed, anchor_strength, species_of)
     fixed_mask = np.zeros(V, dtype=bool)
     fixed_mask[fixed] = True
     excluded_mask = np.zeros(V, dtype=bool)
@@ -795,9 +877,12 @@ def greedy_optimize(
     species_of: list[str] | None = None,
     item_of: list[str | None] | None = None,
     max_swaps: int = 20,
+    anchor_strength: float = 1.0,
 ) -> tuple[list[int], list[dict]]:
     """Greedy steepest-descent over single-swap moves on the field-weighted
-    Ising energy `E_adj(s) = -(fw*h).s - 0.5 s'Js`.
+    Ising energy `E_adj(s) = -(fw*h).s - 0.5 s'Js`, plus the anchor-field
+    tilt when `anchor_strength` != 1 (pinned->free couplings scaled by alpha
+    via `anchor_boost`; `energy_raw_after` stays untilted).
 
     At each step, evaluates every (non-pinned out-slot, valid in-candidate) swap
     in vectorized form and accepts the one with the most negative `dE_adj`.
@@ -814,9 +899,14 @@ def greedy_optimize(
     pinned_set = set(pinned)
     excluded_set = set(excluded)
 
+    # Adjusted field: fw*h plus the anchor-tilt boost (zero at alpha = 1).
+    h_adj = fw * h
+    if anchor_strength != 1.0:
+        h_adj = h_adj + anchor_boost(J, pinned, anchor_strength, species_of)
+
     def team_e_adj(team_set: set[int]) -> float:
         arr = np.fromiter(team_set, dtype=np.int64, count=len(team_set))
-        h_sum = float((fw * h[arr]).sum())
+        h_sum = float(h_adj[arr].sum())
         j_sum = float(J[np.ix_(arr, arr)].sum() * 0.5)
         return -h_sum - j_sum
 
@@ -843,8 +933,8 @@ def greedy_optimize(
             others_arr = np.fromiter(others, dtype=np.int64, count=len(others))
 
             # Vectorized dE_adj across all candidate in_idxs (V-length array).
-            # delta = -fw*(h[in] - h[out]) - (J[in, others].sum() - J[out, others].sum())
-            h_part = -fw * (h - h[out_idx])
+            # delta = -(h_adj[in] - h_adj[out]) - (J[in, others].sum() - J[out, others].sum())
+            h_part = -(h_adj - h_adj[out_idx])
             J_part = -(J[:, others_arr].sum(axis=1) - J[out_idx, others_arr].sum())
             delta_E_all = h_part + J_part
 

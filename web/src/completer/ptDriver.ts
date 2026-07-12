@@ -43,6 +43,7 @@ export function runPT(
     swapInterval: number;
     seed?: number;
     pReroll?: number;
+    anchorStrength?: number;
     projectToSites?: boolean;
   },
 ): Promise<PTSuccess | PTFailure> {
@@ -86,6 +87,7 @@ export function runPT(
       swapInterval: opts.swapInterval,
       seed: opts.seed ?? 0x5eed,
       pReroll: opts.pReroll,
+      anchorStrength: opts.anchorStrength,
       projectToSites: opts.projectToSites,
     };
     worker.postMessage(req);

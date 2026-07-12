@@ -23,10 +23,13 @@
 // decode to the unified per-regulation slug for backward compatibility.
 //
 // Completer adds default-omitting params: x (excluded), i (included allow-list),
-// g (greedy), tmp (temperature index), a (advanced PT knobs), seed (reproduces
-// the exact PT run while inputs still match it).
+// g (greedy), anc (Anchor Strength), tmp (temperature index), a (advanced PT
+// knobs), seed (reproduces the exact PT run while inputs still match it).
 
 import {
+  ANCHOR_MAX,
+  ANCHOR_MIN,
+  DEFAULT_ANCHOR,
   TEMPERATURE_OPTIONS,
   PT_RUNS,
   PT_LADDER_LEVELS,
@@ -128,6 +131,9 @@ export interface CompleterShareState {
   includedSpecies: readonly string[];
   usePT: boolean;
   temperature: number;
+  /** Anchor Strength (anchor-field tilt alpha). Encoded as `anc`, omitted at
+   * the default 1; applies to both the PT and greedy paths. */
+  anchorStrength: number;
   ptRuns: number;
   ptLadder: number;
   ptSweeps: number;
@@ -158,6 +164,11 @@ export function encodeCompleter(
   if (s.inactiveTracks.length) {
     p.set("d", [...s.inactiveTracks].sort((a, b) => a - b).join("-"));
   }
+  // Anchor Strength applies to both paths, so it encodes before the greedy
+  // early-return.
+  if (s.anchorStrength !== DEFAULT_ANCHOR) {
+    p.set("anc", String(s.anchorStrength));
+  }
   if (!s.usePT) {
     p.set("g", "1");
     return p;
@@ -186,6 +197,7 @@ export interface DecodedCompleter {
   includedSlugs: string[];
   usePT: boolean;
   temperature: number;
+  anchorStrength: number;
   ptRuns: number;
   ptLadder: number;
   ptSweeps: number;
@@ -214,6 +226,15 @@ export function decodeCompleter(params: URLSearchParams): DecodedCompleter | nul
     if (v !== undefined) temperature = v;
   }
 
+  let anchorStrength = DEFAULT_ANCHOR;
+  const anc = params.get("anc");
+  if (anc !== null) {
+    const v = Number(anc);
+    if (Number.isFinite(v) && v >= ANCHOR_MIN && v <= ANCHOR_MAX) {
+      anchorStrength = v;
+    }
+  }
+
   let ptRuns = PT_RUNS;
   let ptLadder = PT_LADDER_LEVELS;
   let ptSweeps = PT_SWEEPS;
@@ -240,6 +261,7 @@ export function decodeCompleter(params: URLSearchParams): DecodedCompleter | nul
     includedSlugs,
     usePT,
     temperature,
+    anchorStrength,
     ptRuns,
     ptLadder,
     ptSweeps,

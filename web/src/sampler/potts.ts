@@ -86,7 +86,9 @@ export interface SiteConditional {
 
 /** Per-chain item conditional for placing `site` alongside retained members
  * `rFeat` (with item ids `rItemId`). `avail[f]` gates feature-level
- * availability (excluded features are unavailable). Deterministic; parity-gated
+ * availability (excluded features are unavailable). `rWeights` (optional,
+ * default all-1) scales each retained member's coupling — the anchor-field
+ * tilt puts weight alpha on pin↔free couplings. Deterministic; parity-gated
  * against `sampling.site_conditional`. */
 export function siteConditional(
   site: number,
@@ -97,6 +99,7 @@ export function siteConditional(
   invTemp: number,
   tables: SiteTables,
   avail: Uint8Array,
+  rWeights?: ArrayLike<number>,
 ): SiteConditional {
   const { V, J } = model;
   const feats = tables.siteFeatures[site];
@@ -106,10 +109,14 @@ export function siteConditional(
   let mx = -Infinity;
   for (let j = 0; j < M; j++) {
     const f = feats[j];
-    // E_slot = -h_eff[f] - Σ_{r∈R} J[f, r]; negE = -E_slot / T.
+    // E_slot = -h_eff[f] - Σ_{r∈R} w_r · J[f, r]; negE = -E_slot / T.
     let jSum = 0;
     const base = f * V;
-    for (let r = 0; r < rFeat.length; r++) jSum += J[base + rFeat[r]];
+    if (rWeights === undefined) {
+      for (let r = 0; r < rFeat.length; r++) jSum += J[base + rFeat[r]];
+    } else {
+      for (let r = 0; r < rFeat.length; r++) jSum += rWeights[r] * J[base + rFeat[r]];
+    }
     negE[j] = (hEff[f] + jSum) * invTemp;
     // Availability + item-exclusion: a candidate holding a real item already
     // held by a retained member is invalid; itemless (id < 0) never conflicts.
@@ -148,24 +155,51 @@ export interface PottsContext {
    * but the item track still rerolls. Empty/undefined = no site pins (the
    * species-swap then considers every free slot, exactly as before). */
   lockedSlots?: ReadonlySet<number>;
+  /** Anchor-field tilt alpha: pin↔free couplings (pins = fixed features and
+   * locked slots' current features) are scaled by alpha in every conditional
+   * and slot energy, targeting H_alpha = H - (alpha-1)·Σ_{p,j free} J[p,j]s_j.
+   * Pin↔pin and free↔free couplings are untouched. Default 1 (no tilt). */
+  anchorStrength?: number;
 }
 
 /** The retained team (all on-team features except the slot at `onNfPos` of the
- * chain's free slots) as (feats, itemIds). */
+ * chain's free slots) as (feats, itemIds, isPin flags). A retained member is a
+ * pin when it is a fixed feature or sits in a locked (site-pinned) slot. */
 function retained(
   chain: ChainState,
   onNfPos: number,
   ctx: PottsContext,
   tables: SiteTables,
-): { rFeat: number[]; rItemId: number[] } {
+): { rFeat: number[]; rItemId: number[]; rPin: boolean[] } {
   const rFeat: number[] = [];
-  for (const f of ctx.fixed) rFeat.push(f);
+  const rPin: boolean[] = [];
+  for (const f of ctx.fixed) {
+    rFeat.push(f);
+    rPin.push(true);
+  }
   for (let k = 0; k < chain.onNf.length; k++) {
     if (k === onNfPos) continue;
     rFeat.push(chain.onNf[k]);
+    rPin.push(ctx.lockedSlots?.has(k) ?? false);
   }
   const rItemId = rFeat.map((f) => tables.itemId[f]);
-  return { rFeat, rItemId };
+  return { rFeat, rItemId, rPin };
+}
+
+/** Anchor-tilt coupling weights for one move: weight alpha on couplings with
+ * exactly one pinned endpoint (retained pin ↔ free mover, or retained free ↔
+ * pinned mover), 1 otherwise. Undefined at alpha = 1 (no tilt fast path). */
+function anchorWeights(
+  rPin: readonly boolean[],
+  moverPinned: boolean,
+  alpha: number,
+): Float64Array | undefined {
+  if (alpha === 1) return undefined;
+  const w = new Float64Array(rPin.length);
+  for (let i = 0; i < rPin.length; i++) {
+    w[i] = rPin[i] !== moverPinned ? alpha : 1;
+  }
+  return w;
 }
 
 /** Draw one index j ∝ exp(negE[j]) over valid entries. Assumes at least one
@@ -195,10 +229,15 @@ function slotEnergy(
   rFeat: readonly number[],
   model: IsingModel,
   hEff: Float64Array,
+  rWeights?: ArrayLike<number>,
 ): number {
   const base = f * model.V;
   let jSum = 0;
-  for (let r = 0; r < rFeat.length; r++) jSum += model.J[base + rFeat[r]];
+  if (rWeights === undefined) {
+    for (let r = 0; r < rFeat.length; r++) jSum += model.J[base + rFeat[r]];
+  } else {
+    for (let r = 0; r < rFeat.length; r++) jSum += rWeights[r] * model.J[base + rFeat[r]];
+  }
   return -hEff[f] - jSum;
 }
 
@@ -225,7 +264,10 @@ export function pottsSpeciesSwap(
   if (ctx.lockedSlots?.has(outK)) return { proposed: false, accepted: false };
   const outFeat = chain.onNf[outK];
   const siteA = siteOf[outFeat];
-  const { rFeat, rItemId } = retained(chain, outK, ctx, tables);
+  const { rFeat, rItemId, rPin } = retained(chain, outK, ctx, tables);
+  // The moving slot is free (locked slots returned above), so retained pins
+  // carry the anchor weight.
+  const rWeights = anchorWeights(rPin, false, ctx.anchorStrength ?? 1);
 
   // Present sites (retained team + the out slot's own species): the proposal B
   // must be an off-team species.
@@ -242,8 +284,8 @@ export function pottsSpeciesSwap(
   }
   if (present.has(siteB)) return { proposed: false, accepted: false };
 
-  const condA = siteConditional(siteA, rFeat, rItemId, model, hEff, invTemp, tables, ctx.avail);
-  const condB = siteConditional(siteB, rFeat, rItemId, model, hEff, invTemp, tables, ctx.avail);
+  const condA = siteConditional(siteA, rFeat, rItemId, model, hEff, invTemp, tables, ctx.avail, rWeights);
+  const condB = siteConditional(siteB, rFeat, rItemId, model, hEff, invTemp, tables, ctx.avail, rWeights);
   if (!Number.isFinite(condB.logZ) || !Number.isFinite(condA.logZ)) {
     return { proposed: false, accepted: false };
   }
@@ -254,7 +296,9 @@ export function pottsSpeciesSwap(
 
   const choice = sampleCategorical(condB.negE, condB.valid, rng);
   const newFeat = condB.feats[choice];
-  const dH = slotEnergy(newFeat, rFeat, model, hEff) - slotEnergy(outFeat, rFeat, model, hEff);
+  const dH =
+    slotEnergy(newFeat, rFeat, model, hEff, rWeights) -
+    slotEnergy(outFeat, rFeat, model, hEff, rWeights);
   chain.state[outFeat] = 0;
   chain.state[newFeat] = 1;
   chain.stateF[outFeat] = 0;
@@ -282,14 +326,20 @@ export function pottsTrackReroll(
   const outK = rng.integers(chain.onNf.length);
   const outFeat = chain.onNf[outK];
   const site = model.siteOf[outFeat];
-  const { rFeat, rItemId } = retained(chain, outK, ctx, tables);
+  const { rFeat, rItemId, rPin } = retained(chain, outK, ctx, tables);
+  // A locked (site-pinned) slot's reroll is a pin move: its couplings to free
+  // retained members carry the anchor weight; couplings to other pins do not.
+  const moverPinned = ctx.lockedSlots?.has(outK) ?? false;
+  const rWeights = anchorWeights(rPin, moverPinned, ctx.anchorStrength ?? 1);
 
-  const cond = siteConditional(site, rFeat, rItemId, model, hEff, invTemp, tables, ctx.avail);
+  const cond = siteConditional(site, rFeat, rItemId, model, hEff, invTemp, tables, ctx.avail, rWeights);
   if (!Number.isFinite(cond.logZ)) return; // no valid item (shouldn't happen: current item is valid)
   const choice = sampleCategorical(cond.negE, cond.valid, rng);
   const newFeat = cond.feats[choice];
   if (newFeat === outFeat) return;
-  const dH = slotEnergy(newFeat, rFeat, model, hEff) - slotEnergy(outFeat, rFeat, model, hEff);
+  const dH =
+    slotEnergy(newFeat, rFeat, model, hEff, rWeights) -
+    slotEnergy(outFeat, rFeat, model, hEff, rWeights);
   chain.state[outFeat] = 0;
   chain.state[newFeat] = 1;
   chain.stateF[outFeat] = 0;

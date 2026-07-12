@@ -169,11 +169,13 @@ The notebooks form a dependency chain. Explore in order, or jump into any standa
 | 9 | `regularization_sweep.ipynb` | Standalone: L2 regularization sweep behind the per-model lambda values |
 | 10 | `outcome_validation.ipynb` | Standalone: does Score/coherence predict tournament placement? (confirms the model captures meta typicality, not team quality) |
 | 11 | `weighting_sweep.ipynb` | Standalone: tunes the sample-weighting knobs (recency decay tau, in-person multiplier) on held-out future in-person events |
+| 12 | `anchor_field_tilt.ipynb` | Standalone: validates the completer's Anchor Strength tilt (pin-integration monotonicity, seed stability, score/variety cost, popular-pin control) |
 
 ## Key concepts
 
 - **Inverse Ising model**: given binary team-composition vectors (each Pokemon/item is a spin), find the pairwise couplings *J* and biases *h* that make the observed teams maximally likely under a Boltzmann distribution
 - **Parallel-tempered MCMC**: runs multiple chains at different temperatures with replica-exchange swaps, helping escape local minima. Runs in a Web Worker to keep the UI responsive
+- **Anchor Strength**: an exponential tilt on the completer's sampling distribution that amplifies couplings between the pinned Pokemon and every candidate teammate, so completions build around your picks instead of attaching them to a generic strong core. 1.0 is neutral (the fitted distribution)
 
 ## License
 

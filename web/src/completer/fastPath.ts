@@ -16,6 +16,9 @@ export interface FastPathInput {
   fixedSites?: readonly number[];
   excludedSpecies: readonly string[]; // species-level
   fieldWeight: number;
+  /** Anchor-field tilt alpha ("Anchor Strength"); pins for the tilt are the
+   * feature pins plus the resolved site-pin seeds. Default 1 (no tilt). */
+  anchorStrength?: number;
 }
 
 export interface FastPathResult {
@@ -75,10 +78,12 @@ export function runFastPath(
     };
   }
 
+  const anchorStrength = input.anchorStrength ?? 1;
   const mf = meanfieldMarginals(model, {
     fixed,
     excluded,
     fieldWeight,
+    anchorStrength,
     nIters: MF_MAX_ITERS,
     tol: MF_TOL,
   });
@@ -144,6 +149,7 @@ export function runFastPath(
     pinned: fixed,
     excluded,
     fieldWeight,
+    anchorStrength,
     maxSwaps: GREEDY_MAX_SWAPS,
   });
   return {

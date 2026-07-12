@@ -46,6 +46,8 @@ export interface PTRequest {
   seed: number;
   /** Item-track reroll probability per sweep (ignored for species-only). */
   pReroll?: number;
+  /** Anchor-field tilt alpha ("Anchor Strength"); 1 = no tilt. */
+  anchorStrength?: number;
   /** Aggregate completions by species (site) set instead of by full feature
    * set — used when an attribute is deactivated, to marginalize it out. Each
    * bucket keeps its most-frequent real feature-team as the representative. */
@@ -185,6 +187,7 @@ self.onmessage = (e: MessageEvent<PTRequest>) => {
         swapInterval: req.swapInterval,
         seed: req.seed + run, // independent stream per run
         pReroll: req.pReroll,
+        anchorStrength: req.anchorStrength,
       });
       if (res === null) {
         const reply: PTError = {

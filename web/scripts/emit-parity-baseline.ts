@@ -136,6 +136,7 @@ interface MfCase {
     fixed: number[];
     excluded: number[];
     fieldWeight: number;
+    anchorStrength: number;
     nIters: number;
     tol: number;
     damp: number;
@@ -154,6 +155,7 @@ interface GreedyCase {
     pinned: number[];
     excluded: number[];
     fieldWeight: number;
+    anchorStrength: number;
     maxSwaps: number;
   };
   expected: {
@@ -189,14 +191,16 @@ interface RankCase {
 
 const mfCases: MfCase[] = [];
 for (const c of [
-  { name: "mf_fw_1.0_no_pins", fixed: [], excluded: [], fieldWeight: 1.0 },
-  { name: "mf_fw_0.5_one_pin", fixed: [0], excluded: [11], fieldWeight: 0.5 },
-  { name: "mf_fw_0.0_pin_uniqueness", fixed: [0, 2], excluded: [], fieldWeight: 0.0 },
+  { name: "mf_fw_1.0_no_pins", fixed: [], excluded: [], fieldWeight: 1.0, anchorStrength: 1.0 },
+  { name: "mf_fw_0.5_one_pin", fixed: [0], excluded: [11], fieldWeight: 0.5, anchorStrength: 1.0 },
+  { name: "mf_fw_0.0_pin_uniqueness", fixed: [0, 2], excluded: [], fieldWeight: 0.0, anchorStrength: 1.0 },
+  { name: "mf_fw_1.0_anchor_2.0", fixed: [0], excluded: [], fieldWeight: 1.0, anchorStrength: 2.0 },
 ]) {
   const opts = {
     fixed: c.fixed,
     excluded: c.excluded,
     fieldWeight: c.fieldWeight,
+    anchorStrength: c.anchorStrength,
     nIters: 200,
     tol: 1e-5,
     damp: 0.5,
@@ -236,8 +240,16 @@ for (const c of [
     excluded: [],
     fieldWeight: 0.0,
   },
+  {
+    name: "greedy_fw_1.0_anchor_2.5",
+    startingTeam: [0, 2, 4, 6],
+    pinned: [0],
+    excluded: [],
+    fieldWeight: 1.0,
+    anchorStrength: 2.5,
+  },
 ]) {
-  const opts = { ...c, maxSwaps: 10 };
+  const opts = { anchorStrength: 1.0, ...c, maxSwaps: 10 };
   const r = greedyOptimize(model, opts);
   greedyCases.push({
     name: c.name,
@@ -363,7 +375,7 @@ const availAll = new Uint8Array(V).fill(1);
 
 interface SiteCondCase {
   name: string;
-  input: { site: number; rFeat: number[]; invTemp: number };
+  input: { site: number; rFeat: number[]; invTemp: number; rWeights: number[] | null };
   expected: {
     feats: number[];
     negE: number[];
@@ -378,12 +390,16 @@ for (const c of [
   { name: "site1_retained_2_4", site: 1, rFeat: [2, 4], invTemp: 1.0 },
   { name: "site2_item_exclusion", site: 2, rFeat: [1, 3], invTemp: 1.5 },
   { name: "site5_itemless_tempered", site: 5, rFeat: [0, 6], invTemp: 0.5 },
-]) {
+  // Anchor-tilt weights: retained member 2 is a pin at alpha=2, member 4 free.
+  { name: "site1_anchor_weights", site: 1, rFeat: [2, 4], invTemp: 1.0, rWeights: [2.0, 1.0] },
+] as Array<{ name: string; site: number; rFeat: number[]; invTemp: number; rWeights?: number[] }>) {
   const rItemId = c.rFeat.map((f) => siteTablesTS.itemId[f]);
-  const r = siteConditional(c.site, c.rFeat, rItemId, model, h, c.invTemp, siteTablesTS, availAll);
+  const r = siteConditional(
+    c.site, c.rFeat, rItemId, model, h, c.invTemp, siteTablesTS, availAll, c.rWeights,
+  );
   siteCondCases.push({
     name: c.name,
-    input: { site: c.site, rFeat: c.rFeat, invTemp: c.invTemp },
+    input: { site: c.site, rFeat: c.rFeat, invTemp: c.invTemp, rWeights: c.rWeights ?? null },
     expected: {
       feats: r.feats,
       negE: Array.from(r.negE),

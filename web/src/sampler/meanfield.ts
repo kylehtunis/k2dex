@@ -6,7 +6,7 @@
 // CLAUDE.md MF-vs-MCMC bullet).
 
 import type { IsingModel, MeanfieldResult } from "./types";
-import { buildConstraintSets } from "./energy";
+import { anchorBoost, buildConstraintSets } from "./energy";
 
 export interface MeanfieldOpts {
   /** Pinned features (clamped to m=1). */
@@ -15,6 +15,9 @@ export interface MeanfieldOpts {
   excluded: readonly number[];
   /** Scales h. */
   fieldWeight: number;
+  /** Anchor-field tilt alpha: pin→free couplings enter the effective field
+   * (alpha-1)-fold extra via `anchorBoost`. Default 1 (no tilt). */
+  anchorStrength?: number;
   /** Max iterations of the damped fixed-point. */
   nIters?: number;
   /** Convergence tol on max |Δm| over free slots. */
@@ -52,6 +55,11 @@ export function meanfieldMarginals(
 
   const hEff = new Float64Array(V);
   for (let i = 0; i < V; i++) hEff[i] = opts.fieldWeight * h[i];
+  const alpha = opts.anchorStrength ?? 1;
+  if (alpha !== 1) {
+    const boost = anchorBoost(model, opts.fixed, alpha);
+    for (let i = 0; i < V; i++) hEff[i] += boost[i];
+  }
 
   const fixedMask = new Uint8Array(V);
   const excludedMask = new Uint8Array(V);

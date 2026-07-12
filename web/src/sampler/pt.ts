@@ -40,6 +40,11 @@ export interface PTOpts {
    * best placeable feature, then its slot is locked against species-swaps but
    * still rerolled. Empty = feature-level pins only. */
   fixedSites?: readonly number[];
+  /** Anchor-field tilt alpha ("Anchor Strength"): samples from
+   * H_alpha = H - (alpha-1)·Σ_{p∈pins, j free} J[p,j]s_j, concentrating mass
+   * on teams that couple well to the pins (feature + site). 1 = no tilt
+   * (default); no effect when nothing is pinned. */
+  anchorStrength?: number;
 }
 
 export function parallelTemperedMcmc(
@@ -75,7 +80,14 @@ export function parallelTemperedMcmc(
   // Seed features are NOT masked off: their slot rerolls among the site's items.
   const lockedSlots = new Set<number>();
   for (let i = 0; i < seeds.length; i++) lockedSlots.add(i);
-  const ctx: PottsContext = { fixed: opts.fixed, avail, tables, lockedSlots };
+  const anchorStrength = opts.anchorStrength ?? 1;
+  const ctx: PottsContext = {
+    fixed: opts.fixed,
+    avail,
+    tables,
+    lockedSlots,
+    anchorStrength,
+  };
   const hasTracks = model.tracks.length > 0;
   const pReroll = opts.pReroll ?? 0.5;
 
@@ -92,6 +104,22 @@ export function parallelTemperedMcmc(
       seeds,
     );
     if (c === null) return null;
+    // initChain's energy is the untilted H(hEff); correct it to H_alpha so
+    // move deltas (tilted slot energies) and replica exchange stay consistent.
+    if (anchorStrength !== 1) {
+      // Pin↔free cross-coupling sum; pin↔pin pairs are excluded from the tilt.
+      const pins: number[] = [...opts.fixed];
+      const free: number[] = [];
+      for (let s = 0; s < c.onNf.length; s++) {
+        (lockedSlots.has(s) ? pins : free).push(c.onNf[s]);
+      }
+      let cross = 0;
+      for (const p of pins) {
+        const base = p * V;
+        for (const j of free) cross += model.J[base + j];
+      }
+      c.energy -= (anchorStrength - 1) * cross;
+    }
     chains.push(c);
   }
 
