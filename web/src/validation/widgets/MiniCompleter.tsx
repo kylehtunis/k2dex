@@ -156,11 +156,6 @@ export function MiniCompleter({
         <label className="lab-form-label">
           Anchor Strength · {anchorStrength.toFixed(1)}
         </label>
-        <div className="lab-form-caption">
-          How strongly k2dex builds around your picks. 1.0 is the model&apos;s
-          neutral distribution; we default higher so a niche pick gets a team
-          built around it.
-        </div>
         <input
           type="range"
           className="lab-slider"

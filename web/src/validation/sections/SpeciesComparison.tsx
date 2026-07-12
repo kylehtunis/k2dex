@@ -69,7 +69,7 @@ export function SpeciesComparison() {
             a strong baseline. k2dex's team is often a little tighter, earning a
             higher coherence (the total strength of the couplings holding it
             together) and landing closer to a team someone actually brought to a
-            tournament, but the difference isn't significant enough to justify the 
+            tournament, but that difference alone isn't significant enough to justify the 
             advanced machinery of k2dex.
           </p>
           <p>
