@@ -1,8 +1,10 @@
-// §1: the model separates real synergy from shared popularity.
+// §1: how far raw counting gets you at the species level.
 //
 // First shows the familiar "Teammates %" table (co-occurrence), then a mini
 // team completer that fills a full team both ways — counting vs the real
-// sampler — so the reader can compare finished teams, not abstract rankings.
+// sampler. The honest finding is that both produce sensible teams: counting is
+// a strong baseline for *which Pokémon*, which sets up §2, where it goes blind
+// (attributes). This section is the on-ramp and the pivot, not the payoff.
 
 import { useMemo } from "react";
 import { useModel } from "../../state/ModelContext";
@@ -24,7 +26,7 @@ export function SpeciesComparison() {
 
   return (
     <section id="species" className="lab-science-section">
-      <h3>The teammates table, and why it isn't enough</h3>
+      <h3>How far can counting get you?</h3>
       <p>
         If you've ever used Pikalytics, Smogon's usage stats, or almost any
         teambuilding site, you've seen a table like the one below. Pick a
@@ -40,43 +42,43 @@ export function SpeciesComparison() {
         <>
           <TeammateTable model={model!} sc={sc} />
           <p>
-            It's a useful table, but it has a blind spot: co-occurrence can't
-            tell the difference between two Pokémon that genuinely work together
-            and two Pokémon that are simply both popular. If Incineroar is on
-            half of all teams and Flutter Mane is on another 40%, they'll land
-            on the same team constantly, purely by chance, even if neither cares
-            about the other. The table reports that as "synergy" all the same.
-            Follow it far enough and it just walks you toward the most popular
-            Pokémon in the format, whether or not they fit what you already have.
+            It's a powerful tool, but in principle it has a blind spot:
+            co-occurrence can't tell the difference between two Pokémon that
+            genuinely work together and two Pokémon that are simply both popular.
+            If Garchomp is on half of all teams and Sinistcha is on another 40%,
+            they'll land on the same team constantly, purely by chance, even if
+            neither cares about the other, and the table reports that as "synergy"
+            all the same.
           </p>
           <p>
-            The model is built to see past this. Instead of counting pairs, it
+            The k2dex model is built to see past this. Instead of counting pairs, it
             fits a coupling between every pair of Pokémon that has to explain the
             team data as a whole, holding everything else constant. That's the
             difference between "how often do these two appear together?" and "do
             these two appear together <em>more</em> than their individual
-            popularity would predict?" To see what that's worth, pick a Pokémon
-            or two below and let each method finish the team: counting fills the
+            popularity would predict?" To see what that's worth, use the comparison
+            below and let each method finish the team: counting fills the
             open slots with its top teammates, while k2dex runs the same sampler
-            the completer uses and returns its single most-likely team. One
-            honest disclosure: we tell the sampler to commit to your picks. The
-            Anchor Strength dial below amplifies the couplings between your
-            picks and every candidate teammate, so the sampler builds
-            <em> around</em> them instead of treating them as passengers on an
-            otherwise-standard team. Counting gets the same courtesy for free
-            (its greedy always starts from your picks), and you can drag the
-            dial back to 1.0 to see the model's neutral answer.
+            the completer uses and returns its single most-likely team.
           </p>
           <MiniCompleter model={model!} sc={sc} teamCounts={teamCounts} />
           <p>
-            The two teams are scored under the same fitted model. Counting's team
-            is usually a pile of individually popular Pokémon that don't
-            particularly want to be together; k2dex's team almost always earns a
-            higher coherence, the total strength of the couplings holding it
-            together, and lands closer to a team someone actually brought to a
-            tournament. Better still, look at the Pokémon themselves: the
-            sampler's team tends to read like a real, purposeful squad rather
-            than a greatest-hits list.
+            Try a few, and you'd be justified in raising an eyebrow: both
+            teams are <em>usually</em> sensible. At the level of <em>which Pokémon</em>,
+            popularity and real synergy mostly point the same way, so counting is
+            a strong baseline. k2dex's team is often a little tighter, earning a
+            higher coherence (the total strength of the couplings holding it
+            together) and landing closer to a team someone actually brought to a
+            tournament, but the difference isn't significant enough to justify the 
+            advanced machinery of k2dex.
+          </p>
+          <p>
+            So, if counting works this well, why bother going further? 
+            Because co-occurrence isn't how real teams are built. The strongest teams aren't
+            constructed by picking six synergistic Pokémon and slapping the most popular set on each.
+            A good teambuilder, whether human or machine, needs to ensure that every Pokémon, item,
+            ability, nature, move, and EV point is chosen holistically, each decision contributing
+            to an overall goal.
           </p>
         </>
       )}

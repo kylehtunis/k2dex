@@ -30,6 +30,22 @@ export interface ModulationExample {
   body: ReactNode;
 }
 
+/** Whether an example can render a real comparison in `model`: the partner
+ * species must exist and at least two of its item builds must be in vocab. Lets
+ * the section drop examples a given regulation's model can't support (e.g. a
+ * build that appears in one regulation but not another) instead of showing a
+ * degenerate single-bar card. */
+export function isExampleResolvable(
+  model: IsingModel,
+  example: ModulationExample,
+): boolean {
+  if (!model.sites.includes(example.partnerSpecies)) return false;
+  const resolvable = example.items.filter(
+    (it) => model.indexOf.get(it.vocab) !== undefined,
+  ).length;
+  return resolvable >= 2;
+}
+
 /** Usage-weighted average coupling between one feature and every build of the
  * partner species — the partner's items weighted by how often they're actually
  * used, so the number reflects the real matchup rather than a flat average. */
