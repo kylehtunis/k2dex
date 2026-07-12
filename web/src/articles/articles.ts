@@ -20,6 +20,13 @@ export interface ArticleMeta {
 
 export const ARTICLES: readonly ArticleMeta[] = [
   {
+    slug: "the-v2-update",
+    title: "The v2 Update",
+    description:
+      "Release notes for the rebuilt k2dex: one model per regulation, a six-slot roster editor with Pokémon-only pins, the Anchor Strength knob, and the Boltzmann-learned model that made the Bias Adjustment slider obsolete.",
+    date: "2026-07-12",
+  },
+  {
     slug: "model-vs-counting",
     title: "Why Not Just Count?",
     description:
