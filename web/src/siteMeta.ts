@@ -65,7 +65,7 @@ const BASE_ROUTES: readonly RouteMeta[] = [
     path: "articles",
     title: "Articles | k2dex",
     description:
-      "Write-ups on the ideas, findings, and implementation details behind k2dex — starting with an interactive explainer on the statistical physics under the hood.",
+      "Write-ups on the ideas, findings, and implementation details behind k2dex.",
   },
 ];
 

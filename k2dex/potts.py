@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 
 import numpy as np
@@ -63,11 +64,11 @@ class FittedModel:
     def V(self) -> int:
         return len(self.vocab)
 
-    @property
+    @cached_property
     def sites(self) -> list[str]:
         return sorted(self.site_index)
 
-    @property
+    @cached_property
     def site_index(self) -> dict[str, list[int]]:
         idx: dict[str, list[int]] = defaultdict(list)
         for i, sp in enumerate(self.species_of):
@@ -243,8 +244,8 @@ def modulation_scores(model: FittedModel) -> list[ModulationRow]:
         for Q in sites:
             if Q == P:
                 continue
-            B = model.J[np.ix_(iP, idx[Q])]
-            mod = B - B.mean(axis=0, keepdims=True)
+            B = species_block(model, P, Q)
+            mod = row_modulation(B)
             mod_sq += float((mod ** 2).sum())
             full_sq += float((B ** 2).sum())
             syn_sq += float(B.mean()) ** 2
@@ -293,19 +294,23 @@ def item_modulation(
     iP = idx[species]
     items = model.item_of
     # deviation of each of P's item-rows from the item-agnostic profile, laid
-    # out as (k_P, V); only cross-species partner columns are populated.
+    # out as (k_P, V); only cross-species partner columns are populated. The
+    # self-block columns stay zero and must be excluded from the ranking below,
+    # or a single-signed row would surface them as its opposite-sign extremes.
     dev = np.zeros((len(iP), model.V), dtype=np.float64)
+    partner_cols: list[int] = []
     for Q in sites:
         if Q == species:
             continue
         jQ = idx[Q]
-        B = model.J[np.ix_(iP, jQ)]
-        dev[:, jQ] = B - B.mean(axis=0, keepdims=True)
+        dev[:, jQ] = row_modulation(species_block(model, species, Q))
+        partner_cols.extend(jQ)
+    cols = np.array(sorted(partner_cols), dtype=int)
     out: list[ItemModulation] = []
     for a, feat in enumerate(iP):
         drow = dev[a]
         mag = float(np.linalg.norm(drow))
-        order = np.argsort(-drow)
+        order = cols[np.argsort(-drow[cols])] if cols.size else cols
         toward = [(model.species_of[k], float(drow[k]))
                   for k in order[:top_partners]]
         away = [(model.species_of[k], float(drow[k]))
@@ -359,7 +364,6 @@ def species_apc_graph(model: FittedModel) -> SpeciesGraph:
     a signed strength, and is not what the meta ranking sorts on.
     """
     sites = model.sites
-    idx = model.site_index
     S = len(sites)
     weights = {P: model.item_weights(P) for P in sites}
     frob = np.zeros((S, S), dtype=np.float64)
@@ -368,7 +372,7 @@ def species_apc_graph(model: FittedModel) -> SpeciesGraph:
         for b, Q in enumerate(sites):
             if b <= a:
                 continue
-            B = model.J[np.ix_(idx[P], idx[Q])]
+            B = species_block(model, P, Q)
             dec = decompose_block(B)
             # zero-sum block = effects + interaction = B - grand mean.
             zs = B - dec.synergy

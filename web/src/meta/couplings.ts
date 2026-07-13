@@ -28,6 +28,46 @@ export function isStructuralPair(model: IsingModel, i: number, j: number): boole
   return true;
 }
 
+export interface ModulationEntry {
+  featureA: number;
+  featureB: number;
+  jValue: number;
+  /** How far this item-pair's coupling sits from the pair's species-level
+   * synergy — the item-modulation residual for the pair. */
+  deviation: number;
+}
+
+/** The item-pair couplings for a species pair, strongest |J| first: how each
+ * pairing of their item builds shifts away from the pair's species-level
+ * synergy. Non-structural pairs are dropped (see isStructuralPair). Shared by
+ * the /meta §02 coupling table and the feature modal's coupling drill-down, so
+ * both surfaces rank and filter identically. */
+export function topModulationEntries(
+  model: IsingModel,
+  siteA: number,
+  siteB: number,
+  synergy: number,
+  topN = 8,
+): ModulationEntry[] {
+  if (siteA === siteB) return [];
+  const { siteFeatures, J, V } = model;
+  const entries: ModulationEntry[] = [];
+  for (const fa of siteFeatures[siteA]) {
+    for (const fb of siteFeatures[siteB]) {
+      if (!isStructuralPair(model, fa, fb)) continue;
+      const jValue = J[fa * V + fb];
+      entries.push({
+        featureA: fa,
+        featureB: fb,
+        jValue,
+        deviation: jValue - synergy,
+      });
+    }
+  }
+  entries.sort((a, b) => Math.abs(b.jValue) - Math.abs(a.jValue));
+  return entries.slice(0, topN);
+}
+
 /** Iterate the strict upper triangle of J, dropping non-structural pairs
  * (see isStructuralPair). */
 export function filteredCouplings(model: IsingModel): CouplingPair[] {

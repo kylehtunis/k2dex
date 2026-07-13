@@ -21,6 +21,7 @@ import {
 import { useLocation } from "react-router-dom";
 import Select, { type SingleValue } from "react-select";
 import { Modal } from "./Modal";
+import { topModulationEntries } from "../meta/couplings";
 import { FeatureModalContext } from "./FeatureModalContext";
 import { useMediaQuery } from "./useMediaQuery";
 import { useModel } from "../state/ModelContext";
@@ -305,38 +306,6 @@ function FeatureModalBody({
 }
 
 // ----- Expandable coupling rows (same pattern as /meta §02) -----
-
-interface ModulationEntry {
-  featureA: number;
-  featureB: number;
-  jValue: number;
-  deviation: number;
-}
-
-function topModulationEntries(
-  model: IsingModel,
-  siteA: number,
-  siteB: number,
-  synergy: number,
-  topN = 8,
-): ModulationEntry[] {
-  const { siteFeatures, J, V, itemOf } = model;
-  const featA = siteFeatures[siteA];
-  const featB = siteFeatures[siteB];
-  if (siteA === siteB) return [];
-  const entries: ModulationEntry[] = [];
-  for (const fa of featA) {
-    for (const fb of featB) {
-      const itA = itemOf[fa];
-      const itB = itemOf[fb];
-      if (itA !== null && itB !== null && itA === itB) continue;
-      const jValue = J[fa * V + fb];
-      entries.push({ featureA: fa, featureB: fb, jValue, deviation: jValue - synergy });
-    }
-  }
-  entries.sort((a, b) => Math.abs(b.jValue) - Math.abs(a.jValue));
-  return entries.slice(0, topN);
-}
 
 function ExpandableCouplingList({
   title,

@@ -5,9 +5,9 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { ScoreChip, SignedBar } from "../render/atoms";
-import { SpriteBox } from "../render/Sprite";
 import { ScrollX } from "../components/ScrollX";
 import { InlineMon } from "../render/cells";
+import { topModulationEntries } from "./couplings";
 import type { IsingModel, SpeciesGraph } from "../sampler/types";
 
 export interface SpeciesCouplingRow {
@@ -23,52 +23,6 @@ export interface SpeciesCouplingsTableProps {
   maxSynergy: number;
   graph: SpeciesGraph;
   model: IsingModel;
-}
-
-function SpeciesMon({ species }: { species: string }) {
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-      <SpriteBox name={species} size={32} />
-      <span className="lab-comp-mon-name">{species}</span>
-    </span>
-  );
-}
-
-interface ModulationEntry {
-  featureA: number;
-  featureB: number;
-  jValue: number;
-  deviation: number;
-}
-
-function topModulationEntries(
-  model: IsingModel,
-  speciesA: string,
-  speciesB: string,
-  synergy: number,
-  topN = 8,
-): ModulationEntry[] {
-  const { siteFeatures, siteOf, J, V } = model;
-  const idxA = model.sites.indexOf(speciesA);
-  const idxB = model.sites.indexOf(speciesB);
-  if (idxA < 0 || idxB < 0) return [];
-  const featA = siteFeatures[idxA];
-  const featB = siteFeatures[idxB];
-  // Only compute for same-site pairs once (skip if same site — shouldn't happen).
-  if (idxA === idxB) return [];
-  const entries: ModulationEntry[] = [];
-  for (const fa of featA) {
-    for (const fb of featB) {
-      if (siteOf[fa] === siteOf[fb]) continue;
-      const itA = model.itemOf[fa];
-      const itB = model.itemOf[fb];
-      if (itA !== null && itB !== null && itA === itB) continue;
-      const jValue = J[fa * V + fb];
-      entries.push({ featureA: fa, featureB: fb, jValue, deviation: jValue - synergy });
-    }
-  }
-  entries.sort((a, b) => Math.abs(b.jValue) - Math.abs(a.jValue));
-  return entries.slice(0, topN);
 }
 
 export function SpeciesCouplingsTable({
@@ -138,10 +92,13 @@ function ExpandableRow({
   onToggle: () => void;
   model: IsingModel;
 }) {
-  const modEntries = useMemo(
-    () => (isOpen ? topModulationEntries(model, speciesA, speciesB, synergy) : []),
-    [isOpen, model, speciesA, speciesB, synergy],
-  );
+  const modEntries = useMemo(() => {
+    if (!isOpen) return [];
+    const siteA = model.sites.indexOf(speciesA);
+    const siteB = model.sites.indexOf(speciesB);
+    if (siteA < 0 || siteB < 0) return [];
+    return topModulationEntries(model, siteA, siteB, synergy);
+  }, [isOpen, model, speciesA, speciesB, synergy]);
 
   const maxJ = useMemo(() => {
     if (modEntries.length === 0) return 1;
@@ -163,9 +120,9 @@ function ExpandableRow({
         <td className="rank">{(rank + 1).toString().padStart(2, "0")}</td>
         <td className="pair">
           <div className="lab-pair-cell">
-            <SpeciesMon species={speciesA} />
+            <InlineMon name={speciesA} interactive={false} />
             <span className="lab-pair-sep">&times;</span>
-            <SpeciesMon species={speciesB} />
+            <InlineMon name={speciesB} interactive={false} />
           </div>
         </td>
         <td className="num" data-label="synergy">

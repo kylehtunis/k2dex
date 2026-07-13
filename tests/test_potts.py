@@ -113,6 +113,17 @@ class TestItemModulation(unittest.TestCase):
         self.assertEqual(detail["i1"].pulls_toward[0][0], "B")
         self.assertLess(detail["i2"].pulls_away[0][1], 0.0)
 
+    def test_partners_exclude_the_species_itself(self) -> None:
+        # A single-signed deviation row (i1 couples only positively, to B) must
+        # not fall back on the self-block's structurally-zero columns for its
+        # opposite-sign extremes: every partner listed is a *different* species.
+        J = np.zeros((5, 5))
+        J[0, 2] = J[2, 0] = 2.0
+        model = _toy_model(J)
+        for d in potts.item_modulation(model, "A"):
+            partners = [sp for sp, _ in d.pulls_toward + d.pulls_away]
+            self.assertNotIn("A", partners)
+
 
 class TestAPC(unittest.TestCase):
     def test_apc_formula_matches_manual(self) -> None:

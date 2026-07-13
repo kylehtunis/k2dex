@@ -11,6 +11,7 @@
 // gated by tests/test_parity.py::test_cooccurrence_cases.
 
 import type { IsingModel, TeamCounts } from "./types";
+import { buildConstraintSets, occupy, violatesConstraints } from "./energy";
 import { parseTeamKey } from "../render/corpus";
 
 export interface Cooccurrence {
@@ -87,33 +88,14 @@ export function cooccurrenceGreedy(
   opts: { fixed: readonly number[]; excluded: readonly number[] },
 ): number[] {
   const { C } = cooc;
-  const { V, teamSize, siteOf, tracks, trackValues } = model;
+  const { V, teamSize } = model;
 
   const team = [...opts.fixed];
   const excluded = new Set(opts.excluded);
 
   // Uniqueness bookkeeping against the current team.
-  const usedSites = new Set<number>();
-  const usedTrack = tracks.map(() => new Set<string>());
-  const addUsed = (i: number) => {
-    usedSites.add(siteOf[i]);
-    for (let t = 0; t < tracks.length; t++) {
-      if (!tracks[t].unique) continue;
-      const v = trackValues[i][t];
-      if (v !== null) usedTrack[t].add(v);
-    }
-  };
-  const conflicts = (i: number): boolean => {
-    if (usedSites.has(siteOf[i])) return true;
-    for (let t = 0; t < tracks.length; t++) {
-      if (!tracks[t].unique) continue;
-      const v = trackValues[i][t];
-      if (v !== null && usedTrack[t].has(v)) return true;
-    }
-    return false;
-  };
+  const taken = buildConstraintSets(team, model);
   const inTeam = new Set(team);
-  for (const i of team) addUsed(i);
 
   while (team.length < teamSize) {
     const scores = scoreCooccurrence(C, V, team);
@@ -121,7 +103,7 @@ export function cooccurrenceGreedy(
     let bestScore = -Infinity;
     for (let i = 0; i < V; i++) {
       if (inTeam.has(i) || excluded.has(i)) continue;
-      if (conflicts(i)) continue;
+      if (violatesConstraints(i, taken, model)) continue;
       if (scores[i] > bestScore) {
         bestScore = scores[i];
         bestIdx = i;
@@ -130,7 +112,7 @@ export function cooccurrenceGreedy(
     if (bestIdx < 0) break; // no legal candidate remains
     team.push(bestIdx);
     inTeam.add(bestIdx);
-    addUsed(bestIdx);
+    occupy(taken, bestIdx, model);
   }
 
   return team.sort((a, b) => a - b);

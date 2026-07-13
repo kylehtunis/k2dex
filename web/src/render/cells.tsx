@@ -165,9 +165,18 @@ export function CompMonCell({ name }: CompMonCellProps) {
 export interface InlineMonProps {
   name: string;
   size?: number;
+  /** Set false to render an inert chip even under a FeatureModal provider —
+   * for use inside an enclosing click target (an expandable row), where a
+   * nested button would both swallow the row's own click and, for a bare
+   * species name, resolve to no vocab feature. */
+  interactive?: boolean;
 }
 
-export function InlineMon({ name, size = 32 }: InlineMonProps) {
+export function InlineMon({
+  name,
+  size = 32,
+  interactive = true,
+}: InlineMonProps) {
   const species = extractSpecies(name);
   const item = extractItem(name);
   const fm = useFeatureModal();
@@ -183,7 +192,7 @@ export function InlineMon({ name, size = 32 }: InlineMonProps) {
       )}
     </>
   );
-  if (fm) {
+  if (fm && interactive) {
     return (
       <button
         type="button"

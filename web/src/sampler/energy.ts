@@ -53,17 +53,53 @@ export function buildConstraintSets(
   fixed: Iterable<number>,
   model: IsingModel,
 ): ConstraintSets {
-  const usedSites = new Set<number>();
-  const usedTrackValues = model.tracks.map(() => new Set<string>());
-  for (const i of fixed) {
-    usedSites.add(model.siteOf[i]);
-    for (let t = 0; t < model.tracks.length; t++) {
-      if (!model.tracks[t].unique) continue;
-      const v = model.trackValues[i][t];
-      if (v !== null) usedTrackValues[t].add(v);
-    }
+  const constraints: ConstraintSets = {
+    usedSites: new Set<number>(),
+    usedTrackValues: model.tracks.map(() => new Set<string>()),
+  };
+  for (const i of fixed) occupy(constraints, i, model);
+  return constraints;
+}
+
+/** Independent copy, so a trial fill can `occupy` without disturbing the
+ * caller's sets. */
+export function cloneConstraintSets(c: ConstraintSets): ConstraintSets {
+  return {
+    usedSites: new Set(c.usedSites),
+    usedTrackValues: c.usedTrackValues.map((s) => new Set(s)),
+  };
+}
+
+/** Mark feature `i`'s site and unique-track values as taken. */
+export function occupy(
+  c: ConstraintSets,
+  i: number,
+  model: IsingModel,
+): void {
+  c.usedSites.add(model.siteOf[i]);
+  for (let t = 0; t < model.tracks.length; t++) {
+    if (!model.tracks[t].unique) continue;
+    const v = model.trackValues[i][t];
+    if (v !== null) c.usedTrackValues[t].add(v);
   }
-  return { usedSites, usedTrackValues };
+}
+
+/** True iff adding feature `i` would duplicate an already-occupied site or a
+ * value on any unique track. The incremental counterpart of
+ * `swapViolatesUniqueness` (which tests a swap against a live team instead of
+ * a growing set) — every greedy fill path shares this one rule. */
+export function violatesConstraints(
+  i: number,
+  c: ConstraintSets,
+  model: IsingModel,
+): boolean {
+  if (c.usedSites.has(model.siteOf[i])) return true;
+  for (let t = 0; t < model.tracks.length; t++) {
+    if (!model.tracks[t].unique) continue;
+    const v = model.trackValues[i][t];
+    if (v !== null && c.usedTrackValues[t].has(v)) return true;
+  }
+  return false;
 }
 
 /** True iff swapping `iIn` into position `outK` of `onNf` would create
@@ -106,32 +142,15 @@ export function initializeState(
   rng: Rng,
   maxAttempts = 100,
 ): number[] | null {
-  const nTracks = model.tracks.length;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const chosen: number[] = [];
-    const usedSites = new Set(constraints.usedSites);
-    const usedTrack = constraints.usedTrackValues.map((s) => new Set(s));
+    const taken = cloneConstraintSets(constraints);
     const shuffled = rng.permutation(available);
     for (const idx of shuffled) {
       if (chosen.length === nToFill) break;
-      if (usedSites.has(model.siteOf[idx])) continue;
-      let conflict = false;
-      for (let t = 0; t < nTracks; t++) {
-        if (!model.tracks[t].unique) continue;
-        const v = model.trackValues[idx][t];
-        if (v !== null && usedTrack[t].has(v)) {
-          conflict = true;
-          break;
-        }
-      }
-      if (conflict) continue;
+      if (violatesConstraints(idx, taken, model)) continue;
       chosen.push(idx);
-      usedSites.add(model.siteOf[idx]);
-      for (let t = 0; t < nTracks; t++) {
-        if (!model.tracks[t].unique) continue;
-        const v = model.trackValues[idx][t];
-        if (v !== null) usedTrack[t].add(v);
-      }
+      occupy(taken, idx, model);
     }
     if (chosen.length === nToFill) return chosen;
   }
@@ -156,36 +175,20 @@ export function resolveSitePins(
 ): number[] | null {
   if (fixedSites.length === 0) return [];
   const exSet = new Set<number>(excluded);
-  const usedSites = new Set<number>();
-  const usedTrack = model.tracks.map(() => new Set<string>());
-  const addUsed = (f: number) => {
-    usedSites.add(model.siteOf[f]);
-    for (let t = 0; t < model.tracks.length; t++) {
-      if (!model.tracks[t].unique) continue;
-      const v = model.trackValues[f][t];
-      if (v !== null) usedTrack[t].add(v);
-    }
-  };
-  for (const f of fixedFeatures) addUsed(f);
+  const taken = buildConstraintSets(fixedFeatures, model);
   const seeds: number[] = [];
   for (const site of fixedSites) {
-    if (usedSites.has(site)) return null; // site already taken by a feature pin / duplicate
+    if (taken.usedSites.has(site)) return null; // site already taken by a feature pin / duplicate
     let best = -1;
     let bestM = -Infinity;
     for (const f of model.siteFeatures[site]) {
       if (exSet.has(f)) continue;
-      let conflict = false;
-      for (let t = 0; t < model.tracks.length; t++) {
-        if (!model.tracks[t].unique) continue;
-        const v = model.trackValues[f][t];
-        if (v !== null && usedTrack[t].has(v)) { conflict = true; break; }
-      }
-      if (conflict) continue;
+      if (violatesConstraints(f, taken, model)) continue;
       if (model.m[f] > bestM) { bestM = model.m[f]; best = f; }
     }
     if (best < 0) return null;
     seeds.push(best);
-    addUsed(best);
+    occupy(taken, best, model);
   }
   return seeds;
 }

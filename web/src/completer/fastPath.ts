@@ -5,7 +5,12 @@
 import { GREEDY_MAX_SWAPS, MF_MAX_ITERS, MF_TOL, TEAM_SIZE } from "../constants";
 import { greedyOptimize } from "../sampler/greedy";
 import { meanfieldMarginals } from "../sampler/meanfield";
-import { resolveSitePins } from "../sampler/energy";
+import {
+  buildConstraintSets,
+  occupy,
+  resolveSitePins,
+  violatesConstraints,
+} from "../sampler/energy";
 import type { GreedyChainEntry, IsingModel } from "../sampler/types";
 
 export interface FastPathInput {
@@ -104,33 +109,13 @@ export function runFastPath(
   for (let i = 0; i < model.V; i++) if (mf.validMask[i]) validIdxs.push(i);
   validIdxs.sort((a, b) => mf.marginals[b] - mf.marginals[a]);
 
-  const { siteOf, tracks, trackValues } = model;
-  const usedSites = new Set<number>();
-  const usedTrack = tracks.map(() => new Set<string>());
-  const addUsed = (i: number) => {
-    usedSites.add(siteOf[i]);
-    for (let t = 0; t < tracks.length; t++) {
-      if (!tracks[t].unique) continue;
-      const v = trackValues[i][t];
-      if (v !== null) usedTrack[t].add(v);
-    }
-  };
-  const conflicts = (i: number): boolean => {
-    if (usedSites.has(siteOf[i])) return true;
-    for (let t = 0; t < tracks.length; t++) {
-      if (!tracks[t].unique) continue;
-      const v = trackValues[i][t];
-      if (v !== null && usedTrack[t].has(v)) return true;
-    }
-    return false;
-  };
-  for (const i of fixed) addUsed(i);
+  const taken = buildConstraintSets(fixed, model);
   const initFree: number[] = [];
   for (const cand of validIdxs) {
     if (initFree.length === kFree) break;
-    if (conflicts(cand)) continue;
+    if (violatesConstraints(cand, taken, model)) continue;
     initFree.push(cand);
-    addUsed(cand);
+    occupy(taken, cand, model);
   }
   if (initFree.length < kFree) {
     return {
