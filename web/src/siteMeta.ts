@@ -59,7 +59,7 @@ const BASE_ROUTES: readonly RouteMeta[] = [
     path: "meta",
     title: "Metagame Statistics | k2dex",
     description:
-      "Explore the VGC metagame at a glance: Pokemon usage rates, the strongest synergies and anti-synergies between species, and format-wide coupling statistics.",
+      "Explore the VGC metagame at a glance: the most common tournament teams, and the strongest synergies and anti-synergies between Pokemon in the format.",
   },
   {
     path: "articles",

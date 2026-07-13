@@ -24,7 +24,7 @@ const TOOLS = [
     path: "/meta/",
     num: "§03",
     label: "Metagame Model",
-    desc: "Format-wide bias rankings, strongest/weakest coupling pairs, and a species-level view of the current metagame.",
+    desc: "General information about how the k2dex model sees the current metagame, with the most used teams and strongest synergies and anti-synergies.",
   },
 ];
 
