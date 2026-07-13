@@ -15,7 +15,6 @@ export const TEMPERATURE_OPTIONS = [
 export const TOP_COMPLETIONS = 10;
 export const TOP_SINGLE_SWAPS = 10;
 export const GREEDY_MAX_SWAPS = 10;
-export const META_TOP_FEATURES = 25;
 export const META_TOP_PAIRS = 25;
 export const META_TOP_TEAMS = 20;
 

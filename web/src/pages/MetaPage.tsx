@@ -1,17 +1,12 @@
-// Meta data page. Section order diverges from app.py:_render_meta — the
-// webapp leads with the empirical top-teams table, then the model's
-// extreme couplings / biases:
+// Meta data page:
 //   PageTitle
 //   §01  Top teams                 (top META_TOP_TEAMS by corpus count)
-//        — webapp-only; no Streamlit counterpart
 //   §02  Extreme couplings         (top META_TOP_PAIRS species pairs by APC-corrected synergy)
-//   §03  Extreme features by Bias  (top META_TOP_FEATURES, both directions)
 
 import { useMemo } from "react";
-import { META_TOP_FEATURES, META_TOP_PAIRS, META_TOP_TEAMS } from "../constants";
+import { META_TOP_PAIRS, META_TOP_TEAMS } from "../constants";
 import { useModel } from "../state/ModelContext";
 import { PageTitle, SectionLabel } from "../render/atoms";
-import { FeatureBiasTable } from "../meta/FeatureBiasTable";
 import {
   SpeciesCouplingsTable,
   type SpeciesCouplingRow,
@@ -64,19 +59,6 @@ export function MetaPage() {
     return buildSpeciesCouplingRows(speciesGraph);
   }, [speciesGraph]);
 
-  const sorted = useMemo(() => {
-    if (!model) return null;
-    const V = model.V;
-    const orderDesc = Array.from({ length: V }, (_, i) => i);
-    orderDesc.sort((a, b) => model.h[b] - model.h[a]);
-    const orderAsc = [...orderDesc].reverse();
-
-    let maxM = 0;
-    for (let i = 0; i < V; i++) if (model.m[i] > maxM) maxM = model.m[i];
-
-    return { orderDesc, orderAsc, maxM };
-  }, [model]);
-
   const corpusCaption = model
     ? `Reg ${model.regulation} · ${model.nCorpusTeams.toLocaleString()} teams`
     : undefined;
@@ -89,7 +71,7 @@ export function MetaPage() {
         rightCaption={corpusCaption}
       />
 
-      {status === "loading" || model === null || sorted === null ? (
+      {status === "loading" || model === null ? (
         <p style={{ color: "var(--lab-ink-muted)" }}>Loading model…</p>
       ) : <>
 
@@ -143,34 +125,6 @@ export function MetaPage() {
           </div>
         </>
       )}
-
-      <SectionLabel
-        num="03"
-        title="Extreme features by Bias"
-        right={`top ${META_TOP_FEATURES} each direction · ranked by Bias`}
-      />
-      <div className="lab-split-pair">
-        <div>
-          <div className="lab-subheading lab-subheading-pos">
-            Top Positive Bias · most popular
-          </div>
-          <FeatureBiasTable
-            order={sorted.orderDesc.slice(0, META_TOP_FEATURES)}
-            maxM={sorted.maxM}
-            model={model}
-          />
-        </div>
-        <div>
-          <div className="lab-subheading lab-subheading-neg">
-            Top Negative Bias · most unlikely
-          </div>
-          <FeatureBiasTable
-            order={sorted.orderAsc.slice(0, META_TOP_FEATURES)}
-            maxM={sorted.maxM}
-            model={model}
-          />
-        </div>
-      </div>
       </>}
     </>
   );

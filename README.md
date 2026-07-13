@@ -9,9 +9,7 @@ The core model is a **pairwise maximum-entropy (inverse Ising)** fit on tourname
 
 Models are organized by regulation (e.g. M-A, M-B) and discoverable via a `manifest.json` that the webapp fetches on boot. A collapsible model picker groups available models by regulation.
 
-The webapp surfaces these as a **team completer** (parallel-tempered MCMC or greedy sampling), **per-team diagnostics** (pairwise couplings, swap suggestions, nearest observed teams), and **format-wide statistics** (bias rankings, extreme couplings). An **Articles** section holds interactive explainers: "The Science of k2dex" walks through the math from first principles with toy simulations, and "Why Not Just Count?" compares the model head-to-head against the raw co-occurrence baseline every other teambuilder uses.
-
-A local Streamlit webapp is also available, which surfaces all available models, parameters and options. Intended as a scientific dashboard and playground, rather than as a tool for competitive Pokemon.
+The webapp surfaces these as a **team completer** (parallel-tempered MCMC or greedy sampling), **per-team diagnostics** (pairwise couplings, swap suggestions, nearest observed teams), and **format-wide statistics** (top teams, extreme couplings). An **Articles** section holds interactive explainers: "The Science of k2dex" walks through the math from first principles with toy simulations, and "Why Not Just Count?" compares the model head-to-head against the raw co-occurrence baseline every other teambuilder uses.
 
 **[Live site →](https://kylehtunis.github.io/k2dex/)**
 
@@ -25,12 +23,10 @@ k2dex/                  Python package: model fitting, sampling, rendering
   models.py             fit_pl_ising: per-spin L2 logistic regression + symmetrize
   sampling.py           MCMC family (swap / anneal / PT) + mean-field + greedy + rank_single_swaps
   rendering.py          Diagnostic helpers + markdown-table builders
-  rendering_html.py     Lab-notebook HTML helpers (sprites, slot cards, tables)
-  styles.py             Design tokens + Streamlit widget overrides
+  rendering_html.py     species_to_slug: species name → Showdown sprite slug (parity-gated)
   tournament_ingest.py   Tournament data ingest, in-person import, and unified cache
 
 scripts/                CLI entry points
-  app.py                Streamlit webapp
   precompute.py         Offline pipeline: fits one model per invocation → web/public/models/<slug>/
   scotus_precompute.py  SCOTUS inverse Ising fits → web/public/scotus/
 
@@ -44,13 +40,13 @@ web/                    Static React/TypeScript webapp (see below)
 
 ## Tech stacks
 
-### Python (research + Streamlit app)
+### Python (research + offline pipeline)
 
-Dependencies are listed in `requirements.txt`: numpy, scipy, scikit-learn, streamlit, matplotlib, and jupyterlab.
+Dependencies are listed in `requirements.txt`: numpy, scipy, scikit-learn, matplotlib, and jupyterlab.
 
 ### Static webapp (React/TypeScript)
 
-A Vite + React 18 + TypeScript app under `web/`: a static site deployed to GitHub Pages, polishing and expanding upon the Streamlit app. All sampler math is a faithful 1:1 port of `k2dex/sampling.py`, gated by cross-stack parity tests (`tests/test_parity.py`).
+A Vite + React 18 + TypeScript app under `web/`: a static site deployed to GitHub Pages. All sampler math is a faithful 1:1 port of `k2dex/sampling.py`, gated by cross-stack parity tests (`tests/test_parity.py`).
 
 Dependencies: `react-router-dom` (routing), `react-select` (vocab dropdowns), `react-katex` + `katex` (math typesetting on /science). Dev tooling: Vite, TypeScript, Vitest.
 
@@ -131,15 +127,7 @@ npm run dev        # local dev server at http://localhost:5173
 
 The precomputed model artifacts in `web/public/models/` are already committed to git, so you can skip steps 2-3 if you just want to run the webapp as-is.
 
-### 5. Run the Streamlit dashboard
-
-```bash
-streamlit run scripts/app.py
-```
-
-The Streamlit app is a development/research tool with a model selector dropdown driven by the same `manifest.json`. It fits models live from the cache (via `@st.cache_resource`) rather than loading precomputed binaries. Requires the cache to be populated first (step 2).
-
-### 6. Run tests
+### 5. Run tests
 
 ```bash
 # Python tests (includes parity checks against TypeScript outputs)
