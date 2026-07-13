@@ -27,9 +27,14 @@ export function Layout() {
     <div className="lab-container">
       <AnnouncementBanner />
       <header className="lab-header">
-        <Link to="/" className="lab-wordmark lab-wordmark-link">
-          k2dex
-        </Link>
+        <div className="lab-wordmark-block">
+          <Link to="/" className="lab-wordmark lab-wordmark-link">
+            k2dex
+          </Link>
+          <Link to="/articles/the-v2-update/" className="lab-wordmark-version">
+            v2.0
+          </Link>
+        </div>
         {!isArticles && <ModelPicker />}
       </header>
       <nav className="lab-tabs lab-tabs-split">

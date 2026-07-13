@@ -194,12 +194,31 @@
 }
 
 /* ===== Wordmark as nav link ===== */
+.lab-wordmark-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
 .lab-wordmark-link {
   text-decoration: none;
   color: inherit;
 }
 .lab-wordmark-link:hover {
   opacity: 0.75;
+}
+
+/* Version tag under the wordmark; links to the release-notes article. */
+.lab-wordmark-version {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--lab-ink-muted);
+  text-decoration: none;
+}
+.lab-wordmark-version:hover {
+  color: var(--lab-accent);
 }
 
 /* ===== Home page ===== */
