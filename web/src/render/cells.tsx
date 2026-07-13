@@ -107,6 +107,28 @@ export function ExcludedRow({ names, note }: ExcludedRowProps) {
   );
 }
 
+// ----- Included row ---------------------------------------------------
+
+export interface IncludedRowProps {
+  names: readonly string[];
+  note?: string;
+}
+
+export function IncludedRow({ names, note }: IncludedRowProps) {
+  if (names.length === 0 && !note) return null;
+  return (
+    <div className="lab-excluded-row">
+      {names.length > 0 && <span className="lab-excluded-label">only</span>}
+      {names.map((n) => (
+        <span key={n} className="lab-included-tag">
+          {extractSpecies(n)}
+        </span>
+      ))}
+      {note && <span className="lab-excluded-note">— {note}</span>}
+    </div>
+  );
+}
+
 // ----- Comp mon / inline mon / pair / swap ----------------------------
 
 export interface CompMonCellProps {
@@ -143,9 +165,18 @@ export function CompMonCell({ name }: CompMonCellProps) {
 export interface InlineMonProps {
   name: string;
   size?: number;
+  /** Set false to render an inert chip even under a FeatureModal provider —
+   * for use inside an enclosing click target (an expandable row), where a
+   * nested button would both swallow the row's own click and, for a bare
+   * species name, resolve to no vocab feature. */
+  interactive?: boolean;
 }
 
-export function InlineMon({ name, size = 32 }: InlineMonProps) {
+export function InlineMon({
+  name,
+  size = 32,
+  interactive = true,
+}: InlineMonProps) {
   const species = extractSpecies(name);
   const item = extractItem(name);
   const fm = useFeatureModal();
@@ -161,7 +192,7 @@ export function InlineMon({ name, size = 32 }: InlineMonProps) {
       )}
     </>
   );
-  if (fm) {
+  if (fm && interactive) {
     return (
       <button
         type="button"

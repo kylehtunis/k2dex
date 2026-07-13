@@ -238,6 +238,263 @@ def _init_chain(
     )
 
 
+# ---------- Universal Potts move kernel (per-chain) ----------
+#
+# Per-chain mirror of the batched training kernel in k2dex/models.py and the
+# 1:1 counterpart of web/src/sampler/potts.ts. The deterministic pieces
+# (`build_site_tables`, `site_conditional`) are parity-gated against the TS
+# side; the stochastic steps are exercised by the samplers/notebooks only.
+#
+# The model is a Potts model: sites = species, states = a species' item
+# features (relative to the absent reference). A species-swap integrates the
+# item out (Metropolized-Gibbs, accept on Z_B / Z_A, then draw the item from the
+# exact conditional); an item-reroll resamples one slot's item from its exact
+# conditional. Species-only (no items) is the degenerate case where each site
+# has one feature, so the species-swap acceptance reduces to exp(-ΔH/T)
+# (identical to `_local_swap_step`) and the reroll is a no-op.
+
+
+@dataclass
+class SiteTables:
+    """Per-site feature grouping + per-feature item id for the Potts kernel.
+
+    ``site_features[s]`` is species ``s``'s item-state flat indices (ascending);
+    ``item_id[f]`` is a contiguous integer per distinct item string
+    (first-appearance order), ``-1`` for itemless features. ``site_of[f]`` is the
+    inverse of ``site_features`` (feature -> site index), used by the swap step.
+    """
+    n_sites: int
+    site_features: list[list[int]]
+    item_id: list[int]
+    site_of: list[int]
+
+
+def build_site_tables(
+    species_of: list[str],
+    item_of: list[str | None],
+    V: int,
+) -> SiteTables:
+    """Group features by species (first-appearance order) and assign item ids.
+    Deterministic; parity-gated against ``potts.ts:buildSiteTables``."""
+    site_index: dict[str, int] = {}
+    site_features: list[list[int]] = []
+    site_of = [0] * V
+    for f in range(V):
+        sp = species_of[f]
+        s = site_index.get(sp)
+        if s is None:
+            s = len(site_features)
+            site_index[sp] = s
+            site_features.append([])
+        site_features[s].append(f)
+        site_of[f] = s
+    item_uniq: dict[str, int] = {}
+    item_id: list[int] = []
+    for f in range(V):
+        it = item_of[f] if item_of is not None else None
+        if it is None:
+            item_id.append(-1)
+            continue
+        if it not in item_uniq:
+            item_uniq[it] = len(item_uniq)
+        item_id.append(item_uniq[it])
+    return SiteTables(len(site_features), site_features, item_id, site_of)
+
+
+def site_conditional(
+    site: int,
+    r_feat: list[int],
+    r_item_id: list[int],
+    J: np.ndarray,
+    h_eff: np.ndarray,
+    inv_temp: float,
+    tables: SiteTables,
+    avail: np.ndarray,
+    r_weights: np.ndarray | None = None,
+) -> tuple[float, np.ndarray, np.ndarray, list[int]]:
+    """Per-chain item conditional for placing ``site`` alongside retained members
+    ``r_feat`` (item ids ``r_item_id``). Returns ``(log_z, neg_e, valid, feats)``:
+    ``neg_e = -E_slot / T`` with ``E_slot = -h_eff[f] - Σ_{r∈R} w_r J[f, r]``,
+    ``valid`` gates availability + item-exclusion, ``log_z`` is the tempered log
+    item-partition. ``r_weights`` (optional, default all-1) scales each retained
+    member's coupling -- the anchor-field tilt puts weight alpha on pin↔free
+    couplings. Parity-gated against ``potts.ts:siteConditional``."""
+    feats = tables.site_features[site]
+    feats_arr = np.asarray(feats, dtype=np.int64)
+    if r_feat:
+        j_block = J[np.ix_(feats_arr, np.asarray(r_feat, dtype=np.int64))]
+        if r_weights is not None:
+            j_sum = (j_block * r_weights).sum(axis=1)
+        else:
+            j_sum = j_block.sum(axis=1)
+    else:
+        j_sum = np.zeros(len(feats), dtype=np.float64)
+    neg_e = (h_eff[feats_arr] + j_sum) * inv_temp
+    r_set = {int(x) for x in r_item_id}
+    iid = np.array([tables.item_id[f] for f in feats], dtype=np.int64)
+    conflict = np.array([(i >= 0 and i in r_set) for i in iid], dtype=bool)
+    valid = (avail[feats_arr] != 0) & ~conflict
+    if valid.any():
+        masked = np.where(valid, neg_e, -np.inf)
+        mx = float(masked.max())
+        log_z = float(np.log(np.exp(masked - mx).sum()) + mx)
+    else:
+        log_z = float("-inf")
+    return log_z, neg_e, valid, feats
+
+
+def _sample_categorical(
+    neg_e: np.ndarray, valid: np.ndarray, rng: np.random.Generator,
+) -> int:
+    """Draw one index j ∝ exp(neg_e[j]) over valid entries (Gumbel-max)."""
+    g = -np.log(-np.log(rng.random(neg_e.shape)))
+    scores = np.where(valid, neg_e + g, -np.inf)
+    return int(np.argmax(scores))
+
+
+def _slot_energy(
+    f: int,
+    r_feat: list[int],
+    J: np.ndarray,
+    h_eff: np.ndarray,
+    r_weights: np.ndarray | None = None,
+) -> float:
+    """E_slot(f) = -h_eff[f] - Σ_{r∈R} w_r J[f, r] (w = 1 without weights)."""
+    if not r_feat:
+        return float(-h_eff[f])
+    row = J[f, r_feat]
+    j_sum = (row * r_weights).sum() if r_weights is not None else row.sum()
+    return float(-h_eff[f] - j_sum)
+
+
+def _anchor_weights(
+    n_pins: int, n_retained: int, anchor_strength: float,
+) -> np.ndarray | None:
+    """Anchor-tilt coupling weights for one free-slot move: the retained pins
+    (the leading ``n_pins`` entries of ``r_feat``, per ``_retained``) get weight
+    alpha, free retained members 1. ``None`` at alpha = 1 (no-tilt fast path).
+    The Python kernel has no site pins (TS-only), so the mover is always free.
+    """
+    if anchor_strength == 1.0 or n_pins == 0:
+        return None
+    w = np.ones(n_retained, dtype=np.float64)
+    w[:n_pins] = anchor_strength
+    return w
+
+
+def _retained(chain: _SwapChainState, out_k: int, fixed: list[int]) -> list[int]:
+    """The retained team: fixed pins + free-on slots except position out_k."""
+    r = list(fixed)
+    for k, f in enumerate(chain.on_nf):
+        if k != out_k:
+            r.append(f)
+    return r
+
+
+def _potts_species_swap_step(
+    chain: _SwapChainState,
+    *,
+    J: np.ndarray,
+    h_eff: np.ndarray,
+    T: float,
+    tables: SiteTables,
+    avail: np.ndarray,
+    fixed: list[int],
+    rng: np.random.Generator,
+    max_tries: int = 16,
+    anchor_strength: float = 1.0,
+) -> tuple[bool, bool]:
+    """One Metropolized-Gibbs species-swap on a random free slot. Mutates
+    ``chain`` in place on accept (state / state_f / on_nf / energy; off_nf is
+    not maintained -- the PT path does not read it). Returns (proposed,
+    accepted)."""
+    if not chain.on_nf:
+        return False, False
+    inv_temp = 1.0 / T
+    out_k = int(rng.integers(len(chain.on_nf)))
+    out_feat = chain.on_nf[out_k]
+    site_a = tables.site_of[out_feat]
+    r_feat = _retained(chain, out_k, fixed)
+    r_item_id = [tables.item_id[f] for f in r_feat]
+    r_weights = _anchor_weights(len(fixed), len(r_feat), anchor_strength)
+
+    present: set[int] = {tables.site_of[f] for f in r_feat}
+    present.add(site_a)
+    if len(present) >= tables.n_sites:
+        return False, False
+    site_b = int(rng.integers(tables.n_sites))
+    tries = 0
+    while site_b in present and tries < max_tries:
+        site_b = int(rng.integers(tables.n_sites))
+        tries += 1
+    if site_b in present:
+        return False, False
+
+    logz_a, _, _, _ = site_conditional(
+        site_a, r_feat, r_item_id, J, h_eff, inv_temp, tables, avail, r_weights)
+    logz_b, neg_e_b, valid_b, feats_b = site_conditional(
+        site_b, r_feat, r_item_id, J, h_eff, inv_temp, tables, avail, r_weights)
+    if not (np.isfinite(logz_a) and np.isfinite(logz_b)):
+        return False, False
+
+    log_ratio = logz_b - logz_a
+    accept = log_ratio >= 0.0 or rng.random() < np.exp(min(log_ratio, 0.0))
+    if not accept:
+        return True, False
+    choice = _sample_categorical(neg_e_b, valid_b, rng)
+    new_feat = feats_b[choice]
+    d_h = (_slot_energy(new_feat, r_feat, J, h_eff, r_weights)
+           - _slot_energy(out_feat, r_feat, J, h_eff, r_weights))
+    chain.state[out_feat] = False
+    chain.state[new_feat] = True
+    chain.state_f[out_feat] = 0.0
+    chain.state_f[new_feat] = 1.0
+    chain.on_nf[out_k] = new_feat
+    chain.energy += d_h
+    return True, True
+
+
+def _potts_track_reroll_step(
+    chain: _SwapChainState,
+    *,
+    J: np.ndarray,
+    h_eff: np.ndarray,
+    T: float,
+    tables: SiteTables,
+    avail: np.ndarray,
+    fixed: list[int],
+    rng: np.random.Generator,
+    anchor_strength: float = 1.0,
+) -> None:
+    """One Gibbs item-reroll on a random free slot (species unchanged; always
+    accepted). Mutates ``chain`` in place (off_nf not maintained)."""
+    if not chain.on_nf:
+        return
+    inv_temp = 1.0 / T
+    out_k = int(rng.integers(len(chain.on_nf)))
+    out_feat = chain.on_nf[out_k]
+    site = tables.site_of[out_feat]
+    r_feat = _retained(chain, out_k, fixed)
+    r_item_id = [tables.item_id[f] for f in r_feat]
+    r_weights = _anchor_weights(len(fixed), len(r_feat), anchor_strength)
+    log_z, neg_e, valid, feats = site_conditional(
+        site, r_feat, r_item_id, J, h_eff, inv_temp, tables, avail, r_weights)
+    if not np.isfinite(log_z):
+        return
+    choice = _sample_categorical(neg_e, valid, rng)
+    new_feat = feats[choice]
+    if new_feat == out_feat:
+        return
+    d_h = (_slot_energy(new_feat, r_feat, J, h_eff, r_weights)
+           - _slot_energy(out_feat, r_feat, J, h_eff, r_weights))
+    chain.state[out_feat] = False
+    chain.state[new_feat] = True
+    chain.state_f[out_feat] = 0.0
+    chain.state_f[new_feat] = 1.0
+    chain.on_nf[out_k] = new_feat
+    chain.energy += d_h
+
+
 # ---------- The three swap-move samplers ----------
 
 def swap_mcmc(
@@ -380,17 +637,27 @@ def parallel_tempered_mcmc(
     *,
     species_of: list[str] | None = None,
     item_of: list[str | None] | None = None,
+    p_reroll: float = 0.5,
+    anchor_strength: float = 1.0,
 ) -> tuple[np.ndarray, float, float] | None:
     """Parallel-tempered MCMC. K chains run in parallel at temperatures
-    `t_ladder` (sorted ascending; index 0 is the target / cold chain). Every
-    `swap_interval` sweeps, propose adjacent-chain state swaps with the
+    `t_ladder` (sorted ascending; index 0 is the target / cold chain). The inner
+    move is the universal Potts kernel: each sweep is a species-swap, or -- when
+    the model tracks items -- with probability `p_reroll` an item-reroll instead.
+    Every `swap_interval` sweeps, propose adjacent-chain state swaps with the
     standard replica-exchange acceptance
     `min(1, exp((1/T_lo - 1/T_hi) * (E_lo - E_hi)))`. Samples are collected
     from the cold chain only, after burn-in.
 
     Replica-exchange swaps (between chains) don't need a uniqueness check --
     both chains are individually valid, so swapping whole states preserves
-    validity.
+    validity. `p_reroll` matches the TS `pReroll` default so both surfaces use
+    the same move proportions.
+
+    `anchor_strength` (alpha) is the anchor-field tilt: the target becomes
+    `H_alpha = H - (alpha-1) * sum_{p in fixed, j free} J[p, j] s_j`, scaling
+    pin<->free couplings by alpha so completions build around the pins.
+    1.0 = no tilt; no effect when `fixed` is empty.
 
     Returns (cold_chain_samples, mean_local_accept, mean_swap_accept) or None.
     """
@@ -409,6 +676,24 @@ def parallel_tempered_mcmc(
 
     h_eff = field_weight * h
 
+    # Potts move setup: site tables, availability mask, fixed pins. The species
+    # roster still comes from species_of; a species-only model (item_of falsy)
+    # has no tracks, so no reroll and the species-swap degenerates to the atomic
+    # swap. When species_of is None (Phase 1/2, distinct-by-vocab), synthesize a
+    # trivial per-feature species labelling so every feature is its own site.
+    sp_labels: list[str] = (
+        species_of if species_of is not None else [str(i) for i in range(n)]
+    )
+    it_labels: list[str | None] = (
+        item_of if item_of is not None else [None] * n
+    )
+    tables = build_site_tables(sp_labels, it_labels, n)
+    avail = np.ones(n, dtype=bool)
+    avail[list(excluded_set)] = False
+    avail[list(fixed_set)] = False
+    fixed_list = list(fixed_set)
+    has_tracks = item_of is not None and any(it is not None for it in item_of)
+
     chains: list[_SwapChainState] = []
     for _ in range(K):
         c = _init_chain(
@@ -417,18 +702,34 @@ def parallel_tempered_mcmc(
         )
         if c is None:
             return None
+        # _init_chain's energy is the untilted H(h_eff); correct it to H_alpha
+        # so move deltas (tilted slot energies) and replica exchange stay
+        # consistent. All of on_nf is free (Python has no site pins).
+        if anchor_strength != 1.0 and fixed_list and c.on_nf:
+            cross = float(J[np.ix_(fixed_list, c.on_nf)].sum())
+            c.energy -= (anchor_strength - 1.0) * cross
         chains.append(c)
 
     samples = np.zeros((n_steps, n), dtype=bool)
     local_accept = local_propose = swap_accept = swap_propose = 0
 
     for step in range(n_steps):
-        # One local MH move in each chain at its own temperature.
+        # One Potts move in each chain at its own temperature: a species-swap,
+        # or an item-reroll (chosen with probability p_reroll when tracks exist).
+        # Reroll is a Gibbs step (always accepted), not counted toward the
+        # species-swap MH acceptance statistic.
         for k in range(K):
-            prop, acc = _local_swap_step(
+            if has_tracks and rng.random() < p_reroll:
+                _potts_track_reroll_step(
+                    chains[k], J=J, h_eff=h_eff, T=t_ladder[k],
+                    tables=tables, avail=avail, fixed=fixed_list, rng=rng,
+                    anchor_strength=anchor_strength,
+                )
+                continue
+            prop, acc = _potts_species_swap_step(
                 chains[k], J=J, h_eff=h_eff, T=t_ladder[k],
-                fixed_species=fixed_species, fixed_items=fixed_items,
-                species_of=species_of, item_of=item_of, rng=rng,
+                tables=tables, avail=avail, fixed=fixed_list, rng=rng,
+                anchor_strength=anchor_strength,
             )
             local_propose += int(prop)
             local_accept += int(acc)
@@ -453,6 +754,38 @@ def parallel_tempered_mcmc(
     )
 
 
+# ---------- Anchor-field tilt (static surfaces) ----------
+
+def anchor_boost(
+    J: np.ndarray,
+    pins: list[int],
+    anchor_strength: float,
+    species_of: list[str] | None = None,
+) -> np.ndarray:
+    """Anchor-field tilt boost for static (feature-pin) surfaces:
+    ``boost[j] = (alpha-1) * sum_{p in pins} J[p, j]``, zeroed on every feature
+    of a pinned species (pin<->pin couplings are untilted, and pins never
+    move). Adding this to ``h_eff`` makes the pairwise energy equal
+    ``H_alpha = H - (alpha-1) * sum_{p, j free} J[p, j] s_j``, the same tilted
+    measure the PT Potts kernel targets via ``r_weights``. Mirrors
+    ``sampler/energy.ts:anchorBoost`` (parity-gated indirectly via the
+    meanfield and greedy cases)."""
+    V = J.shape[0]
+    boost = np.zeros(V, dtype=np.float64)
+    if anchor_strength == 1.0 or not pins:
+        return boost
+    pin_arr = np.asarray(pins, dtype=np.int64)
+    boost = (anchor_strength - 1.0) * J[pin_arr].sum(axis=0)
+    if species_of is not None:
+        pin_species = {species_of[int(p)] for p in pins}
+        for j in range(V):
+            if species_of[j] in pin_species:
+                boost[j] = 0.0
+    else:
+        boost[pin_arr] = 0.0
+    return boost
+
+
 # ---------- Mean-field marginals ----------
 
 def meanfield_marginals(
@@ -468,6 +801,7 @@ def meanfield_marginals(
     n_iters: int = 200,
     tol: float = 1e-5,
     damp: float = 0.5,
+    anchor_strength: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray, int] | None:
     """Damped mean-field iteration on the Ising-pair model with `fixed` clamped
     to 1 and `excluded` clamped to 0. Returns (marginals, valid_mask, iters)
@@ -484,6 +818,8 @@ def meanfield_marginals(
     """
     V = len(h)
     h_eff = field_weight * h
+    if anchor_strength != 1.0:
+        h_eff = h_eff + anchor_boost(J, fixed, anchor_strength, species_of)
     fixed_mask = np.zeros(V, dtype=bool)
     fixed_mask[fixed] = True
     excluded_mask = np.zeros(V, dtype=bool)
@@ -541,9 +877,12 @@ def greedy_optimize(
     species_of: list[str] | None = None,
     item_of: list[str | None] | None = None,
     max_swaps: int = 20,
+    anchor_strength: float = 1.0,
 ) -> tuple[list[int], list[dict]]:
     """Greedy steepest-descent over single-swap moves on the field-weighted
-    Ising energy `E_adj(s) = -(fw*h).s - 0.5 s'Js`.
+    Ising energy `E_adj(s) = -(fw*h).s - 0.5 s'Js`, plus the anchor-field
+    tilt when `anchor_strength` != 1 (pinned->free couplings scaled by alpha
+    via `anchor_boost`; `energy_raw_after` stays untilted).
 
     At each step, evaluates every (non-pinned out-slot, valid in-candidate) swap
     in vectorized form and accepts the one with the most negative `dE_adj`.
@@ -560,9 +899,14 @@ def greedy_optimize(
     pinned_set = set(pinned)
     excluded_set = set(excluded)
 
+    # Adjusted field: fw*h plus the anchor-tilt boost (zero at alpha = 1).
+    h_adj = fw * h
+    if anchor_strength != 1.0:
+        h_adj = h_adj + anchor_boost(J, pinned, anchor_strength, species_of)
+
     def team_e_adj(team_set: set[int]) -> float:
         arr = np.fromiter(team_set, dtype=np.int64, count=len(team_set))
-        h_sum = float((fw * h[arr]).sum())
+        h_sum = float(h_adj[arr].sum())
         j_sum = float(J[np.ix_(arr, arr)].sum() * 0.5)
         return -h_sum - j_sum
 
@@ -589,8 +933,8 @@ def greedy_optimize(
             others_arr = np.fromiter(others, dtype=np.int64, count=len(others))
 
             # Vectorized dE_adj across all candidate in_idxs (V-length array).
-            # delta = -fw*(h[in] - h[out]) - (J[in, others].sum() - J[out, others].sum())
-            h_part = -fw * (h - h[out_idx])
+            # delta = -(h_adj[in] - h_adj[out]) - (J[in, others].sum() - J[out, others].sum())
+            h_part = -(h_adj - h_adj[out_idx])
             J_part = -(J[:, others_arr].sum(axis=1) - J[out_idx, others_arr].sum())
             delta_E_all = h_part + J_part
 

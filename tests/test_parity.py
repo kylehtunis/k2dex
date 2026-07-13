@@ -26,13 +26,22 @@ from pathlib import Path
 import numpy as np
 
 from k2dex.sampling import (
+    build_site_tables,
     greedy_optimize,
     meanfield_marginals,
     rank_single_swaps,
+    site_conditional,
 )
 from collections import Counter
 
-from k2dex.rendering import intra_team_sum_j, nearest_observed, pairwise_j_rows
+from k2dex.rendering import (
+    build_cooccurrence,
+    cooccurrence_greedy,
+    intra_team_sum_j,
+    nearest_observed,
+    pairwise_j_rows,
+    score_cooccurrence,
+)
 from k2dex.rendering_html import species_to_slug
 
 
@@ -75,6 +84,7 @@ class TestParity(unittest.TestCase):
                     field_weight=inp["fieldWeight"],
                     species_of=self.species_of, item_of=self.item_of,
                     n_iters=inp["nIters"], tol=inp["tol"], damp=inp["damp"],
+                    anchor_strength=inp.get("anchorStrength", 1.0),
                 )
                 expected = case["expected"]
                 if expected is None:
@@ -106,6 +116,7 @@ class TestParity(unittest.TestCase):
                     field_weight=inp["fieldWeight"],
                     species_of=self.species_of, item_of=self.item_of,
                     max_swaps=inp["maxSwaps"],
+                    anchor_strength=inp.get("anchorStrength", 1.0),
                 )
                 expected = case["expected"]
                 self.assertEqual(sorted(final_team), expected["finalTeam"],
@@ -207,6 +218,58 @@ class TestParity(unittest.TestCase):
             with self.subTest(input=case["input"]):
                 self.assertEqual(species_to_slug(case["input"]), case["expected"])
 
+    def test_site_tables_cases(self) -> None:
+        """build_site_tables parity: the per-site feature grouping and item-id
+        assignment must match potts.ts:buildSiteTables byte-for-byte."""
+        expected = self.baseline["siteTables"]
+        tables = build_site_tables(self.species_of, self.item_of, self.V)
+        self.assertEqual(tables.n_sites, expected["nSites"])
+        self.assertEqual(
+            [list(x) for x in tables.site_features], expected["siteFeatures"],
+        )
+        self.assertEqual(list(tables.item_id), expected["itemId"])
+
+    def test_site_conditional_cases(self) -> None:
+        """site_conditional parity: candidate feats, neg-energies, validity, and
+        the log item-partition must match potts.ts:siteConditional."""
+        tables = build_site_tables(self.species_of, self.item_of, self.V)
+        avail = np.ones(self.V, dtype=bool)
+        for case in self.baseline["siteConditional"]:
+            with self.subTest(case=case["name"]):
+                inp = case["input"]
+                r_feat = inp["rFeat"]
+                r_item_id = [tables.item_id[f] for f in r_feat]
+                r_weights_raw = inp.get("rWeights")
+                r_weights = (
+                    np.array(r_weights_raw, dtype=np.float64)
+                    if r_weights_raw is not None else None
+                )
+                log_z, neg_e, valid, feats = site_conditional(
+                    inp["site"], r_feat, r_item_id,
+                    self.J, self.h, inp["invTemp"], tables, avail,
+                    r_weights,
+                )
+                exp = case["expected"]
+                self.assertEqual(list(feats), exp["feats"],
+                                 f"feats mismatch for {case['name']}")
+                np.testing.assert_allclose(
+                    neg_e, np.array(exp["negE"]), atol=ATOL,
+                    err_msg=f"negE mismatch for {case['name']}",
+                )
+                np.testing.assert_array_equal(
+                    valid.astype(np.uint8),
+                    np.array(exp["valid"], dtype=np.uint8),
+                    err_msg=f"valid mismatch for {case['name']}",
+                )
+                if exp["logZ"] is None:
+                    self.assertFalse(np.isfinite(log_z),
+                                     f"expected -inf logZ for {case['name']}")
+                else:
+                    self.assertAlmostEqual(
+                        log_z, exp["logZ"], delta=ATOL,
+                        msg=f"logZ mismatch for {case['name']}",
+                    )
+
     def test_rank_cases(self) -> None:
         for case in self.baseline["rank"]:
             with self.subTest(case=case["name"]):
@@ -236,6 +299,52 @@ class TestParity(unittest.TestCase):
                     self.assertAlmostEqual(
                         py_entry["delta_sum_j"], js_entry["deltaSumJ"], delta=ATOL,
                     )
+
+    def test_cooccurrence_cases(self) -> None:
+        """build_cooccurrence / score_cooccurrence / cooccurrence_greedy parity.
+        The co-occurrence baseline is the naive foil the Ising model is compared
+        against in the "Why Not Just Count?" article; drift here would make that
+        comparison dishonest."""
+        cooc = self.baseline["cooccurrence"]
+        V = self.V
+
+        # Reconstruct the team-count dict from the emitted rosters, keyed by the
+        # same sorted-index "-"-joined scheme buildCooccurrence consumes.
+        team_counts: dict[str, int] = {}
+        for entry in cooc["rosters"]:
+            key = "-".join(str(i) for i in sorted(entry["team"]))
+            team_counts[key] = entry["count"]
+
+        C, m, n_teams = build_cooccurrence(team_counts, V)
+        exp_build = cooc["build"]
+        np.testing.assert_allclose(
+            C.reshape(-1), np.array(exp_build["C"]), atol=ATOL,
+            err_msg="cooccurrence C mismatch",
+        )
+        np.testing.assert_allclose(
+            m, np.array(exp_build["m"]), atol=ATOL,
+            err_msg="cooccurrence m mismatch",
+        )
+        self.assertEqual(n_teams, exp_build["nTeams"], "nTeams mismatch")
+
+        for case in cooc["scoreCases"]:
+            with self.subTest(case=case["name"]):
+                scores = score_cooccurrence(C, case["heldIn"])
+                np.testing.assert_allclose(
+                    scores, np.array(case["scores"]), atol=ATOL,
+                    err_msg=f"score mismatch for {case['name']}",
+                )
+
+        for case in cooc["greedyCases"]:
+            with self.subTest(case=case["name"]):
+                inp = case["input"]
+                team = cooccurrence_greedy(
+                    C, self.team_size,
+                    fixed=inp["fixed"], excluded=inp["excluded"],
+                    species_of=self.species_of, item_of=self.item_of,
+                )
+                self.assertEqual(team, case["finalTeam"],
+                                 f"greedy team mismatch for {case['name']}")
 
 
 if __name__ == "__main__":

@@ -15,10 +15,6 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function dimLabel(fd: number): string {
-  return fd === 1 ? "species" : "species + item";
-}
-
 function ModelOption({
   m,
   isActive,
@@ -47,7 +43,7 @@ function ModelOption({
         </span>
       )}
       <span className="lab-model-picker-option-meta">
-        {m.V.toLocaleString()} {dimLabel(m.featureDimensions)}
+        {m.V.toLocaleString()} features
         {" · "}
         {m.nCorpusTeams.toLocaleString()} teams
         {m.latestTournamentDate && (

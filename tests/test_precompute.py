@@ -110,7 +110,7 @@ class TestWriteModelRoundTrip(unittest.TestCase):
                         slug="synthetic",
                         display_name="Synthetic Test",
                         regulation="test",
-                        model_type="species",
+                        builder_type="species",
                         lam=10.0,
                         out_dir=Path(tmp),
                         force=True,
@@ -132,10 +132,16 @@ class TestWriteModelRoundTrip(unittest.TestCase):
             self.assertEqual(meta["feature_dimensions"], 1)
             self.assertEqual(meta["latest_tournament_date"], latest_date)
             self.assertEqual(meta["vocab"], vocab)
-            self.assertEqual(meta["species_of"], species_of)
-            self.assertEqual(meta["item_of"], item_of)
+            # v3 factored schema: species-only model has one site per feature,
+            # no tracks, and empty per-feature track_values.
+            self.assertNotIn("species_of", meta)
+            self.assertNotIn("item_of", meta)
+            self.assertEqual(meta["sites"], species_of)
+            self.assertEqual(meta["site_of"], list(range(V)))
+            self.assertEqual(meta["tracks"], [])
+            self.assertEqual(meta["track_values"], [[] for _ in range(V)])
             self.assertEqual(meta["n_corpus_teams"], 14)
-            self.assertEqual(meta["schema_version"], 2)
+            self.assertEqual(meta["schema_version"], 3)
             self.assertEqual(meta["fit"]["lambda"], 10.0)
 
             h_read = np.fromfile(model_dir / "h.bin", dtype=np.float32)
@@ -154,6 +160,55 @@ class TestWriteModelRoundTrip(unittest.TestCase):
             with open(model_dir / "team_counts.json") as f:
                 tc = json.load(f)
             self.assertEqual(tc, {"0-1-2-3-4-5": 10, "6-7-8-9-10-11": 4})
+
+    def test_species_item_factored_schema(self) -> None:
+        """A species+item model derives one 'item' track and per-feature
+        track_values, grouping features onto their shared species site."""
+        rng = np.random.default_rng(7)
+        # Three species (A, B, C) with 2 / 1 / 2 item states -> V = 5.
+        species_of = ["A", "A", "B", "C", "C"]
+        item_of = ["Life Orb", "None", "Focus Sash", "Leftovers", "None"]
+        vocab = [precompute_format(s, i) for s, i in zip(species_of, item_of)]
+        V = len(vocab)
+        m = rng.uniform(0.01, 0.4, size=V).astype(np.float64)
+        h = rng.standard_normal(V).astype(np.float64)
+        J_asym = rng.standard_normal((V, V))
+        J = 0.5 * (J_asym + J_asym.T)
+        np.fill_diagonal(J, 0.0)
+        team_counts = Counter({frozenset(vocab[:5]): 3})
+        latest_date = "2026-01-15T00:00:00.000Z"
+
+        fake_builder = mock.Mock(return_value=(
+            vocab, m, J, h, team_counts, species_of, item_of, latest_date,
+        ))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(precompute.MODEL_BUILDERS, {"species_item": fake_builder}):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    precompute.write_model(
+                        slug="synthetic-si",
+                        display_name="Synthetic SI",
+                        regulation="test",
+                        builder_type="species_item",
+                        lam=4.5,
+                        out_dir=Path(tmp),
+                        force=True,
+                    )
+            with open(Path(tmp) / "synthetic-si" / "meta.json") as f:
+                meta = json.load(f)
+        self.assertEqual(meta["feature_dimensions"], 2)
+        self.assertEqual(meta["schema_version"], 3)
+        self.assertEqual(meta["sites"], ["A", "B", "C"])
+        self.assertEqual(meta["site_of"], [0, 0, 1, 2, 2])
+        self.assertEqual(meta["tracks"], [{"name": "item", "unique": True}])
+        self.assertEqual(
+            meta["track_values"],
+            [["Life Orb"], ["None"], ["Focus Sash"], ["Leftovers"], ["None"]],
+        )
+
+
+def precompute_format(species: str, item: str | None) -> str:
+    return species if item is None else f"{species} @ {item}"
 
 
 if __name__ == "__main__":

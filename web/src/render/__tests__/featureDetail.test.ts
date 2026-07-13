@@ -1,19 +1,20 @@
 // Unit tests for the feature-detail helpers (webapp-only; no parity row).
 // A small hand-built model with known J / h / m and a tiny corpus index lets
-// us assert structural filtering, coupling ordering, corpus conditioning, and
+// us assert species-level coupling ordering, corpus conditioning, and
 // ranks exactly.
 
 import { describe, expect, it } from "vitest";
-import type { IsingModel, TeamCounts } from "../../sampler/types";
+import type { IsingModel, SpeciesGraph, TeamCounts } from "../../sampler/types";
+import { factoredFromSpeciesItem } from "../../sampler/model";
 import {
   featureCorpusAppearances,
-  featureCouplings,
+  speciesCouplings,
   featureRanks,
 } from "../featureDetail";
 
-// V=6. Feature 0 ("A @ x") shares species A with 1 and item x with 2, so both
-// of those pairs are non-structural and must be filtered out regardless of how
-// large their J is. Partners 3, 4, 5 are structural.
+// V=6. Species A has two features (0, 1). Partners C, D, E are structural.
+// Species B shares item "x" with A@x but is a different species so it IS
+// structural at the species level.
 function buildModel(): IsingModel {
   const V = 6;
   const speciesOf = ["A", "A", "B", "C", "D", "E"];
@@ -27,11 +28,15 @@ function buildModel(): IsingModel {
     J[i * V + j] = v;
     J[j * V + i] = v;
   };
-  set(0, 1, 9); // same species  -> filtered
-  set(0, 2, 9); // same item "x" -> filtered
-  set(0, 3, 0.5); // structural synergy
-  set(0, 4, 0.8); // structural synergy (strongest)
-  set(0, 5, -0.3); // structural antisynergy
+  set(0, 1, 9); // same species — species graph ignores
+  set(0, 2, 0.6); // A@x <-> B@x
+  set(1, 2, 0.4); // A   <-> B@x
+  set(0, 3, 0.5); // A@x <-> C
+  set(1, 3, 0.3); // A   <-> C
+  set(0, 4, 0.8); // A@x <-> D
+  set(1, 4, 0.2); // A   <-> D
+  set(0, 5, -0.3); // A@x <-> E
+  set(1, 5, -0.1); // A   <-> E
 
   const h = Float64Array.from([0.1, 0.5, -0.2, 0.3, 0.0, 0.4]);
   const m = Float64Array.from([0.2, 0.3, 0.1, 0.05, 0.25, 0.15]);
@@ -39,36 +44,64 @@ function buildModel(): IsingModel {
   const indexOf = new Map<string, number>();
   vocab.forEach((s, i) => indexOf.set(s, i));
 
+  const factored = factoredFromSpeciesItem(speciesOf, itemOf);
   return {
     id: "fd", displayName: "FD", regulation: "test",
     featureDimensions: 2, latestTournamentDate: "",
-    V, teamSize: 6, vocab, speciesOf, itemOf, m, J, h, indexOf,
+    V, teamSize: 6, vocab, speciesOf, itemOf, ...factored, m, J, h, indexOf,
     nCorpusTeams: 20, name: "fd",
   };
 }
 
-describe("featureCouplings", () => {
-  it("drops non-structural pairs and ranks by signed J", () => {
+// Build a mock SpeciesGraph matching the model above. Species in
+// alphabetical order: [A, B, C, D, E]. Synergy = grand mean of each
+// cross-species J block.
+function buildGraph(): SpeciesGraph {
+  const species = ["A", "B", "C", "D", "E"];
+  const S = species.length;
+  const synergy = new Float64Array(S * S);
+  const corrected = new Float64Array(S * S);
+
+  // A(feats 0,1) <-> B(feat 2): block is [[0.6],[0.4]], mean = 0.5
+  const setSym = (a: number, b: number, syn: number, corr: number) => {
+    synergy[a * S + b] = syn;
+    synergy[b * S + a] = syn;
+    corrected[a * S + b] = corr;
+    corrected[b * S + a] = corr;
+  };
+  setSym(0, 1, 0.5, 0.4);   // A-B
+  setSym(0, 2, 0.4, 0.35);  // A-C: mean of [0.5, 0.3] = 0.4
+  setSym(0, 3, 0.5, 0.45);  // A-D: mean of [0.8, 0.2] = 0.5
+  setSym(0, 4, -0.2, 0.15); // A-E: mean of [-0.3, -0.1] = -0.2
+
+  const indexOf = new Map<string, number>();
+  species.forEach((s, i) => indexOf.set(s, i));
+  return { species, synergy, corrected, indexOf };
+}
+
+describe("speciesCouplings", () => {
+  it("returns species-level synergies ranked by synergy desc", () => {
     const model = buildModel();
-    const { synergies, antisynergies } = featureCouplings(model, 0);
+    const graph = buildGraph();
+    // Site 0 = species A (features 0,1).
+    const { synergies, antisynergies } = speciesCouplings(model, graph, 0);
 
-    // Same-species (1) and same-item (2) partners are excluded despite J=9.
-    const allIdxs = [...synergies, ...antisynergies].map((c) => c.idx);
-    expect(allIdxs).not.toContain(1);
-    expect(allIdxs).not.toContain(2);
+    // Synergies: A-B (syn=0.5), A-D (syn=0.5), A-C (syn=0.4) — sorted by synergy desc
+    expect(synergies.length).toBeGreaterThanOrEqual(3);
+    expect(synergies[0].synergy).toBeCloseTo(0.5);
+    expect(synergies[2].synergy).toBeCloseTo(0.4);
 
-    // Synergies strongest-first; antisynergies most-negative-first.
-    expect(synergies.map((c) => c.idx)).toEqual([4, 3]);
-    expect(synergies[0].jValue).toBeCloseTo(0.8);
-    expect(antisynergies.map((c) => c.idx)).toEqual([5]);
-    expect(antisynergies[0].jValue).toBeCloseTo(-0.3);
+    // Antisynergies: A-E (syn=-0.2)
+    expect(antisynergies).toHaveLength(1);
+    expect(antisynergies[0].species).toBe("E");
+    expect(antisynergies[0].synergy).toBeCloseTo(-0.2);
   });
 
   it("respects topN", () => {
     const model = buildModel();
-    const { synergies } = featureCouplings(model, 0, 1);
-    expect(synergies).toHaveLength(1);
-    expect(synergies[0].idx).toBe(4);
+    const graph = buildGraph();
+    const { synergies } = speciesCouplings(model, graph, 0, 2);
+    expect(synergies).toHaveLength(2);
   });
 });
 

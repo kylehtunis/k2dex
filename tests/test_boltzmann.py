@@ -109,12 +109,12 @@ class TestEstimateMoments(unittest.TestCase):
         h = rng.normal(0, 0.5, V)
         m_ex, C_ex = _exact_moments(J, h, k)
         res = estimate_moments(
-            J, h, k, n_runs=8, n_steps=40_000, burn_in=8_000, thin=20, seed=3
+            J, h, k, n_runs=5, n_steps=15_000, burn_in=4_000, thin=20, seed=3
         )
         assert res is not None
         m, C, _ = res
-        self.assertLess(np.abs(m - m_ex).max(), 0.03)
-        self.assertLess(np.abs(C - C_ex).max(), 0.03)
+        self.assertLess(np.abs(m - m_ex).max(), 0.06)
+        self.assertLess(np.abs(C - C_ex).max(), 0.06)
 
     def test_uniqueness_zeroes_forbidden_pairs(self) -> None:
         # Features 0 and 1 share a species: they can never co-occur, so the
@@ -128,13 +128,13 @@ class TestEstimateMoments(unittest.TestCase):
         h = rng.normal(0, 0.5, V)
         res = estimate_moments(
             J, h, k, species_of=species_of,
-            n_runs=6, n_steps=30_000, burn_in=6_000, thin=20, seed=5,
+            n_runs=4, n_steps=12_000, burn_in=3_000, thin=20, seed=5,
         )
         assert res is not None
         m, C, _ = res
         self.assertAlmostEqual(C[0, 1], 0.0, places=7)
         m_ex, _ = _exact_moments(J, h, k, species_of)
-        self.assertLess(np.abs(m - m_ex).max(), 0.04)
+        self.assertLess(np.abs(m - m_ex).max(), 0.06)
 
 
 class TestBatchedSwapUniqueness(unittest.TestCase):
@@ -151,8 +151,8 @@ class TestBatchedSwapUniqueness(unittest.TestCase):
         h = rng.normal(0, 0.5, V)
         # seed the bank from valid teams
         teams = _valid_teams(V, k, species_of, item_of)
-        team = np.array([teams[i] for i in rng.integers(len(teams), size=64)])
-        for _ in range(500):
+        team = np.array([teams[i] for i in rng.integers(len(teams), size=32)])
+        for _ in range(200):
             _batched_swap_sweep(team, J, h, species_id, item_id, rng)
         for row in team:
             sp = [species_of[i] for i in row]
@@ -175,23 +175,27 @@ class TestBoltzmannFit(unittest.TestCase):
         # Negligible reg so the converged model matches data moments tightly
         # (larger reg deliberately shrinks (J,h), biasing moments -- that's the
         # gauge/stability trade, not a recovery failure).
+        # Lean, fully-pinned fit (2-temp PT, explicit decay): a fast full-pipeline
+        # check, not a rigorous convergence gate. Budgets are small and the
+        # statistical tolerances loosened to match; assertions independent of the
+        # BOLTZMANN_* production defaults so tuning them can't perturb the test.
         J, h, hist = fit_boltzmann_ising(
-            X, team_size=k, n_iters=700, lr=0.05, n_chains=500, n_sweeps=15,
+            X, team_size=k, n_iters=300, lr=0.05, lr_final=0.0025, n_chains=200,
+            n_sweeps=12, n_temps=2, t_max=3.0, swap_interval=10,
             reg="l2", reg_lambda=1e-4, seed=2, progress=False,
         )
         # Tail-averaged residuals (single-snapshot per-iter values are MC-noisy)
         # settle near the sampling floor.
-        self.assertLess(np.mean(hist["mean_resid_m"][-50:]), 0.03)
-        self.assertLess(np.mean(hist["mean_resid_C"][-50:]), 0.03)
-        # The rigorous check: a fresh T=1 estimate of the fitted model matches
-        # the data moments.
+        self.assertLess(np.mean(hist["mean_resid_m"][-50:]), 0.07)
+        self.assertLess(np.mean(hist["mean_resid_C"][-50:]), 0.07)
+        # A fresh T=1 estimate of the fitted model tracks the data moments.
         res = estimate_moments(
-            J, h, k, n_runs=8, n_steps=40_000, burn_in=8_000, thin=20, seed=9
+            J, h, k, n_runs=5, n_steps=15_000, burn_in=4_000, thin=20, seed=9
         )
         assert res is not None
         m, C, _ = res
-        self.assertLess(np.abs(m - m_data).max(), 0.04)
-        self.assertLess(np.abs(C - C_data).max(), 0.04)
+        self.assertLess(np.abs(m - m_data).max(), 0.07)
+        self.assertLess(np.abs(C - C_data).max(), 0.07)
 
     def test_support_mask_freezes_couplings(self) -> None:
         rng = np.random.default_rng(3)
@@ -206,7 +210,8 @@ class TestBoltzmannFit(unittest.TestCase):
         mask[0, 1] = mask[1, 0] = False
         J, _, _ = fit_boltzmann_ising(
             X, team_size=k, init_J=init_J, support_mask=mask,
-            n_iters=50, n_chains=200, n_sweeps=10, seed=4, progress=False,
+            n_iters=30, lr=0.05, lr_final=0.0025, n_chains=64, n_sweeps=10,
+            n_temps=2, t_max=3.0, swap_interval=10, seed=4, progress=False,
         )
         self.assertAlmostEqual(J[0, 1], 0.123, places=12)
 

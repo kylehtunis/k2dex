@@ -9,6 +9,7 @@
 // /analysis.
 
 import type { IsingModel, GreedyChainEntry } from "./types";
+import { anchorBoost } from "./energy";
 
 export interface GreedyOpts {
   startingTeam: readonly number[];
@@ -16,6 +17,10 @@ export interface GreedyOpts {
   excluded: readonly number[];
   fieldWeight: number;
   maxSwaps?: number;
+  /** Anchor-field tilt alpha: pinned→free couplings enter the adjusted field
+   * (alpha-1)-fold extra via `anchorBoost`, so the descent targets H_alpha.
+   * Raw energies in the chain are unaffected. Default 1 (no tilt). */
+  anchorStrength?: number;
 }
 
 const DEFAULT_MAX_SWAPS = 20;
@@ -44,7 +49,7 @@ export function greedyOptimize(
   model: IsingModel,
   opts: GreedyOpts,
 ): { finalTeam: number[]; chain: GreedyChainEntry[] } {
-  const { V, J, h, speciesOf, itemOf } = model;
+  const { V, J, h, siteOf, tracks, trackValues } = model;
   const fw = opts.fieldWeight;
   const maxSwaps = opts.maxSwaps ?? DEFAULT_MAX_SWAPS;
 
@@ -52,8 +57,16 @@ export function greedyOptimize(
   const pinned = new Set<number>(opts.pinned);
   const excluded = new Set<number>(opts.excluded);
 
-  const eAdj = (team: number[]) =>
-    -fw * teamHSum(h, team) - teamSumJ(J, V, team);
+  // Adjusted field: fw*h plus the anchor-tilt boost (zero at alpha = 1).
+  const hAdj = new Float64Array(V);
+  for (let i = 0; i < V; i++) hAdj[i] = fw * h[i];
+  const alpha = opts.anchorStrength ?? 1;
+  if (alpha !== 1) {
+    const boost = anchorBoost(model, opts.pinned, alpha);
+    for (let i = 0; i < V; i++) hAdj[i] += boost[i];
+  }
+
+  const eAdj = (team: number[]) => -teamHSum(hAdj, team) - teamSumJ(J, V, team);
   const eRaw = (team: number[]) => -teamHSum(h, team) - teamSumJ(J, V, team);
 
   let energyAdj = eAdj([...current]);
@@ -83,37 +96,37 @@ export function greedyOptimize(
       const valid = new Uint8Array(V);
       for (let i = 0; i < V; i++) valid[i] = currentMask[i] ? 0 : 1;
       for (const ex of excluded) valid[ex] = 0;
-      if (speciesOf !== null) {
-        const othersSpecies = new Set<string>();
-        for (const j of others) othersSpecies.add(speciesOf[j]);
-        if (othersSpecies.size > 0) {
-          for (let i = 0; i < V; i++) {
-            if (valid[i] && othersSpecies.has(speciesOf[i])) valid[i] = 0;
-          }
+      // Site (species) uniqueness against the rest of the team.
+      const othersSites = new Set<number>();
+      for (const j of others) othersSites.add(siteOf[j]);
+      if (othersSites.size > 0) {
+        for (let i = 0; i < V; i++) {
+          if (valid[i] && othersSites.has(siteOf[i])) valid[i] = 0;
         }
       }
-      if (itemOf !== null) {
-        const othersItems = new Set<string>();
+      // Per-unique-track value uniqueness against the rest of the team.
+      for (let t = 0; t < tracks.length; t++) {
+        if (!tracks[t].unique) continue;
+        const othersValues = new Set<string>();
         for (const j of others) {
-          const it = itemOf[j];
-          if (it !== null) othersItems.add(it);
+          const v = trackValues[j][t];
+          if (v !== null) othersValues.add(v);
         }
-        if (othersItems.size > 0) {
-          for (let i = 0; i < V; i++) {
-            const it = itemOf[i];
-            if (valid[i] && it !== null && othersItems.has(it)) valid[i] = 0;
-          }
+        if (othersValues.size === 0) continue;
+        for (let i = 0; i < V; i++) {
+          const v = trackValues[i][t];
+          if (valid[i] && v !== null && othersValues.has(v)) valid[i] = 0;
         }
       }
 
-      // Scan candidates. ΔE_adj[i] = -fw*(h[i]-h[out]) - (J[i,others].sum() - jOutOthers)
-      const hOut = h[outIdx];
+      // Scan candidates. ΔE_adj[i] = -(hAdj[i]-hAdj[out]) - (J[i,others].sum() - jOutOthers)
+      const hAdjOut = hAdj[outIdx];
       for (let i = 0; i < V; i++) {
         if (!valid[i]) continue;
         let jInOthers = 0;
         const baseI = i * V;
         for (const j of others) jInOthers += J[baseI + j];
-        const delta = -fw * (h[i] - hOut) - (jInOthers - jOutOthers);
+        const delta = -(hAdj[i] - hAdjOut) - (jInOthers - jOutOthers);
         if (delta < bestDelta) {
           bestDelta = delta;
           bestOut = outIdx;

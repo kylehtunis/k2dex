@@ -10,18 +10,21 @@
 //   §06        — Suggested completion table (post-run)
 //
 // Full statistical sampler (default): PT MCMC in a Web Worker. Returns a
-// distribution of completions; PT options (temperature + advanced) are
-// shown.
+// distribution of completions. Samples the fitted model as-is (fw = 1,
+// T = 1 by default) — the Boltzmann fit is moment-matched, so no bias or
+// temperature correction is needed; temperature remains a tunable under
+// the advanced PT options.
 //
 // Greedy sampling (toggle on): MF marginals → uniqueness-respecting
-// greedy fill → greedy descent. Returns one team, fast, but can descend
-// into incoherent basins at low Bias Adjustment with few pins — so
-// checking it bumps Bias Adjustment to 0.8 and hides the PT options.
+// greedy fill → greedy descent. Returns one team, fast, hides the PT
+// options.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  FIELD_WEIGHT_OPTIONS,
+  ANCHOR_MAX,
+  ANCHOR_MIN,
+  ANCHOR_STEP,
   GREEDY_MAX_SWAPS,
   PT_BURN_IN,
   PT_HOT_T,
@@ -30,22 +33,24 @@ import {
   TOP_COMPLETIONS,
 } from "../constants";
 import { useModel } from "../state/ModelContext";
-import { usePageState } from "../state/PageStateContext";
+import { usePageState, type RosterSlot } from "../state/PageStateContext";
 import { PageTitle, SectionLabel, StatStrip } from "../render/atoms";
-import { ExcludedRow, SlotStrip } from "../render/cells";
-import {
-  SpeciesSelect,
-  VocabSelect,
-  speciesOptions,
-  vocabOptions,
-} from "../components/VocabSelect";
+import { ExcludedRow, IncludedRow } from "../render/cells";
+import { SpeciesSelect, speciesOptions } from "../components/VocabSelect";
+import { RosterEditor } from "../components/RosterEditor";
 import { runFastPath, type FastPathResult } from "../completer/fastPath";
+import { withInactiveTracks } from "../sampler/model";
 import { teamObservables } from "../render/observables";
 import { nearestObserved } from "../render/corpus";
+import { percentileTitle } from "../render/corpusScore";
 import {
-  CompletionRow,
-  CompletionTable,
-} from "../completer/CompletionRow";
+  CompletionCard,
+  CompletionList,
+} from "../completer/CompletionCard";
+import {
+  meanPairwiseDifference,
+  noveltyScore,
+} from "../completer/completionStats";
 import { formatSigned } from "../render/format";
 import {
   buildSlugIndex,
@@ -61,9 +66,11 @@ import { runPT, type PTDistEntry } from "../completer/ptDriver";
  * or a "Re-run" with a new seed (inputs unchanged). */
 interface PTInputFingerprint {
   fixed: readonly number[];
+  fixedSites: readonly number[];
+  speciesOnly: boolean;
   excluded: readonly number[];
-  fieldWeight: number;
   temperature: number;
+  anchorStrength: number;
   ptRuns: number;
   ptLadder: number;
   ptSweeps: number;
@@ -74,7 +81,7 @@ type RunState =
   | {
       mode: "fast";
       result: FastPathResult;
-      fieldWeight: number;
+      hideItems: boolean;
     }
   | {
       mode: "pt";
@@ -84,10 +91,10 @@ type RunState =
       swapAccept: number;
       fixed: readonly number[];
       excluded: readonly number[];
-      fieldWeight: number;
       temperature: number;
       elapsedMs: number;
       seed: number;
+      hideItems: boolean;
       fingerprint: PTInputFingerprint;
     };
 
@@ -97,10 +104,67 @@ export function CompleterPage() {
   const { completer, setCompleter } = usePageState();
 
   const {
-    fixedIdxs, excludedSpecies, fieldWeight, temperature,
-    usePT, ptRuns, ptLadder, ptSweeps, ptSwapInterval,
+    roster, inactiveTracks, excludedSpecies, includedSpecies,
+    temperature, anchorStrength, usePT, ptRuns, ptLadder, ptSweeps,
+    ptSwapInterval, showDiagnostics,
   } = completer;
-  const setFixedIdxs = (v: number[]) => setCompleter({ fixedIdxs: v });
+  const setRoster = (next: RosterSlot[]) => setCompleter({ roster: next });
+  // Reset every input on the page back to an empty query.
+  const clearAll = () =>
+    setCompleter({
+      roster: [], excludedSpecies: [], includedSpecies: [], inactiveTracks: [],
+    });
+
+  // Pin arrays derived from the ordered roster for the sampler + share links.
+  // Feature pins (item chosen) vs site pins (item left to the completer).
+  const fixedIdxs = roster.filter((s) => s.feature !== null).map((s) => s.feature as number);
+  const fixedSites = roster.filter((s) => s.feature === null).map((s) => s.site);
+
+  // Inclusion allow-list → effective exclude set. The sampler only knows how to
+  // exclude features, so an "only these Pokémon" constraint is expressed as
+  // excluding every species outside the allowed set (included ∪ pinned). This
+  // keeps the sampler untouched — the include list is pure boundary conversion.
+  const pinnedSpecies = model ? roster.map((s) => model.sites[s.site]) : [];
+  const allowedSpeciesSet =
+    model && includedSpecies.length > 0
+      ? new Set<string>([...includedSpecies, ...pinnedSpecies])
+      : null;
+  const effectiveExcludedSpecies =
+    allowedSpeciesSet && model
+      ? model.sites.filter((sp) => !allowedSpeciesSet.has(sp))
+      : excludedSpecies;
+  const effectiveExcludedIdxs = (() => {
+    if (!model) return [] as number[];
+    const set = new Set(effectiveExcludedSpecies);
+    const out: number[] = [];
+    for (let i = 0; i < model.V; i++) {
+      if (set.has(model.speciesOf[i])) out.push(i);
+    }
+    return out;
+  })();
+
+  // Attribute toggle. Today the only track is "item"; deactivating it drives
+  // species-only mode (marginalize + hide the item, no reroll, no uniqueness).
+  const itemTrackIdx = model ? model.tracks.findIndex((t) => t.name === "item") : -1;
+  const speciesOnly = itemTrackIdx >= 0 && inactiveTracks.includes(itemTrackIdx);
+  const effectiveModel = useMemo(
+    () => (model ? withInactiveTracks(model, inactiveTracks) : null),
+    [model, inactiveTracks],
+  );
+
+  // Toggle a track. Deactivating clears every slot's item (it's now hidden and
+  // filled by the completer), turning feature pins into species-only pins.
+  const toggleTrack = (ti: number, active: boolean) => {
+    if (!model) return;
+    if (active) {
+      setCompleter({ inactiveTracks: inactiveTracks.filter((t) => t !== ti) });
+      return;
+    }
+    setCompleter({
+      inactiveTracks: [...inactiveTracks.filter((t) => t !== ti), ti],
+      roster: roster.map((s) => ({ site: s.site, feature: null })),
+    });
+  };
 
   const currentModelId = model?.id ?? "—";
 
@@ -127,23 +191,40 @@ export function CompleterPage() {
         return; // re-run once the new model is ready
       }
       const slugIndex = buildSlugIndex(model);
-      const fixed: number[] = [];
+      const newRoster: RosterSlot[] = [];
       for (const f of d.features) {
-        const r = resolveFeature(slugIndex, model, f.speciesSlug, f.itemSlug);
-        if (r.idx !== null) fixed.push(r.idx);
+        if (f.itemSlug === null) {
+          // Bare mon = site-level pin: resolve the species to a site index.
+          const name = resolveSpeciesSlug(slugIndex, model, f.speciesSlug);
+          if (name) {
+            const site = model.sites.indexOf(name);
+            if (site >= 0) newRoster.push({ site, feature: null });
+          }
+        } else {
+          const r = resolveFeature(slugIndex, model, f.speciesSlug, f.itemSlug);
+          if (r.idx !== null) newRoster.push({ site: model.siteOf[r.idx], feature: r.idx });
+        }
       }
       const excluded: string[] = [];
       for (const slug of d.excludedSlugs) {
         const name = resolveSpeciesSlug(slugIndex, model, slug);
         if (name) excluded.push(name);
       }
+      const included: string[] = [];
+      for (const slug of d.includedSlugs) {
+        const name = resolveSpeciesSlug(slugIndex, model, slug);
+        if (name) included.push(name);
+      }
       appliedRef.current = identity;
+      const inactive = d.inactiveTracks.filter((t) => t >= 0 && t < model.tracks.length);
       setCompleter({
-        fixedIdxs: fixed.slice(0, TEAM_SIZE),
+        roster: newRoster.slice(0, TEAM_SIZE),
+        inactiveTracks: inactive,
         excludedSpecies: excluded,
-        fieldWeight: d.fieldWeight,
+        includedSpecies: included,
         usePT: d.usePT,
         temperature: d.temperature,
+        anchorStrength: d.anchorStrength,
         ptRuns: d.ptRuns,
         ptLadder: d.ptLadder,
         ptSweeps: d.ptSweeps,
@@ -156,20 +237,13 @@ export function CompleterPage() {
       return;
     }
 
-    // Legacy ?pinned= (set by the /science page): pin the species' most
-    // popular build.
+    // Legacy ?pinned= (set by the /science page): site-pin the species
+    // (species locked, item free — the natural "I want this Pokemon" pin).
     const pinned = searchParams.get("pinned");
     if (!pinned) return;
-    let bestIdx = -1;
-    let bestM = -1;
-    for (let i = 0; i < model.V; i++) {
-      if (model.speciesOf[i] === pinned && model.m[i] > bestM) {
-        bestM = model.m[i];
-        bestIdx = i;
-      }
-    }
+    const site = model.sites.indexOf(pinned);
     appliedRef.current = identity;
-    if (bestIdx !== -1) setCompleter({ fixedIdxs: [bestIdx] });
+    if (site >= 0) setCompleter({ roster: [{ site, feature: null }] });
   }, [status, model, modelId, searchParams, setCompleter, setModelId]);
 
   // Ephemeral state — not persisted across tab switches.
@@ -201,10 +275,6 @@ export function CompleterPage() {
     }
   }
 
-  const vocabOpts = useMemo(
-    () => (model ? vocabOptions(model) : []),
-    [model],
-  );
   const speciesOpts = useMemo(
     () => (model ? speciesOptions(model) : []),
     [model],
@@ -227,19 +297,35 @@ export function CompleterPage() {
     ? `Reg ${model.regulation} · ${model.nCorpusTeams.toLocaleString()} teams`
     : undefined;
 
-  const fixedNames = model ? fixedIdxs.map((i) => model.vocab[i]) : [];
-  const fixedSpeciesSet = model ? new Set(fixedIdxs.map((i) => model.speciesOf[i])) : new Set<string>();
+  const totalPins = roster.length;
+  const fixedSpeciesSet = model
+    ? new Set(roster.map((s) => model.sites[s.site]))
+    : new Set<string>();
   const overlap = excludedSpecies.filter((s) => fixedSpeciesSet.has(s));
   const overlapError =
     overlap.length > 0
       ? `Cannot be both pinned and excluded: ${overlap.join(", ")}`
+      : null;
+  const excludedSet = new Set(excludedSpecies);
+  const includeExcludeOverlap = includedSpecies.filter((s) => excludedSet.has(s));
+  const includeExcludeError =
+    includeExcludeOverlap.length > 0
+      ? `Cannot be both included and excluded: ${includeExcludeOverlap.join(", ")}`
+      : null;
+  // With an include list active, the allowed pool (included ∪ pinned) must be
+  // large enough to fill all six slots.
+  const allowedCount = allowedSpeciesSet ? allowedSpeciesSet.size : 0;
+  const includeCountError =
+    includedSpecies.length > 0 && allowedCount < TEAM_SIZE
+      ? `Include at least ${TEAM_SIZE} Pokémon (included + pinned) to fill a team. Currently ${allowedCount}.`
       : null;
   const ptTemperatureError =
     usePT && temperature >= PT_HOT_T
       ? `Temperature (${temperature}) must be strictly less than hot-T (${PT_HOT_T}) for the parallel-tempered sampler.`
       : null;
 
-  const formError = overlapError ?? ptTemperatureError;
+  const formError =
+    overlapError ?? includeExcludeError ?? includeCountError ?? ptTemperatureError;
   const canRun = !formError && !running;
 
   // True iff the most recent PT result was generated from the exact
@@ -247,14 +333,11 @@ export function CompleterPage() {
   // swap on the primary button.
   const isPTRerun = (() => {
     if (!usePT || runState?.mode !== "pt") return false;
-    const excludedNow: number[] = [];
-    const excludedSet = new Set(excludedSpecies);
-    for (let i = 0; i < (model?.V ?? 0); i++) {
-      if (excludedSet.has(model!.speciesOf[i])) excludedNow.push(i);
-    }
+    const excludedNow = effectiveExcludedIdxs;
     const fp = runState.fingerprint;
-    if (fp.fieldWeight !== fieldWeight) return false;
+    if (fp.speciesOnly !== speciesOnly) return false;
     if (fp.temperature !== temperature) return false;
+    if (fp.anchorStrength !== anchorStrength) return false;
     if (fp.ptRuns !== ptRuns) return false;
     if (fp.ptLadder !== ptLadder) return false;
     if (fp.ptSweeps !== ptSweeps) return false;
@@ -262,6 +345,10 @@ export function CompleterPage() {
     if (fp.fixed.length !== fixedIdxs.length) return false;
     for (let i = 0; i < fp.fixed.length; i++) {
       if (fp.fixed[i] !== fixedIdxs[i]) return false;
+    }
+    if (fp.fixedSites.length !== fixedSites.length) return false;
+    for (let i = 0; i < fp.fixedSites.length; i++) {
+      if (fp.fixedSites[i] !== fixedSites[i]) return false;
     }
     if (fp.excluded.length !== excludedNow.length) return false;
     for (let i = 0; i < fp.excluded.length; i++) {
@@ -282,18 +369,29 @@ export function CompleterPage() {
   // one write). Skipped while an incoming link is still pending decode and
   // when there's nothing worth sharing (empty roster + no excludes).
   const fixedKey = fixedIdxs.join(",");
+  const fixedSitesKey = fixedSites.join(",");
+  const inactiveKey = inactiveTracks.join(",");
   const excludedKey = [...excludedSpecies].sort().join(",");
+  const includedKey = [...includedSpecies].sort().join(",");
   const shareParams = useMemo(() => {
     if (!model) return null;
-    if (fixedIdxs.length === 0 && excludedSpecies.length === 0) return null;
+    if (
+      totalPins === 0 &&
+      excludedSpecies.length === 0 &&
+      includedSpecies.length === 0
+    )
+      return null;
     return encodeCompleter(
       {
         modelId,
-        fieldWeight,
         fixedIdxs,
+        fixedSites,
+        inactiveTracks,
         excludedSpecies,
+        includedSpecies,
         usePT,
         temperature,
+        anchorStrength,
         ptRuns,
         ptLadder,
         ptSweeps,
@@ -304,8 +402,9 @@ export function CompleterPage() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    model, modelId, fieldWeight, fixedKey, excludedKey, usePT, temperature,
-    ptRuns, ptLadder, ptSweeps, ptSwapInterval, seedForUrl,
+    model, modelId, fixedKey, fixedSitesKey, inactiveKey,
+    excludedKey, includedKey, usePT, temperature, anchorStrength, ptRuns,
+    ptLadder, ptSweeps, ptSwapInterval, seedForUrl,
   ]);
   useEffect(() => {
     if (!shareParams) return;
@@ -332,7 +431,12 @@ export function CompleterPage() {
     try {
       const text = await navigator.clipboard.readText();
       const { idxs, errors, warnings } = matchPaste(model, text);
-      if (idxs.length > 0) setFixedIdxs(idxs);
+      // A paste is a concrete roster of feature pins (species + item).
+      if (idxs.length > 0) {
+        setRoster(
+          idxs.slice(0, TEAM_SIZE).map((i) => ({ site: model.siteOf[i], feature: i })),
+        );
+      }
       setImportMsg({ error: errors[0] ?? null, warnings });
     } catch {
       setImportMsg({ error: "Couldn't read the clipboard.", warnings: [] });
@@ -356,7 +460,7 @@ export function CompleterPage() {
   };
 
   const onRun = () => {
-    if (!canRun || !model) return;
+    if (!canRun || !model || !effectiveModel) return;
     setErrorMsg(null);
     setRunning(true);
     // The displayed run now governs the URL seed; drop any armed link seed.
@@ -366,13 +470,15 @@ export function CompleterPage() {
       // Fast path — synchronous, ~50–200ms. queueMicrotask lets the
       // "Running…" state render once before the loop blocks.
       queueMicrotask(() => {
-        const r = runFastPath(model, {
+        const r = runFastPath(effectiveModel, {
           fixed: fixedIdxs,
-          excludedSpecies,
-          fieldWeight,
+          fixedSites,
+          excludedSpecies: effectiveExcludedSpecies,
+          fieldWeight: 1,
+          anchorStrength,
         });
         if (r.ok) {
-          setRunState({ mode: "fast", result: r.result, fieldWeight });
+          setRunState({ mode: "fast", result: r.result, hideItems: speciesOnly });
         } else {
           setErrorMsg(r.error.message);
           setRunState(null);
@@ -382,12 +488,8 @@ export function CompleterPage() {
       return;
     }
 
-    // PT path — in a Web Worker.
-    const excluded: number[] = [];
-    const excludedSet = new Set(excludedSpecies);
-    for (let i = 0; i < model.V; i++) {
-      if (excludedSet.has(model.speciesOf[i])) excluded.push(i);
-    }
+    // PT path — in a Web Worker. `excluded` folds in the include allow-list.
+    const excluded = effectiveExcludedIdxs;
     const t0 = startTimer();
     // Total sweeps include the locked burn-in so the user-displayed
     // "Samples per run" matches what's actually kept post burn-in.
@@ -395,18 +497,22 @@ export function CompleterPage() {
     setSeedCounter(seedCounter + 1);
     const fingerprint: PTInputFingerprint = {
       fixed: [...fixedIdxs],
+      fixedSites: [...fixedSites],
+      speciesOnly,
       excluded: [...excluded],
-      fieldWeight,
       temperature,
+      anchorStrength,
       ptRuns,
       ptLadder,
       ptSweeps,
       ptSwapInterval,
     };
-    runPT(model, {
+    runPT(effectiveModel, {
       fixed: fixedIdxs,
+      fixedSites,
       excluded,
-      fieldWeight,
+      fieldWeight: 1,
+      anchorStrength,
       coldT: temperature,
       hotT: PT_HOT_T,
       ladderLevels: ptLadder,
@@ -415,6 +521,9 @@ export function CompleterPage() {
       burnIn: PT_BURN_IN,
       swapInterval: ptSwapInterval,
       seed,
+      // Species-only: don't reroll the item, marginalize it into species sets.
+      pReroll: speciesOnly ? 0 : undefined,
+      projectToSites: speciesOnly,
     }).then((r) => {
       stopTimer();
       const elapsedFinal = performance.now() - t0;
@@ -428,10 +537,10 @@ export function CompleterPage() {
           swapAccept: r.swapAccept,
           fixed: fixedIdxs,
           excluded,
-          fieldWeight,
           temperature,
           elapsedMs: elapsedFinal,
           seed,
+          hideItems: speciesOnly,
           fingerprint,
         });
       } else {
@@ -456,115 +565,125 @@ export function CompleterPage() {
 
       <SectionLabel
         num="01"
-        title={`Starting roster · ${fixedIdxs.length} of ${TEAM_SIZE} set`}
+        title={`Starting roster · ${totalPins} of ${TEAM_SIZE} set`}
+        right="fill in what you want, the model does the rest"
       />
-      <SlotStrip picked={fixedNames} />
+      <RosterEditor
+        model={model}
+        roster={roster}
+        onChange={setRoster}
+        itemActive={!speciesOnly}
+        teamSize={TEAM_SIZE}
+      />
+      <div style={{ marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className="lab-analyze-btn lab-copy-paste-btn"
+          onClick={handleImport}
+        >
+          Import from clipboard
+        </button>
+        <button
+          type="button"
+          className="lab-analyze-btn lab-copy-paste-btn"
+          onClick={clearAll}
+          disabled={
+            roster.length === 0 &&
+            excludedSpecies.length === 0 &&
+            includedSpecies.length === 0 &&
+            inactiveTracks.length === 0
+          }
+        >
+          Clear all
+        </button>
+        {importMsg?.error && (
+          <div className="lab-form-error">{importMsg.error}</div>
+        )}
+        {importMsg?.warnings.map((w, i) => (
+          <div className="lab-form-note" key={i}>{w}</div>
+        ))}
+      </div>
       <ExcludedRow names={excludedSpecies} />
+      <IncludedRow names={includedSpecies} />
 
       <SectionLabel num="02" title="Constraints" />
-      <div className="lab-form-grid" style={{ marginBottom: 16 }}>
-        <div>
-          <label className="lab-form-label">Starting Roster</label>
-          <VocabSelect
-            options={vocabOpts}
-            value={fixedIdxs}
-            onChange={setFixedIdxs}
-            maxSelections={TEAM_SIZE}
-            placeholder="Choose Pokemon to include"
-            ariaLabel="Starting roster"
-          />
-          <div style={{ marginTop: 8 }}>
-            <button
-              type="button"
-              className="lab-analyze-btn lab-copy-paste-btn"
-              onClick={handleImport}
-            >
-              Import from clipboard
-            </button>
-          </div>
-          {importMsg?.error && (
-            <div className="lab-form-error">{importMsg.error}</div>
-          )}
-          {importMsg?.warnings.map((w, i) => (
-            <div className="lab-form-note" key={i}>{w}</div>
-          ))}
+      <div style={{ marginBottom: 16 }}>
+        <label className="lab-form-label">Include (only these may appear)</label>
+        <div className="lab-form-caption">
+          Restrict the completer to only use these Pokémon (plus any pinned).
+          Leave empty to allow every legal Pokémon.
         </div>
-        <div>
-          <label className="lab-form-label">Exclude (must NOT appear)</label>
-          <SpeciesSelect
-            options={speciesOpts}
-            value={excludedSpecies}
-            onChange={(v) => setCompleter({ excludedSpecies: v })}
-            placeholder="Choose species to exclude"
-            ariaLabel="Exclude species"
-          />
-        </div>
+        <SpeciesSelect
+          options={speciesOpts}
+          value={includedSpecies}
+          onChange={(v) => setCompleter({ includedSpecies: v })}
+          placeholder="Choose the only Pokémon to allow"
+          ariaLabel="Include Pokémon"
+        />
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <label className="lab-form-label">Exclude (must NOT appear)</label>
+        <SpeciesSelect
+          options={speciesOpts}
+          value={excludedSpecies}
+          onChange={(v) => setCompleter({ excludedSpecies: v })}
+          placeholder="Choose Pokémon to exclude"
+          ariaLabel="Exclude Pokémon"
+        />
       </div>
 
-      <SectionLabel num="03" title="Sampler" />
-      <div
-        className={usePT ? "lab-form-grid" : "lab-form-grid lab-form-grid-1"}
-        style={{ marginBottom: 12 }}
-      >
-        <div>
-          <label className="lab-form-label">
-            Bias Adjustment · {fieldWeight.toFixed(1)}
-          </label>
-          <div className="lab-form-caption">
-            Scales the Bias before sampling. 1.0 = popularity bias at
-            full strength. 0.0 = pure coherence,
-            popularity disregarded. Useful operating range 0.2–0.8. The higher this 
-            value, the more the model will prioritize the most commonly used Pokémon.
-          </div>
-          <input
-            type="range"
-            className="lab-slider"
-            aria-label="Bias Adjustment"
-            min={0}
-            max={FIELD_WEIGHT_OPTIONS.length - 1}
-            step={1}
-            value={FIELD_WEIGHT_OPTIONS.indexOf(fieldWeight as 0)}
-            onChange={(e) =>
-              setCompleter({ fieldWeight: FIELD_WEIGHT_OPTIONS[Number(e.target.value)] })
-            }
-          />
-        </div>
-        {usePT && (
-          <div>
-            <label className="lab-form-label">
-              Temperature · {temperature}
-            </label>
+      {model.tracks.length > 0 && (
+        <details className="lab-expander" style={{ marginBottom: 16 }}>
+          <summary>Advanced options</summary>
+          <div style={{ marginTop: 8 }}>
+            <label className="lab-form-label">Excluded attributes</label>
             <div className="lab-form-caption">
-              Controls the tradeoff between exploring more teams (higher) and concentrating
-              on the most likely teams (lower). The range 0.3-0.7 is generally reasonable. Raise if you
-              aren't getting enough unique teams and lower if the top 5 mass drops below ~5-10%.
+              All attributes are active by default. Excluded attributes are not considered by the when completing the team.
             </div>
-            <input
-              type="range"
-              className="lab-slider"
-              aria-label="Temperature"
-              min={0}
-              max={TEMPERATURE_OPTIONS.length - 1}
-              step={1}
-              value={TEMPERATURE_OPTIONS.indexOf(temperature as 0.5)}
-              onChange={(e) =>
-                setCompleter({ temperature: TEMPERATURE_OPTIONS[Number(e.target.value)] })
-              }
-            />
+            <div className="lab-attr-toggles">
+              {model.tracks.map((t, ti) => (
+                <label key={t.name} className="lab-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={inactiveTracks.includes(ti)}
+                    onChange={(e) => toggleTrack(ti, !e.target.checked)}
+                  />
+                  {t.name.charAt(0).toUpperCase() + t.name.slice(1)}
+                </label>
+              ))}
+            </div>
           </div>
-        )}
+        </details>
+      )}
+
+      <SectionLabel num="03" title="Sampler" />
+      <div style={{ maxWidth: 480, marginBottom: 14 }}>
+        <label className="lab-form-label">
+          Anchor Strength · {anchorStrength.toFixed(1)}
+        </label>
+        <div className="lab-form-caption">
+          How strongly completions build around your pinned Pokémon.
+          1.0 is neutral, raise it to favor
+          teammates that pair well with your picks.
+        </div>
+        <input
+          type="range"
+          className="lab-slider"
+          aria-label="Anchor Strength"
+          min={ANCHOR_MIN}
+          max={ANCHOR_MAX}
+          step={ANCHOR_STEP}
+          value={anchorStrength}
+          onChange={(e) =>
+            setCompleter({ anchorStrength: Number(e.target.value) })
+          }
+        />
       </div>
       <label className="lab-checkbox-row" style={{ marginBottom: 12 }}>
         <input
           type="checkbox"
           checked={!usePT}
-          onChange={(e) => {
-            const greedy = e.target.checked;
-            // Greedy descends into incoherent basins at low Bias Adjustment
-            // with few pins, so seed it high (0.8); the full sampler is fine
-            // at the discrimination-optimal 0.3 (energy_discrimination.ipynb).
-            setCompleter({ usePT: !greedy, fieldWeight: greedy ? 0.8 : 0.3 });
-          }}
+          onChange={(e) => setCompleter({ usePT: !e.target.checked })}
         />
         Greedy sampling (faster, only one result per query)
       </label>
@@ -572,6 +691,28 @@ export function CompleterPage() {
         <details className="lab-expander" style={{ marginBottom: 12 }}>
           <summary>Advanced sampler parameters</summary>
           <div className="lab-form-grid lab-form-grid-airy">
+            <div>
+              <label className="lab-form-label">
+                Temperature · {temperature}
+              </label>
+              <div className="lab-form-caption">
+                Sampling temperature. 1.0 samples the model&apos;s fitted
+                distribution of teams; lower to concentrate on the most
+                likely teams, raise to explore more variety.
+              </div>
+              <input
+                type="range"
+                className="lab-slider"
+                aria-label="Temperature"
+                min={0}
+                max={TEMPERATURE_OPTIONS.length - 1}
+                step={1}
+                value={TEMPERATURE_OPTIONS.indexOf(temperature as 0.5)}
+                onChange={(e) =>
+                  setCompleter({ temperature: TEMPERATURE_OPTIONS[Number(e.target.value)] })
+                }
+              />
+            </div>
             <div>
               <label className="lab-form-label">Runs · {ptRuns}</label>
               <div className="lab-form-caption">
@@ -637,7 +778,8 @@ export function CompleterPage() {
                 exchange attempts → faster cold-chain mixing, but each
                 attempt is less likely to accept (smaller energy gap
                 accumulated between attempts). Tune watching the Replica
-                swap acceptance; healthy band is 20–80%.
+                swap acceptance (enable sampler diagnostics below);
+                healthy band is 20–80%.
               </div>
               <input
                 type="range"
@@ -652,6 +794,16 @@ export function CompleterPage() {
               />
             </div>
           </div>
+          <label className="lab-checkbox-row" style={{ marginTop: 8 }}>
+            <input
+              type="checkbox"
+              checked={showDiagnostics}
+              onChange={(e) =>
+                setCompleter({ showDiagnostics: e.target.checked })
+              }
+            />
+            Show sampler diagnostics (acceptance rates, concentration)
+          </label>
         </details>
       )}
       <button
@@ -678,7 +830,12 @@ export function CompleterPage() {
         <FastResults runState={runState} model={model} teamCounts={teamCounts} />
       )}
       {runState?.mode === "pt" && (
-        <PTResults runState={runState} model={model} teamCounts={teamCounts} />
+        <PTResults
+          runState={runState}
+          model={model}
+          teamCounts={teamCounts}
+          showDiagnostics={showDiagnostics}
+        />
       )}
       </>}
     </>
@@ -694,8 +851,15 @@ function FastResults({
   model: ReturnType<typeof useModel>["model"] & object;
   teamCounts: ReturnType<typeof useModel>["teamCounts"];
 }) {
-  const { result, fieldWeight } = runState;
-  const obs = teamObservables(model, result.finalTeam, fieldWeight);
+  const { corpusScoreIndex } = useModel();
+  const { result } = runState;
+  const obs = teamObservables(model, result.finalTeam, 1);
+  const scoreTitle = corpusScoreIndex
+    ? percentileTitle(corpusScoreIndex.score, obs.scoreRaw)
+    : null;
+  const coherenceTitle = corpusScoreIndex
+    ? percentileTitle(corpusScoreIndex.coherence, obs.coherence)
+    : null;
   const corpus = nearestObserved(result.finalTeam, teamCounts);
   const fixedSet = new Set(result.fixed);
   const freeFinal = result.finalTeam.filter((i) => !fixedSet.has(i));
@@ -705,14 +869,21 @@ function FastResults({
       <StatStrip
         cells={[
           {
-            label: "Score (adj)",
-            value: formatSigned(obs.scoreAdj),
-            sub: `Bias Adj. = ${fieldWeight}`,
+            label: "Score",
+            value: formatSigned(obs.scoreRaw),
+            sub: "model team score",
+            tooltip:
+              "Higher = better team under the model." +
+              (scoreTitle ? ` ${scoreTitle}.` : ""),
           },
           {
             label: "Coherence",
             value: formatSigned(obs.coherence),
             sub: "intra-team coupling",
+            tooltip:
+              "Intra-team coupling: the pure pairwise-synergy part of the " +
+              "Score." +
+              (coherenceTitle ? ` ${coherenceTitle}.` : ""),
           },
           {
             label: "Swaps taken",
@@ -726,18 +897,20 @@ function FastResults({
         title="Suggested completion"
         right={`mean-field fill → greedy descent · pinned: ${result.fixed.length}`}
       />
-      <CompletionTable>
-        <CompletionRow
+      <CompletionList>
+        <CompletionCard
           freeIdxs={freeFinal}
           fullTeam={result.finalTeam}
-          scoreAdj={obs.scoreAdj}
-          scoreRaw={obs.scoreRaw}
+          score={obs.scoreRaw}
+          scoreTitle={scoreTitle}
           coherence={obs.coherence}
+          coherenceTitle={coherenceTitle}
           corpus={corpus}
           isTopRow
           model={model}
+          hideItems={runState.hideItems}
         />
-      </CompletionTable>
+      </CompletionList>
     </>
   );
 }
@@ -746,20 +919,64 @@ function PTResults({
   runState,
   model,
   teamCounts,
+  showDiagnostics,
 }: {
   runState: Extract<RunState, { mode: "pt" }>;
   model: ReturnType<typeof useModel>["model"] & object;
   teamCounts: ReturnType<typeof useModel>["teamCounts"];
+  showDiagnostics: boolean;
 }) {
+  const { corpusScoreIndex } = useModel();
   const {
-    dist, nKept, localAccept, swapAccept, fixed, fieldWeight, elapsedMs,
+    dist, nKept, localAccept, swapAccept, fixed, elapsedMs,
   } = runState;
   const top5Mass =
     nKept > 0
       ? (dist.slice(0, 5).reduce((s, e) => s + e.count, 0) / nKept) * 100
       : 0;
+  // Sampler-health cells, only useful alongside the advanced PT knobs.
+  const diagnosticCells = [
+    {
+      label: "Top-5 mass",
+      value: `${top5Mass.toFixed(2)}%`,
+      sub: "concentration",
+      tooltip:
+        "Fraction of all samples in the top-5 completions. " +
+        "Healthy: 5%+ (upper bound depends on number of completions). " +
+        "Too high → distribution is too steep; lower Temperature. " +
+        "Below 5% → distribution is too flat; raise Temperature.",
+    },
+    {
+      label: "Local accept",
+      value: `${(localAccept * 100).toFixed(1)}%`,
+      sub: "within-chain",
+      tooltip:
+        "Within-chain Metropolis-Hastings acceptance rate, averaged " +
+        "across all replica chains. Healthy: 20–60%. " +
+        "Below 15% → chains too cold; raise target Temperature. " +
+        "Above 80% → chains too hot; lower target Temperature.",
+    },
+    {
+      label: "Replica swap",
+      value: `${(swapAccept * 100).toFixed(1)}%`,
+      sub: "between chains",
+      tooltip:
+        "Acceptance rate for replica exchange between adjacent " +
+        "temperature rungs. Healthy: 20–80%. " +
+        "Below 15% → rungs are spaced too far apart; increase ladder levels. " +
+        "Above 80% → rungs are too close; decrease ladder levels.",
+    },
+  ];
   const fixedSet = new Set(fixed);
   const topK = dist.slice(0, TOP_COMPLETIONS);
+  // Corpus lookup per shown completion, shared by the novelty cell and the
+  // per-card corpus chip (one nearestObserved scan each, not two).
+  const topKCorpus = topK.map((e) => nearestObserved(e.team, teamCounts));
+  const variety = meanPairwiseDifference(topK.map((e) => e.team));
+  const novelty = noveltyScore(
+    topK.map((e) => e.count),
+    topKCorpus.map((c) => (c === null ? null : c.delta)),
+  );
   return (
     <>
       <SectionLabel num="04" title="Observables · last run" />
@@ -775,36 +992,36 @@ function PTResults({
             value: dist.length.toLocaleString(),
             sub: "completions",
           },
-          {
-            label: "Top-5 mass",
-            value: `${top5Mass.toFixed(2)}%`,
-            sub: "concentration",
-            tooltip:
-              "Fraction of all samples in the top-5 completions. " +
-              "Healthy: 5%+ (upper bound depends on number of completions). " +
-              "Too high → distribution is too steep; lower Temperature. " +
-              "Below 5% → distribution is too flat; raise Temperature.",
-          },
-          {
-            label: "Local accept",
-            value: `${(localAccept * 100).toFixed(1)}%`,
-            sub: "within-chain",
-            tooltip:
-              "Within-chain Metropolis-Hastings acceptance rate, averaged " +
-              "across all replica chains. Healthy: 20–60%. " +
-              "Below 15% → chains too cold; raise target Temperature. " +
-              "Above 80% → chains too hot; lower target Temperature.",
-          },
-          {
-            label: "Replica swap",
-            value: `${(swapAccept * 100).toFixed(1)}%`,
-            sub: "between chains",
-            tooltip:
-              "Acceptance rate for replica exchange between adjacent " +
-              "temperature rungs. Healthy: 20–80%. " +
-              "Below 15% → rungs are spaced too far apart; increase ladder levels. " +
-              "Above 80% → rungs are too close; decrease ladder levels.",
-          },
+          ...(variety !== null
+            ? [
+                {
+                  label: "Variety",
+                  value: variety.toFixed(1),
+                  sub: "avg differing Pokémon",
+                  tooltip:
+                    "Average number of team members that differ between " +
+                    "two of the shown completions. Pinned Pokémon always " +
+                    "match, so only the completer-filled slots can differ. " +
+                    "0 = every suggestion is the same team.",
+                },
+              ]
+            : []),
+          ...(novelty !== null
+            ? [
+                {
+                  label: "Novelty",
+                  value: `${Math.round(novelty)}%`,
+                  sub: "vs tournament teams",
+                  tooltip:
+                    "How far the shown completions sit from rosters " +
+                    "observed in tournament data, weighted by how often " +
+                    "each was sampled. 0% = every suggestion is a team " +
+                    "that has been played; 100% = every suggestion is 3+ " +
+                    "member changes from anything observed.",
+                },
+              ]
+            : []),
+          ...(showDiagnostics ? diagnosticCells : []),
           {
             label: "Runtime",
             value: `${(elapsedMs / 1000).toFixed(1)}s`,
@@ -817,29 +1034,39 @@ function PTResults({
         title="Top completions"
         right={`ordered by sample frequency · ${Math.min(TOP_COMPLETIONS, dist.length)} of ${dist.length.toLocaleString()} shown`}
       />
-      <CompletionTable includeFreq includeRank>
+      <CompletionList>
         {topK.map((entry, idx) => {
           const freeIdxs = entry.team.filter((i) => !fixedSet.has(i));
-          const obs = teamObservables(model, entry.team, fieldWeight);
-          const corpus = nearestObserved(entry.team, teamCounts);
+          const obs = teamObservables(model, entry.team, 1);
+          const corpus = topKCorpus[idx];
           const freqPct = nKept > 0 ? (entry.count / nKept) * 100 : 0;
           return (
-            <CompletionRow
+            <CompletionCard
               key={entry.team.join("-")}
               rank={idx + 1}
               freeIdxs={freeIdxs}
               fullTeam={entry.team}
-              scoreAdj={obs.scoreAdj}
-              scoreRaw={obs.scoreRaw}
+              score={obs.scoreRaw}
+              scoreTitle={
+                corpusScoreIndex
+                  ? percentileTitle(corpusScoreIndex.score, obs.scoreRaw)
+                  : null
+              }
               coherence={obs.coherence}
+              coherenceTitle={
+                corpusScoreIndex
+                  ? percentileTitle(corpusScoreIndex.coherence, obs.coherence)
+                  : null
+              }
               corpus={corpus}
               freqPct={freqPct}
               isTopRow={idx === 0}
               model={model}
+              hideItems={runState.hideItems}
             />
           );
         })}
-      </CompletionTable>
+      </CompletionList>
     </>
   );
 }

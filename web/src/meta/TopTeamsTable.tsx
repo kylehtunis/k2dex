@@ -5,10 +5,16 @@
 //
 // No Streamlit counterpart yet; this section is webapp-only.
 
+import { Link } from "react-router-dom";
 import { ScoreChip, MiniBar } from "../render/atoms";
 import { TeamMiniStrip } from "../render/cells";
 import { ScrollX } from "../components/ScrollX";
+import {
+  percentileTitle,
+  type CorpusScoreIndex,
+} from "../render/corpusScore";
 import { teamObservables } from "../render/observables";
+import { encodeCore } from "../render/shareLink";
 import type { IsingModel } from "../sampler/types";
 import type { TopTeam } from "./topTeams";
 
@@ -20,6 +26,8 @@ export interface TopTeamsTableProps {
   /** Corpus size, for the share-of-corpus percentage. */
   nCorpusTeams: number;
   model: IsingModel;
+  /** When provided, score/coherence chips show corpus percentiles on hover. */
+  scoreIndex?: CorpusScoreIndex | null;
 }
 
 export function TopTeamsTable({
@@ -27,6 +35,7 @@ export function TopTeamsTable({
   maxCount,
   nCorpusTeams,
   model,
+  scoreIndex,
 }: TopTeamsTableProps) {
   return (
     <ScrollX>
@@ -35,7 +44,8 @@ export function TopTeamsTable({
           <tr>
             <th className="num">#</th>
             <th>team</th>
-            <th className="num">score (raw)</th>
+            <th />
+            <th className="num">score</th>
             <th className="num">coherence</th>
             <th className="num">count</th>
             <th className="num">share</th>
@@ -44,10 +54,9 @@ export function TopTeamsTable({
         <tbody>
           {rows.map((r, rank) => {
             const share = nCorpusTeams > 0 ? r.count / nCorpusTeams : 0;
-            // Bias Adjustment is irrelevant here (no field-weight slider on
-            // /meta), so scoreRaw / coherence are the only field-independent
-            // observables — pass any field weight.
-            const obs = teamObservables(model, r.team, 0);
+            // scoreRaw / coherence don't depend on the fieldWeight
+            // argument, so its value here is arbitrary.
+            const obs = teamObservables(model, r.team, 1);
             return (
               <tr key={r.team.join("-")} className={rank === 0 ? "top-row" : undefined}>
                 <td className="rank">{(rank + 1).toString().padStart(2, "0")}</td>
@@ -58,11 +67,33 @@ export function TopTeamsTable({
                     interactive
                   />
                 </td>
-                <td className="num" data-label="score (raw)">
-                  <ScoreChip value={obs.scoreRaw} />
+                <td className="actions">
+                  <Link
+                    to={`/analysis?t=${encodeCore(model.id, r.team, model)}`}
+                    className="lab-analyze-btn"
+                  >
+                    Send to Analysis
+                  </Link>
+                </td>
+                <td className="num" data-label="score">
+                  <ScoreChip
+                    value={obs.scoreRaw}
+                    title={
+                      scoreIndex != null
+                        ? percentileTitle(scoreIndex.score, obs.scoreRaw)
+                        : undefined
+                    }
+                  />
                 </td>
                 <td className="num" data-label="coherence">
-                  <ScoreChip value={obs.coherence} />
+                  <ScoreChip
+                    value={obs.coherence}
+                    title={
+                      scoreIndex != null
+                        ? percentileTitle(scoreIndex.coherence, obs.coherence)
+                        : undefined
+                    }
+                  />
                 </td>
                 <td className="num" data-label="count">
                   <ScoreChip value={r.count} fmt="count" />

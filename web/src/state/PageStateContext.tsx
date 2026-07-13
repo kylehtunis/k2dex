@@ -14,6 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  DEFAULT_ANCHOR,
   PT_LADDER_LEVELS,
   PT_RUNS,
   PT_SWEEPS,
@@ -21,38 +22,66 @@ import {
 } from "../constants";
 import { useModel } from "./ModelContext";
 
+/** One filled roster slot. `feature` is the flat vocab index when the user has
+ * pinned a specific item (a feature pin); `null` when only the species is
+ * chosen and the completer fills the item (a site pin). */
+export interface RosterSlot {
+  site: number;
+  feature: number | null;
+}
+
 export interface CompleterInputs {
-  fixedIdxs: number[];
+  /** Ordered roster: the source of truth for the 6-slot editor. Feature pins
+   * (`feature != null`) and site pins (`feature == null`) are derived from it
+   * for the sampler; empty slots are simply the absence of an entry. */
+  roster: RosterSlot[];
+  /** Deactivated attribute tracks (indices into model.tracks). A deactivated
+   * track is degenerate: not pinned to a value, not rerolled, marginalized out
+   * of the completions, and hidden. Empty = all attributes active. */
+  inactiveTracks: number[];
   excludedSpecies: string[];
-  fieldWeight: number;
+  /** Inclusion allow-list (species names). When non-empty, the completer may
+   * only place these Pokémon (plus pinned ones); empty = all legal Pokémon. */
+  includedSpecies: string[];
   temperature: number;
+  /** Anchor Strength (anchor-field tilt alpha): 1 = neutral; > 1 concentrates
+   * completions on teams that couple well to the pinned Pokémon. Applies to
+   * both the PT and greedy paths. */
+  anchorStrength: number;
   usePT: boolean;
   ptRuns: number;
   ptLadder: number;
   ptSweeps: number;
   ptSwapInterval: number;
+  /** Show the sampler-diagnostic observables (top-5 mass, acceptance rates)
+   * that only matter when the advanced PT knobs are being tuned. */
+  showDiagnostics: boolean;
 }
 
 export interface AnalysisInputs {
-  teamIdxs: number[];
-  fieldWeight: number;
+  /** Ordered roster (mirrors the completer). Analysis is feature-level, so a
+   * complete team is the slots whose `feature` is set; a species-only slot is
+   * simply an in-progress pick that doesn't count toward the team yet. */
+  roster: RosterSlot[];
 }
 
 const COMPLETER_DEFAULTS: CompleterInputs = {
-  fixedIdxs: [],
+  roster: [],
+  inactiveTracks: [],
   excludedSpecies: [],
-  fieldWeight: 0.5,
-  temperature: 0.5,
+  includedSpecies: [],
+  temperature: 1.0,
+  anchorStrength: DEFAULT_ANCHOR,
   usePT: true,
   ptRuns: PT_RUNS,
   ptLadder: PT_LADDER_LEVELS,
   ptSweeps: PT_SWEEPS,
   ptSwapInterval: PT_SWAP_INTERVAL,
+  showDiagnostics: false,
 };
 
 const ANALYSIS_DEFAULTS: AnalysisInputs = {
-  teamIdxs: [],
-  fieldWeight: 0.5,
+  roster: [],
 };
 
 interface PageStateContextValue {

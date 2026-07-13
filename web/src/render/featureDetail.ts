@@ -7,52 +7,54 @@
 //
 // Webapp-only; no Python counterpart, so no parity row.
 
-import type { IsingModel, TeamCounts } from "../sampler/types";
-import { isStructuralPair } from "../meta/couplings";
+import type { IsingModel, SpeciesGraph, TeamCounts } from "../sampler/types";
 import { parseTeamKey } from "./corpus";
 import type { TopTeam } from "../meta/topTeams";
 
-export interface FeatureCoupling {
-  /** Vocab index of the coupled partner. */
-  idx: number;
-  jValue: number;
+export interface SpeciesCoupling {
+  /** Partner species name. */
+  species: string;
+  /** Species-level synergy (grand mean of the J block). */
+  synergy: number;
 }
 
-export interface FeatureCouplings {
-  /** Top positive couplings (synergies), strongest first. */
-  synergies: FeatureCoupling[];
-  /** Top negative couplings (antisynergies), most negative first. */
-  antisynergies: FeatureCoupling[];
+export interface SpeciesCouplings {
+  synergies: SpeciesCoupling[];
+  antisynergies: SpeciesCoupling[];
 }
 
-/** The structural couplings of feature `idx` — row `idx` of J with the same
- * same-species / same-item filter the /meta tables use — split into the top-N
- * synergies (J > 0) and antisynergies (J < 0). */
-export function featureCouplings(
+/** Species-level couplings for species at `site`, ranked by synergy.
+ * Uses the precomputed species graph. */
+export function speciesCouplings(
   model: IsingModel,
-  idx: number,
-  topN = 8,
-): FeatureCouplings {
-  const { V, J } = model;
-  const base = idx * V;
-  const all: FeatureCoupling[] = [];
-  for (let j = 0; j < V; j++) {
-    if (j === idx) continue;
-    if (!isStructuralPair(model, idx, j)) continue;
-    const jValue = J[base + j];
-    if (jValue === 0) continue;
-    all.push({ idx: j, jValue });
+  graph: SpeciesGraph,
+  site: number,
+  topN = 10,
+): SpeciesCouplings {
+  const mySpecies = model.sites[site];
+  const S = graph.species.length;
+  const myGraphIdx = graph.indexOf.get(mySpecies);
+  if (myGraphIdx === undefined) return { synergies: [], antisynergies: [] };
+
+  const all: SpeciesCoupling[] = [];
+  for (let gi = 0; gi < S; gi++) {
+    if (gi === myGraphIdx) continue;
+    const partnerSpecies = graph.species[gi];
+    const synergy = graph.synergy[myGraphIdx * S + gi];
+    all.push({ species: partnerSpecies, synergy });
   }
+
   const synergies = all
-    .filter((c) => c.jValue > 0)
-    .sort((a, b) => b.jValue - a.jValue)
+    .filter((c) => c.synergy > 0)
+    .sort((a, b) => b.synergy - a.synergy)
     .slice(0, topN);
   const antisynergies = all
-    .filter((c) => c.jValue < 0)
-    .sort((a, b) => a.jValue - b.jValue)
+    .filter((c) => c.synergy < 0)
+    .sort((a, b) => a.synergy - b.synergy)
     .slice(0, topN);
   return { synergies, antisynergies };
 }
+
 
 export interface FeatureCorpus {
   /** Top-N most-played exact rosters containing the feature, count desc.
@@ -89,6 +91,38 @@ export function featureCorpusAppearances(
     rows.push({ key, team, count });
   }
   // Count desc, ties broken by key for a stable order (matches topTeams).
+  rows.sort((a, b) => b.count - a.count || (a.key < b.key ? -1 : 1));
+  return {
+    teams: rows.slice(0, topN).map(({ team, count }) => ({ team, count })),
+    totalAppearances,
+    nTeams,
+  };
+}
+
+/** Site-level corpus appearances: rosters containing *any* feature of
+ * the given site. Deduplicates rosters that match multiple features. */
+export function siteCorpusAppearances(
+  model: IsingModel,
+  teamCounts: TeamCounts | null,
+  site: number,
+  topN = 5,
+): FeatureCorpus {
+  if (teamCounts === null || teamCounts.size === 0) {
+    return { teams: [], totalAppearances: 0, nTeams: 0 };
+  }
+  const { m, siteFeatures } = model;
+  const feats = new Set(siteFeatures[site]);
+  const rows: { key: string; team: number[]; count: number }[] = [];
+  let totalAppearances = 0;
+  let nTeams = 0;
+  for (const [key, count] of teamCounts) {
+    const team = parseTeamKey(key);
+    if (!team.some((f) => feats.has(f))) continue;
+    nTeams++;
+    totalAppearances += count;
+    team.sort((a, b) => m[b] - m[a]);
+    rows.push({ key, team, count });
+  }
   rows.sort((a, b) => b.count - a.count || (a.key < b.key ? -1 : 1));
   return {
     teams: rows.slice(0, topN).map(({ team, count }) => ({ team, count })),

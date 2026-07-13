@@ -6,7 +6,7 @@
 // CLAUDE.md MF-vs-MCMC bullet).
 
 import type { IsingModel, MeanfieldResult } from "./types";
-import { buildConstraintSets } from "./energy";
+import { anchorBoost, buildConstraintSets } from "./energy";
 
 export interface MeanfieldOpts {
   /** Pinned features (clamped to m=1). */
@@ -15,6 +15,9 @@ export interface MeanfieldOpts {
   excluded: readonly number[];
   /** Scales h. */
   fieldWeight: number;
+  /** Anchor-field tilt alpha: pin→free couplings enter the effective field
+   * (alpha-1)-fold extra via `anchorBoost`. Default 1 (no tilt). */
+  anchorStrength?: number;
   /** Max iterations of the damped fixed-point. */
   nIters?: number;
   /** Convergence tol on max |Δm| over free slots. */
@@ -45,37 +48,41 @@ export function meanfieldMarginals(
   model: IsingModel,
   opts: MeanfieldOpts,
 ): MeanfieldResult | null {
-  const { V, J, h, teamSize, speciesOf, itemOf } = model;
+  const { V, J, h, teamSize } = model;
   const nIters = opts.nIters ?? DEFAULT_N_ITERS;
   const tol = opts.tol ?? DEFAULT_TOL;
   const damp = opts.damp ?? DEFAULT_DAMP;
 
   const hEff = new Float64Array(V);
   for (let i = 0; i < V; i++) hEff[i] = opts.fieldWeight * h[i];
+  const alpha = opts.anchorStrength ?? 1;
+  if (alpha !== 1) {
+    const boost = anchorBoost(model, opts.fixed, alpha);
+    for (let i = 0; i < V; i++) hEff[i] += boost[i];
+  }
 
   const fixedMask = new Uint8Array(V);
   const excludedMask = new Uint8Array(V);
   for (const i of opts.fixed) fixedMask[i] = 1;
   for (const i of opts.excluded) excludedMask[i] = 1;
 
-  // Phase-3 uniqueness against the fixed mons: a candidate sharing a
-  // species or item with anything pinned is not eligible to fill a
-  // free slot.
-  const { fixedSpecies, fixedItems } = buildConstraintSets(
-    opts.fixed,
-    speciesOf,
-    itemOf,
-  );
+  // Uniqueness against the fixed mons: a candidate sharing a site (species)
+  // or a unique-track value (item) with anything pinned is not eligible to
+  // fill a free slot.
+  const constraints = buildConstraintSets(opts.fixed, model);
   const uniqInvalid = new Uint8Array(V);
-  if (fixedSpecies.size > 0) {
-    for (let i = 0; i < V; i++) {
-      if (fixedSpecies.has(speciesOf[i])) uniqInvalid[i] = 1;
+  for (let i = 0; i < V; i++) {
+    if (constraints.usedSites.has(model.siteOf[i])) {
+      uniqInvalid[i] = 1;
+      continue;
     }
-  }
-  if (fixedItems.size > 0) {
-    for (let i = 0; i < V; i++) {
-      const it = itemOf[i];
-      if (it !== null && fixedItems.has(it)) uniqInvalid[i] = 1;
+    for (let t = 0; t < model.tracks.length; t++) {
+      if (!model.tracks[t].unique) continue;
+      const v = model.trackValues[i][t];
+      if (v !== null && constraints.usedTrackValues[t].has(v)) {
+        uniqInvalid[i] = 1;
+        break;
+      }
     }
   }
 

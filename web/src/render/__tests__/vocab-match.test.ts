@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { IsingModel } from "../../sampler/types";
+import { factoredFromSpeciesItem } from "../../sampler/model";
 import {
   buildSlugIndex,
   matchPaste,
@@ -43,6 +44,7 @@ function buildModel(): IsingModel {
   vocab.forEach((v, i) => indexOf.set(v, i));
   // Marginals: Incineroar @ Sitrus is the most popular Incineroar build.
   const m = Float64Array.from([0.5, 0.2, 0.3, 0.4, 0.35]);
+  const factored = factoredFromSpeciesItem(species, items);
   return {
     id: "test-species-item",
     displayName: "Test Species @ Item",
@@ -54,6 +56,7 @@ function buildModel(): IsingModel {
     vocab,
     speciesOf: species,
     itemOf: items,
+    ...factored,
     m,
     J: new Float64Array(V * V),
     h: new Float64Array(V),
@@ -196,11 +199,10 @@ describe("shareLink core token", () => {
   const model = buildModel();
 
   it("round-trips a team to features", () => {
-    const token = encodeCore("test-species-item", 0.3, [3, 0], model);
-    expect(token).toBe("test-species-item.3.incineroar~sitrus-berry_calyrex-shadow~life-orb");
+    const token = encodeCore("test-species-item", [3, 0], model);
+    expect(token).toBe("test-species-item.incineroar~sitrus-berry_calyrex-shadow~life-orb");
     const decoded = decodeCore(token)!;
     expect(decoded.modelId).toBe("test-species-item");
-    expect(decoded.fieldWeight).toBeCloseTo(0.3);
     const slugIndex = buildSlugIndex(model);
     const idxs = decoded.features.map(
       (f) => resolveFeature(slugIndex, model, f.speciesSlug, f.itemSlug).idx,
@@ -208,16 +210,25 @@ describe("shareLink core token", () => {
     expect(idxs).toEqual([0, 3]);
   });
 
-  it("decodes legacy model codes", () => {
+  it("decodes legacy model codes to the unified per-regulation slug", () => {
     const decoded = decodeCore("si.3.incineroar~sitrus-berry")!;
-    expect(decoded.modelId).toBe("reg-m-a-species-item");
+    expect(decoded.modelId).toBe("reg-m-a");
     const decoded2 = decodeCore("s.5.amoonguss")!;
-    expect(decoded2.modelId).toBe("reg-m-a-species");
+    expect(decoded2.modelId).toBe("reg-m-a");
+    const decoded3 = decodeCore("reg-m-a-species-item.3.incineroar~sitrus-berry")!;
+    expect(decoded3.modelId).toBe("reg-m-a");
+  });
+
+  it("drops the legacy Bias Adjustment segment on decode", () => {
+    const legacy = decodeCore("reg-m-a.3.incineroar~sitrus-berry_amoonguss")!;
+    const current = decodeCore("reg-m-a.incineroar~sitrus-berry_amoonguss")!;
+    expect(legacy.features).toEqual(current.features);
+    expect(legacy.modelId).toBe("reg-m-a");
   });
 
   it("encodes itemless features without a tilde", () => {
-    const token = encodeCore("test-species", 0.5, [4], model);
-    expect(token).toBe("test-species.5.amoonguss");
+    const token = encodeCore("test-species", [4], model);
+    expect(token).toBe("test-species.amoonguss");
     expect(decodeCore(token)!.features[0].itemSlug).toBeNull();
   });
 
@@ -235,11 +246,14 @@ describe("shareLink completer token", () => {
     const params = encodeCompleter(
       {
         modelId: "test-species-item",
-        fieldWeight: 0.3,
         fixedIdxs: [0],
+        fixedSites: [],
+        inactiveTracks: [],
         excludedSpecies: ["Amoonguss"],
+        includedSpecies: [],
         usePT: true,
-        temperature: 0.5, // default — omitted
+        temperature: 1.0, // default — omitted
+        anchorStrength: 1.0, // default — omitted
         ptRuns: 10,
         ptLadder: 7,
         ptSweeps: 20000,
@@ -252,25 +266,57 @@ describe("shareLink completer token", () => {
     expect(params.get("a")).toBeNull();
     expect(params.get("g")).toBeNull();
     expect(params.get("seed")).toBeNull();
+    expect(params.get("anc")).toBeNull();
     expect(params.get("x")).toBe("amoonguss");
 
     const d = decodeCompleter(params)!;
     expect(d.usePT).toBe(true);
-    expect(d.temperature).toBe(0.5);
+    expect(d.temperature).toBe(1.0);
     expect(d.ptRuns).toBe(10);
     expect(d.excludedSlugs).toEqual(["amoonguss"]);
     expect(d.seed).toBeNull();
+  });
+
+  it("round-trips the inclusion allow-list", () => {
+    const params = encodeCompleter(
+      {
+        modelId: "test-species-item",
+        fixedIdxs: [],
+        fixedSites: [],
+        inactiveTracks: [],
+        excludedSpecies: [],
+        includedSpecies: ["Amoonguss", "Incineroar"],
+        usePT: true,
+        temperature: 1.0,
+        anchorStrength: 1.0,
+        ptRuns: 10,
+        ptLadder: 7,
+        ptSweeps: 20000,
+        ptSwapInterval: 10,
+        seed: null,
+      },
+      model,
+    );
+    expect(params.get("i")).toBe("amoonguss_incineroar");
+    expect(params.get("x")).toBeNull();
+    expect(decodeCompleter(params)!.includedSlugs).toEqual([
+      "amoonguss",
+      "incineroar",
+    ]);
   });
 
   it("carries greedy mode without a seed", () => {
     const params = encodeCompleter(
       {
         modelId: "test-species-item",
-        fieldWeight: 0.8,
         fixedIdxs: [0],
+        fixedSites: [],
+        inactiveTracks: [],
         excludedSpecies: [],
+        includedSpecies: [],
         usePT: false,
-        temperature: 0.5,
+        temperature: 1.0,
+        anchorStrength: 1.0,
         ptRuns: 10,
         ptLadder: 7,
         ptSweeps: 20000,
@@ -284,15 +330,100 @@ describe("shareLink completer token", () => {
     expect(decodeCompleter(params)!.usePT).toBe(false);
   });
 
+  it("round-trips a non-default Anchor Strength, including greedy mode", () => {
+    const base = {
+      modelId: "test-species-item",
+      fixedIdxs: [0],
+      fixedSites: [] as number[],
+      inactiveTracks: [] as number[],
+      excludedSpecies: [] as string[],
+      includedSpecies: [] as string[],
+      temperature: 1.0,
+      anchorStrength: 1.8,
+      ptRuns: 10,
+      ptLadder: 7,
+      ptSweeps: 20000,
+      ptSwapInterval: 10,
+      seed: null,
+    };
+    const pt = encodeCompleter({ ...base, usePT: true }, model);
+    expect(pt.get("anc")).toBe("1.8");
+    expect(decodeCompleter(pt)!.anchorStrength).toBe(1.8);
+    // Anchor Strength applies to the greedy path too, so it must survive
+    // the greedy early-return.
+    const greedy = encodeCompleter({ ...base, usePT: false }, model);
+    expect(greedy.get("anc")).toBe("1.8");
+    expect(decodeCompleter(greedy)!.anchorStrength).toBe(1.8);
+    // Out-of-range values fall back to the default on decode.
+    const bad = new URLSearchParams(pt);
+    bad.set("anc", "99");
+    expect(decodeCompleter(bad)!.anchorStrength).toBe(1.0);
+  });
+
+  it("encodes site pins as bare species slugs alongside feature pins", () => {
+    const params = encodeCompleter(
+      {
+        modelId: "reg-m-a",
+        fixedIdxs: [3], // feature pin: Calyrex-Shadow @ Life Orb
+        fixedSites: [1], // site pin: Alolan Ninetales (any item)
+        inactiveTracks: [],
+        excludedSpecies: [],
+        includedSpecies: [],
+        usePT: true,
+        temperature: 1.0,
+        anchorStrength: 1.0,
+        ptRuns: 10,
+        ptLadder: 7,
+        ptSweeps: 20000,
+        ptSwapInterval: 10,
+        seed: null,
+      },
+      model,
+    );
+    const d = decodeCompleter(params)!;
+    const slugIndex = buildSlugIndex(model);
+    const site = d.features.find((f) => f.itemSlug === null)!;
+    const feature = d.features.find((f) => f.itemSlug !== null)!;
+    expect(resolveSpeciesSlug(slugIndex, model, site.speciesSlug)).toBe("Alolan Ninetales");
+    expect(resolveFeature(slugIndex, model, feature.speciesSlug, feature.itemSlug).idx).toBe(3);
+  });
+
+  it("round-trips species-only mode (deactivated tracks)", () => {
+    const params = encodeCompleter(
+      {
+        modelId: "reg-m-a",
+        fixedIdxs: [],
+        fixedSites: [1],
+        inactiveTracks: [0], // item track off
+        excludedSpecies: [],
+        includedSpecies: [],
+        usePT: true,
+        temperature: 1.0,
+        anchorStrength: 1.0,
+        ptRuns: 10,
+        ptLadder: 7,
+        ptSweeps: 20000,
+        ptSwapInterval: 10,
+        seed: null,
+      },
+      model,
+    );
+    expect(params.get("d")).toBe("0");
+    expect(decodeCompleter(params)!.inactiveTracks).toEqual([0]);
+  });
+
   it("encodes a non-default seed and advanced knobs", () => {
     const params = encodeCompleter(
       {
         modelId: "test-species-item",
-        fieldWeight: 0.3,
         fixedIdxs: [0],
+        fixedSites: [],
+        inactiveTracks: [],
         excludedSpecies: [],
+        includedSpecies: [],
         usePT: true,
         temperature: 0.7,
+        anchorStrength: 1.0,
         ptRuns: 15,
         ptLadder: 7,
         ptSweeps: 20000,

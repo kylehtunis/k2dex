@@ -6,12 +6,15 @@
 // (sampling.py emits raw samples; app.py:parallel_tempered_distribution
 // folds them into a Counter, which is what /completer renders).
 
+import { deriveFactored } from "../sampler/model";
 import { parallelTemperedMcmc } from "../sampler/pt";
 import type { IsingModel, TeamIndices } from "../sampler/types";
 
 export interface PTRequest {
   /** Slim view of the model. Worker reconstructs an IsingModel-shaped
-   * value from these (it doesn't need vocab/indexOf for the math). */
+   * value from these (it doesn't need vocab/indexOf for the math). The
+   * factored fields (sites/siteOf/tracks/trackValues) drive the Potts moves;
+   * speciesOf/itemOf/siteFeatures are rederived from them in the worker. */
   modelData: {
     V: number;
     teamSize: number;
@@ -19,10 +22,14 @@ export interface PTRequest {
     h: Float64Array;
     m: Float64Array;
     vocab: readonly string[];
-    speciesOf: readonly string[];
-    itemOf: readonly (string | null)[];
+    sites: readonly string[];
+    siteOf: readonly number[];
+    tracks: readonly { name: string; unique: boolean }[];
+    trackValues: readonly (readonly (string | null)[])[];
   };
   fixed: readonly number[];
+  /** Site-level pins (species fixed, item free to reroll). */
+  fixedSites?: readonly number[];
   excluded: readonly number[];
   fieldWeight: number;
   /** Cold target T (smallest), at index 0 in the rebuilt ladder. */
@@ -37,6 +44,14 @@ export interface PTRequest {
   burnIn: number;
   swapInterval: number;
   seed: number;
+  /** Item-track reroll probability per sweep (ignored for species-only). */
+  pReroll?: number;
+  /** Anchor-field tilt alpha ("Anchor Strength"); 1 = no tilt. */
+  anchorStrength?: number;
+  /** Aggregate completions by species (site) set instead of by full feature
+   * set — used when an attribute is deactivated, to marginalize it out. Each
+   * bucket keeps its most-frequent real feature-team as the representative. */
+  projectToSites?: boolean;
 }
 
 export interface PTResponse {
@@ -83,23 +98,75 @@ function aggregate(
   return { dist, nKept: total };
 }
 
+/** Like `aggregate`, but buckets by the team's species (site) set — the item(s)
+ * are marginalized out. Each bucket's `team` is its most-frequent real
+ * feature-team (a genuine sampled completion), so downstream observables and
+ * corpus lookups stay meaningful; the UI hides the item column. */
+function aggregateBySite(
+  allSamples: TeamIndices[][],
+  siteOf: readonly number[],
+): { dist: Array<{ team: number[]; count: number }>; nKept: number } {
+  interface Bucket {
+    count: number;
+    reps: Map<string, { team: number[]; count: number }>;
+  }
+  const buckets = new Map<string, Bucket>();
+  let total = 0;
+  for (const samples of allSamples) {
+    for (const team of samples) {
+      total++;
+      const sorted = [...team].sort((a, b) => a - b);
+      const siteKey = sorted.map((i) => siteOf[i]).sort((a, b) => a - b).join(",");
+      let bucket = buckets.get(siteKey);
+      if (!bucket) {
+        bucket = { count: 0, reps: new Map() };
+        buckets.set(siteKey, bucket);
+      }
+      bucket.count++;
+      const featKey = sorted.join(",");
+      const rep = bucket.reps.get(featKey);
+      if (rep) rep.count++;
+      else bucket.reps.set(featKey, { team: sorted, count: 1 });
+    }
+  }
+  const dist = [...buckets.values()]
+    .map((b) => {
+      let best = { team: [] as number[], count: -1 };
+      for (const rep of b.reps.values()) if (rep.count > best.count) best = rep;
+      return { team: best.team, count: b.count };
+    })
+    .sort((a, b) => b.count - a.count);
+  return { dist, nKept: total };
+}
+
 self.onmessage = (e: MessageEvent<PTRequest>) => {
   const req = e.data;
   try {
+    const md = req.modelData;
+    const { siteFeatures, speciesOf, itemOf } = deriveFactored(
+      md.sites,
+      md.siteOf,
+      md.trackValues,
+    );
     const model: IsingModel = {
       id: "",
       displayName: "",
       regulation: "",
-      featureDimensions: 1,
+      featureDimensions: md.tracks.length + 1,
       latestTournamentDate: "",
-      V: req.modelData.V,
-      teamSize: req.modelData.teamSize,
-      vocab: req.modelData.vocab,
-      speciesOf: req.modelData.speciesOf,
-      itemOf: req.modelData.itemOf,
-      m: req.modelData.m,
-      J: req.modelData.J,
-      h: req.modelData.h,
+      V: md.V,
+      teamSize: md.teamSize,
+      vocab: md.vocab,
+      sites: md.sites,
+      siteOf: md.siteOf,
+      tracks: md.tracks,
+      trackValues: md.trackValues,
+      siteFeatures,
+      speciesOf,
+      itemOf,
+      m: md.m,
+      J: md.J,
+      h: md.h,
       indexOf: new Map(),
       nCorpusTeams: 0,
       name: "",
@@ -111,6 +178,7 @@ self.onmessage = (e: MessageEvent<PTRequest>) => {
     for (let run = 0; run < req.nRuns; run++) {
       const res = parallelTemperedMcmc(model, {
         fixed: req.fixed,
+        fixedSites: req.fixedSites,
         excluded: req.excluded,
         fieldWeight: req.fieldWeight,
         tLadder: ladder,
@@ -118,6 +186,8 @@ self.onmessage = (e: MessageEvent<PTRequest>) => {
         burnIn: req.burnIn,
         swapInterval: req.swapInterval,
         seed: req.seed + run, // independent stream per run
+        pReroll: req.pReroll,
+        anchorStrength: req.anchorStrength,
       });
       if (res === null) {
         const reply: PTError = {
@@ -131,7 +201,9 @@ self.onmessage = (e: MessageEvent<PTRequest>) => {
       localAcceptSum += res.localAccept;
       swapAcceptSum += res.swapAccept;
     }
-    const { dist, nKept } = aggregate(allSamples);
+    const { dist, nKept } = req.projectToSites
+      ? aggregateBySite(allSamples, md.siteOf)
+      : aggregate(allSamples);
     const reply: PTResponse = {
       ok: true,
       dist,

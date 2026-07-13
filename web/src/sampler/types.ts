@@ -5,9 +5,9 @@
 // render layer only, exactly as in the Python sampling.py.
 
 export interface IsingModel {
-  /** Unique slug identifier (e.g. "reg-m-a-species-item"). */
+  /** Unique slug identifier (e.g. "reg-m-a"). */
   readonly id: string;
-  /** Human-readable display name (e.g. "Reg M-A Species @ Item"). */
+  /** Human-readable display name (e.g. "Reg. M-A"). */
   readonly displayName: string;
   /** Regulation this model was fit on (e.g. "M-A"). */
   readonly regulation: string;
@@ -21,9 +21,22 @@ export interface IsingModel {
   readonly teamSize: number;
   /** Vocab display strings (bare species or "Species @ Item"). */
   readonly vocab: readonly string[];
-  /** Per-feature species name, for uniqueness constraints. */
+  /** Distinct species (the Potts sites), in vocab order. */
+  readonly sites: readonly string[];
+  /** Per-feature site index (into `sites`), length V. */
+  readonly siteOf: readonly number[];
+  /** Track (attribute) definitions. Empty for species-only models. */
+  readonly tracks: readonly { name: string; unique: boolean }[];
+  /** Per-feature track values, length V; each entry has one value per track
+   * (`null` = undetermined/inapplicable on that track). */
+  readonly trackValues: readonly (readonly (string | null)[])[];
+  /** Derived: feature indices grouped by site (groupby siteOf). Length = sites.length. */
+  readonly siteFeatures: readonly (readonly number[])[];
+  /** Per-feature species name, for uniqueness constraints. Convenience view:
+   * `sites[siteOf[i]]`. */
   readonly speciesOf: readonly string[];
-  /** Per-feature item name; null for itemless features. */
+  /** Per-feature item name; null for itemless features. Convenience view:
+   * first track value (`trackValues[i][0] ?? null`). */
   readonly itemOf: readonly (string | null)[];
   /** Empirical per-feature marginal (Float32 promoted to Float64 on load). */
   readonly m: Float64Array;
@@ -100,4 +113,17 @@ export interface SingleSwapEntry {
   deltaEAdj: number;
   deltaERaw: number;
   deltaSumJ: number;
+}
+
+/** Precomputed species-pair interaction graph (APC-corrected synergy).
+ * Loaded from `species_graph.json`, parallel to `team_counts.json`. */
+export interface SpeciesGraph {
+  /** Distinct species, alphabetical order (indexes the matrices). */
+  readonly species: readonly string[];
+  /** Signed species-pair synergy (grand mean of the J block), S×S flat row-major. */
+  readonly synergy: Float64Array;
+  /** APC-corrected Frobenius norm (popularity-stripped coupling magnitude), S×S flat. */
+  readonly corrected: Float64Array;
+  /** Map species name → index into the S×S matrices. */
+  readonly indexOf: ReadonlyMap<string, number>;
 }

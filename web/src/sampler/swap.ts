@@ -15,6 +15,7 @@ import {
   initializeState,
   swapViolatesUniqueness,
   teamEnergy,
+  type ConstraintSets,
 } from "./energy";
 
 export interface ChainState {
@@ -41,43 +42,40 @@ export interface SwapMcmcOpts {
 
 /** Build a ChainState with `fixed` clamped on and `nToFill` free slots
  * filled via uniqueness-respecting initialization. Returns null if no
- * valid initial state can be built (e.g., user over-constrained items). */
+ * valid initial state can be built (e.g., user over-constrained items).
+ *
+ * `preOn` features are pre-placed at the front of `onNf` (the site-pin seeds):
+ * they occupy free slots — on the team and free to reroll their track values —
+ * but the caller (pt.ts) marks their slot indices `lockedSlots` so the species
+ * never swaps. Placing them first makes those slot indices a stable `0..L-1`
+ * across every chain. `constraints` must already account for their sites/values
+ * so the `nToFill` random fill doesn't collide with them. */
 export function initChain(
   model: IsingModel,
   fixed: readonly number[],
   available: readonly number[],
   nToFill: number,
-  fixedSpecies: Set<string>,
-  fixedItems: Set<string>,
+  constraints: ConstraintSets,
   hEff: Float64Array,
   rng: Rng,
+  preOn: readonly number[] = [],
 ): ChainState | null {
-  const { V, J, speciesOf, itemOf } = model;
+  const { V, J } = model;
   const state = new Uint8Array(V);
   for (const i of fixed) state[i] = 1;
+  for (const i of preOn) state[i] = 1;
 
-  let onNf: number[];
-  let offNf: number[];
+  let init: number[] = [];
   if (nToFill > 0) {
-    const init = initializeState(
-      available,
-      nToFill,
-      fixedSpecies,
-      fixedItems,
-      speciesOf,
-      itemOf,
-      rng,
-    );
-    if (init === null) return null;
+    const filled = initializeState(available, nToFill, constraints, model, rng);
+    if (filled === null) return null;
+    init = filled;
     for (const i of init) state[i] = 1;
-    onNf = init;
-    const onSet = new Set(init);
-    offNf = [];
-    for (const i of available) if (!onSet.has(i)) offNf.push(i);
-  } else {
-    onNf = [];
-    offNf = [];
   }
+  const onNf = [...preOn, ...init];
+  const onSet = new Set(onNf);
+  const offNf: number[] = [];
+  for (const i of available) if (!onSet.has(i)) offNf.push(i);
 
   const stateF = new Float64Array(V);
   for (let i = 0; i < V; i++) stateF[i] = state[i];
@@ -101,8 +99,7 @@ export function localSwapStep(
   model: IsingModel,
   hEff: Float64Array,
   T: number,
-  fixedSpecies: Set<string>,
-  fixedItems: Set<string>,
+  constraints: ConstraintSets,
   rng: Rng,
 ): { proposed: boolean; accepted: boolean } {
   if (chain.offNf.length === 0 || chain.onNf.length === 0) {
@@ -117,10 +114,8 @@ export function localSwapStep(
       iIn,
       outK,
       chain.onNf,
-      fixedSpecies,
-      fixedItems,
-      model.speciesOf,
-      model.itemOf,
+      constraints,
+      model,
     )
   ) {
     return { proposed: false, accepted: false };
@@ -164,7 +159,7 @@ export function swapMcmc(
   model: IsingModel,
   opts: SwapMcmcOpts,
 ): SwapMcmcResult | null {
-  const { V, h, teamSize, speciesOf, itemOf } = model;
+  const { V, h, teamSize } = model;
   const rng = new RngImpl(opts.seed);
 
   const available = availableIndices(model, opts.fixed, opts.excluded);
@@ -174,11 +169,7 @@ export function swapMcmc(
   const hEff = new Float64Array(V);
   for (let i = 0; i < V; i++) hEff[i] = opts.fieldWeight * h[i];
 
-  const { fixedSpecies, fixedItems } = buildConstraintSets(
-    opts.fixed,
-    speciesOf,
-    itemOf,
-  );
+  const constraints = buildConstraintSets(opts.fixed, model);
 
   if (nToFill === 0) {
     // Team fully determined by `fixed`; no swaps possible.
@@ -193,8 +184,7 @@ export function swapMcmc(
     opts.fixed,
     available,
     nToFill,
-    fixedSpecies,
-    fixedItems,
+    constraints,
     hEff,
     rng,
   );
@@ -209,8 +199,7 @@ export function swapMcmc(
       model,
       hEff,
       opts.temperature,
-      fixedSpecies,
-      fixedItems,
+      constraints,
       rng,
     );
     if (r.proposed) proposed++;

@@ -19,7 +19,7 @@ export function rankSingleSwaps(
   model: IsingModel,
   opts: RankOpts,
 ): SingleSwapEntry[] {
-  const { V, J, h, speciesOf, itemOf } = model;
+  const { V, J, h, siteOf, tracks, trackValues } = model;
   const fw = opts.fieldWeight;
   const topN = opts.topN ?? DEFAULT_TOP_N;
 
@@ -40,22 +40,23 @@ export function rankSingleSwaps(
     // Validity mask for in candidates.
     const valid = new Uint8Array(V);
     for (let i = 0; i < V; i++) valid[i] = teamMask[i] ? 0 : 1;
-    if (speciesOf !== null) {
-      const othersSpecies = new Set<string>();
-      for (const j of others) othersSpecies.add(speciesOf[j]);
-      for (let i = 0; i < V; i++) {
-        if (valid[i] && othersSpecies.has(speciesOf[i])) valid[i] = 0;
-      }
+    // Site (species) uniqueness against the rest of the team.
+    const othersSites = new Set<number>();
+    for (const j of others) othersSites.add(siteOf[j]);
+    for (let i = 0; i < V; i++) {
+      if (valid[i] && othersSites.has(siteOf[i])) valid[i] = 0;
     }
-    if (itemOf !== null) {
-      const othersItems = new Set<string>();
+    // Per-unique-track value uniqueness against the rest of the team.
+    for (let t = 0; t < tracks.length; t++) {
+      if (!tracks[t].unique) continue;
+      const othersValues = new Set<string>();
       for (const j of others) {
-        const it = itemOf[j];
-        if (it !== null) othersItems.add(it);
+        const v = trackValues[j][t];
+        if (v !== null) othersValues.add(v);
       }
       for (let i = 0; i < V; i++) {
-        const it = itemOf[i];
-        if (valid[i] && it !== null && othersItems.has(it)) valid[i] = 0;
+        const v = trackValues[i][t];
+        if (valid[i] && v !== null && othersValues.has(v)) valid[i] = 0;
       }
     }
 

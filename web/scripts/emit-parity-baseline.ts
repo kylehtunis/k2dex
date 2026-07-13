@@ -16,10 +16,17 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { IsingModel, TeamCounts } from "../src/sampler/types";
+import { factoredFromSpeciesItem } from "../src/sampler/model";
+import { buildSiteTables, siteConditional } from "../src/sampler/potts";
 import { meanfieldMarginals } from "../src/sampler/meanfield";
 import { greedyOptimize } from "../src/sampler/greedy";
 import { rankSingleSwaps } from "../src/sampler/rank";
 import { nearestObserved, teamKey } from "../src/render/corpus";
+import {
+  buildCooccurrence,
+  scoreCooccurrence,
+  cooccurrenceGreedy,
+} from "../src/sampler/cooccurrence";
 import { speciesToSlug } from "../src/render/sprite-url";
 import { intraTeamSumJ, pairwiseJRows } from "../src/render/observables";
 
@@ -99,6 +106,8 @@ const vocab = SPECIES_OF.map((s, i) => {
 const indexOf = new Map<string, number>();
 for (let i = 0; i < vocab.length; i++) indexOf.set(vocab[i], i);
 
+const factored = factoredFromSpeciesItem(SPECIES_OF, ITEM_OF);
+
 const model: IsingModel = {
   id: "synthetic",
   displayName: "Synthetic",
@@ -110,6 +119,7 @@ const model: IsingModel = {
   vocab,
   speciesOf: SPECIES_OF,
   itemOf: ITEM_OF,
+  ...factored,
   m,
   J,
   h,
@@ -126,6 +136,7 @@ interface MfCase {
     fixed: number[];
     excluded: number[];
     fieldWeight: number;
+    anchorStrength: number;
     nIters: number;
     tol: number;
     damp: number;
@@ -144,6 +155,7 @@ interface GreedyCase {
     pinned: number[];
     excluded: number[];
     fieldWeight: number;
+    anchorStrength: number;
     maxSwaps: number;
   };
   expected: {
@@ -179,14 +191,16 @@ interface RankCase {
 
 const mfCases: MfCase[] = [];
 for (const c of [
-  { name: "mf_fw_1.0_no_pins", fixed: [], excluded: [], fieldWeight: 1.0 },
-  { name: "mf_fw_0.5_one_pin", fixed: [0], excluded: [11], fieldWeight: 0.5 },
-  { name: "mf_fw_0.0_pin_uniqueness", fixed: [0, 2], excluded: [], fieldWeight: 0.0 },
+  { name: "mf_fw_1.0_no_pins", fixed: [], excluded: [], fieldWeight: 1.0, anchorStrength: 1.0 },
+  { name: "mf_fw_0.5_one_pin", fixed: [0], excluded: [11], fieldWeight: 0.5, anchorStrength: 1.0 },
+  { name: "mf_fw_0.0_pin_uniqueness", fixed: [0, 2], excluded: [], fieldWeight: 0.0, anchorStrength: 1.0 },
+  { name: "mf_fw_1.0_anchor_2.0", fixed: [0], excluded: [], fieldWeight: 1.0, anchorStrength: 2.0 },
 ]) {
   const opts = {
     fixed: c.fixed,
     excluded: c.excluded,
     fieldWeight: c.fieldWeight,
+    anchorStrength: c.anchorStrength,
     nIters: 200,
     tol: 1e-5,
     damp: 0.5,
@@ -226,8 +240,16 @@ for (const c of [
     excluded: [],
     fieldWeight: 0.0,
   },
+  {
+    name: "greedy_fw_1.0_anchor_2.5",
+    startingTeam: [0, 2, 4, 6],
+    pinned: [0],
+    excluded: [],
+    fieldWeight: 1.0,
+    anchorStrength: 2.5,
+  },
 ]) {
-  const opts = { ...c, maxSwaps: 10 };
+  const opts = { anchorStrength: 1.0, ...c, maxSwaps: 10 };
   const r = greedyOptimize(model, opts);
   greedyCases.push({
     name: c.name,
@@ -340,6 +362,121 @@ for (const c of [
   corpusCases.push({ name: c.name, team: c.team, expected: r });
 }
 
+// --- Potts site-table + site-conditional cases -----------------------
+
+const siteTablesTS = buildSiteTables(model);
+const siteTablesExpected = {
+  nSites: siteTablesTS.nSites,
+  siteFeatures: siteTablesTS.siteFeatures,
+  itemId: Array.from(siteTablesTS.itemId),
+};
+
+const availAll = new Uint8Array(V).fill(1);
+
+interface SiteCondCase {
+  name: string;
+  input: { site: number; rFeat: number[]; invTemp: number; rWeights: number[] | null };
+  expected: {
+    feats: number[];
+    negE: number[];
+    valid: number[]; // 0/1
+    logZ: number | null; // null encodes -Infinity for JSON
+  };
+}
+
+const siteCondCases: SiteCondCase[] = [];
+for (const c of [
+  { name: "site0_no_retained", site: 0, rFeat: [] as number[], invTemp: 1.0 },
+  { name: "site1_retained_2_4", site: 1, rFeat: [2, 4], invTemp: 1.0 },
+  { name: "site2_item_exclusion", site: 2, rFeat: [1, 3], invTemp: 1.5 },
+  { name: "site5_itemless_tempered", site: 5, rFeat: [0, 6], invTemp: 0.5 },
+  // Anchor-tilt weights: retained member 2 is a pin at alpha=2, member 4 free.
+  { name: "site1_anchor_weights", site: 1, rFeat: [2, 4], invTemp: 1.0, rWeights: [2.0, 1.0] },
+] as Array<{ name: string; site: number; rFeat: number[]; invTemp: number; rWeights?: number[] }>) {
+  const rItemId = c.rFeat.map((f) => siteTablesTS.itemId[f]);
+  const r = siteConditional(
+    c.site, c.rFeat, rItemId, model, h, c.invTemp, siteTablesTS, availAll, c.rWeights,
+  );
+  siteCondCases.push({
+    name: c.name,
+    input: { site: c.site, rFeat: c.rFeat, invTemp: c.invTemp, rWeights: c.rWeights ?? null },
+    expected: {
+      feats: r.feats,
+      negE: Array.from(r.negE),
+      valid: r.valid.map((v) => (v ? 1 : 0)),
+      logZ: Number.isFinite(r.logZ) ? r.logZ : null,
+    },
+  });
+}
+
+// --- Co-occurrence cases ---------------------------------------------
+
+// A richer synthetic corpus than the nearest_observed one so co-occurrence
+// counts have structure: features 0..11 laid out as 6 species × 2 items.
+// Teams are size-4 and legal (distinct species). Kept separate from the
+// nearest_observed corpus so those hand-computed expectations stay stable.
+const coocEntries: Array<{ team: number[]; count: number }> = [
+  { team: [0, 2, 4, 6], count: 8 },
+  { team: [0, 3, 4, 7], count: 5 },
+  { team: [1, 2, 5, 8], count: 6 },
+  { team: [0, 2, 5, 9], count: 4 },
+  { team: [1, 3, 6, 10], count: 3 },
+  { team: [0, 4, 8, 10], count: 2 },
+];
+const coocTeamCounts: TeamCounts = new Map();
+for (const e of coocEntries) coocTeamCounts.set(teamKey(e.team), e.count);
+
+const cooc = buildCooccurrence(coocTeamCounts, V);
+
+interface CoocScoreCase {
+  name: string;
+  heldIn: number[];
+  scores: number[];
+}
+const coocScoreCases: CoocScoreCase[] = [];
+for (const c of [
+  { name: "cooc_score_single", heldIn: [0] },
+  { name: "cooc_score_pair", heldIn: [0, 2] },
+  { name: "cooc_score_empty", heldIn: [] as number[] },
+]) {
+  coocScoreCases.push({
+    name: c.name,
+    heldIn: c.heldIn,
+    scores: Array.from(scoreCooccurrence(cooc.C, V, c.heldIn)),
+  });
+}
+
+interface CoocGreedyCase {
+  name: string;
+  input: { fixed: number[]; excluded: number[] };
+  finalTeam: number[];
+}
+const coocGreedyCases: CoocGreedyCase[] = [];
+for (const c of [
+  { name: "cooc_greedy_from_pair", fixed: [0, 2], excluded: [] as number[] },
+  { name: "cooc_greedy_with_exclude", fixed: [0], excluded: [2, 3] },
+]) {
+  coocGreedyCases.push({
+    name: c.name,
+    input: { fixed: c.fixed, excluded: c.excluded },
+    finalTeam: cooccurrenceGreedy(cooc, model, {
+      fixed: c.fixed,
+      excluded: c.excluded,
+    }),
+  });
+}
+
+const coocExpected = {
+  rosters: coocEntries,
+  build: {
+    C: Array.from(cooc.C),
+    m: Array.from(cooc.m),
+    nTeams: cooc.nTeams,
+  },
+  scoreCases: coocScoreCases,
+  greedyCases: coocGreedyCases,
+};
+
 // --- Write baseline ---------------------------------------------------
 
 const baseline = {
@@ -366,9 +503,12 @@ const baseline = {
   },
   slugs: slugCases,
   obs: obsCases,
+  siteTables: siteTablesExpected,
+  siteConditional: siteCondCases,
+  cooccurrence: coocExpected,
 };
 
 mkdirSync(dirname(OUT_PATH), { recursive: true });
 writeFileSync(OUT_PATH, JSON.stringify(baseline, null, 2));
 console.log(`Wrote ${OUT_PATH}`);
-console.log(`  ${mfCases.length} MF cases, ${greedyCases.length} greedy cases, ${rankCases.length} rank cases, ${corpusCases.length} corpus cases, ${slugCases.length} slug cases, ${obsCases.length} obs cases`);
+console.log(`  ${mfCases.length} MF cases, ${greedyCases.length} greedy cases, ${rankCases.length} rank cases, ${corpusCases.length} corpus cases, ${slugCases.length} slug cases, ${obsCases.length} obs cases, ${siteCondCases.length} site-conditional cases, ${coocScoreCases.length} cooc-score + ${coocGreedyCases.length} cooc-greedy cases`);

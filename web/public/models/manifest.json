@@ -1,51 +1,46 @@
 {
-  "schema_version": 1,
-  "default_model": "reg-m-b-experimental",
+  "schema_version": 3,
+  "default_model": "reg-m-b",
+  "types": {
+    "standard": {
+      "description": "Fit on all recorded tournament rosters, weighting recent teams and those brought to in-person events. The recommended model."
+    }
+  },
   "models": [
     {
-      "id": "reg-m-b-experimental",
-      "display_name": "Reg. M-B (Experimental)",
+      "id": "reg-m-b",
+      "display_name": "Reg. M-B",
       "regulation": "M-B",
+      "type": "standard",
       "feature_dimensions": 2,
-      "V": 626,
-      "n_corpus_teams": 8946,
-      "latest_tournament_date": "2026-07-10T22:40:00.000Z",
+      "V": 790,
+      "n_corpus_teams": 13390,
+      "latest_tournament_date": "2026-07-13T01:00:00.000Z",
       "team_size": 6,
-      "description": "A new model for M-B",
+      "tracks": [
+        {
+          "name": "item",
+          "unique": true
+        }
+      ],
       "new": true
     },
     {
-      "id": "reg-m-a-species",
-      "display_name": "Reg. M-A Species",
+      "id": "reg-m-a",
+      "display_name": "Reg. M-A",
       "regulation": "M-A",
-      "feature_dimensions": 1,
-      "V": 198,
-      "n_corpus_teams": 25704,
-      "latest_tournament_date": "2026-06-16T17:00:00.000Z",
-      "team_size": 6,
-      "description": "Used for creating teams of Pok\u00e9mon, considering only the species. Lower resolution than the Species @ Item model."
-    },
-    {
-      "id": "reg-m-a-species-item",
-      "display_name": "Reg. M-A Species @ Item",
-      "regulation": "M-A",
+      "type": "standard",
       "feature_dimensions": 2,
-      "V": 833,
-      "n_corpus_teams": 23850,
-      "latest_tournament_date": "2026-06-16T17:00:00.000Z",
+      "V": 843,
+      "n_corpus_teams": 22037,
+      "latest_tournament_date": "2026-06-15T23:00:00.000Z",
       "team_size": 6,
-      "description": "Used for creating teams of Pok\u00e9mon with their held items. This is the recommended model."
-    },
-    {
-      "id": "reg-m-a-species-item-weighted",
-      "display_name": "Reg. M-A Species @ Item (Weighted)",
-      "regulation": "M-A",
-      "feature_dimensions": 2,
-      "V": 696,
-      "n_corpus_teams": 23276,
-      "latest_tournament_date": "2026-06-16T17:00:00.000Z",
-      "team_size": 6,
-      "description": "Experimental model that places higher emphasis on recent teams and those brought to in-person tournaments."
+      "tracks": [
+        {
+          "name": "item",
+          "unique": true
+        }
+      ]
     }
   ]
 }

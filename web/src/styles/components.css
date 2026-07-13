@@ -158,16 +158,17 @@
   border-radius: 1px;
 }
 
-/* ----- Corpus badge (merged obs / Δswaps) ----- */
+/* ----- Corpus badge (merged obs / Δswaps) -----
+ * Plain colored mono text, matching .lab-chip's weight/size, so it reads
+ * as a metric alongside Score/Coherence rather than a pill button. */
 .lab-badge {
   display: inline-block;
   font-family: var(--lab-font-mono);
-  font-size: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.06em;
   text-transform: lowercase;
-  padding: 2px 8px;
-  border-radius: 2px;
-  border: 1px solid currentColor;
 }
 .lab-badge-seen { color: var(--lab-pos); }
 .lab-badge-near { color: var(--lab-warn); }
@@ -238,6 +239,64 @@
   color: var(--lab-ink-muted);
   margin-top: auto;
 }
+.lab-attr-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+/* Factored 6-slot roster editor */
+.lab-roster-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+@media (max-width: 640px) {
+  .lab-roster-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.lab-roster-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--lab-border, #d8dbd4);
+  border-radius: 8px;
+  background: var(--lab-surface, #fff);
+}
+.lab-roster-slot-sprite {
+  align-self: center;
+}
+.lab-roster-slot-empty {
+  align-items: center;
+  justify-content: flex-start;
+  border-style: dashed;
+  background: transparent;
+}
+.lab-roster-slot-inert {
+  opacity: 0.55;
+}
+.lab-roster-slot-ord {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  color: var(--lab-ink-muted);
+  letter-spacing: 0.08em;
+}
+.lab-roster-slot-hint {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--lab-ink-muted);
+  text-align: center;
+}
+.lab-roster-slot .lab-roster-species,
+.lab-roster-slot .lab-roster-item {
+  width: 100%;
+}
+.lab-roster-slot-empty .lab-roster-species {
+  width: 100%;
+}
 .lab-slot-empty {
   background: transparent;
   border: none;
@@ -290,6 +349,15 @@
   padding: 3px 10px;
   border-radius: 2px;
 }
+.lab-included-tag {
+  font-family: var(--lab-font-sans);
+  font-size: 11px;
+  color: var(--lab-accent);
+  border: 1px solid var(--lab-accent);
+  background: var(--lab-panel);
+  padding: 3px 10px;
+  border-radius: 2px;
+}
 .lab-excluded-note {
   font-family: var(--lab-font-serif);
   font-style: italic;
@@ -332,11 +400,6 @@
 .lab-comp-table tr.top-row {
   background: color-mix(in oklch, var(--lab-accent) 8%, transparent);
 }
-.lab-comp-pair {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 .lab-comp-mon {
   display: flex;
   align-items: center;
@@ -372,6 +435,128 @@
   color: var(--lab-ink);
 }
 
+/* ----- Completion cards (stacked; full team + observables underneath) ----- */
+.lab-comp-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lab-comp-card {
+  border: 1px solid var(--lab-rule);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: var(--lab-surface, #fff);
+}
+.lab-comp-card.is-top {
+  border-color: var(--lab-accent);
+  background: color-mix(in oklch, var(--lab-accent) 6%, var(--lab-surface, #fff));
+}
+.lab-comp-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.lab-comp-card-rank {
+  font-family: var(--lab-font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--lab-ink-muted);
+}
+.lab-comp-card-freq {
+  font-family: var(--lab-font-mono);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--lab-ink);
+}
+.lab-comp-card-freq-unit {
+  font-size: 11px;
+  color: var(--lab-ink-muted);
+  margin-left: 1px;
+}
+.lab-comp-mon-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .lab-comp-mon-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.lab-comp-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+button.lab-comp-tile {
+  width: 100%;
+}
+.lab-comp-tile.is-pinned {
+  background: var(--lab-panel);
+  border-color: var(--lab-rule-soft);
+}
+.lab-comp-tile-name {
+  font-family: var(--lab-font-serif);
+  font-size: 13px;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--lab-ink);
+}
+.lab-comp-tile-item {
+  font-family: var(--lab-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--lab-ink-muted);
+}
+.lab-comp-tile-pin {
+  font-family: var(--lab-font-sans);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+}
+.lab-feature-link.lab-comp-tile:hover .lab-comp-tile-name {
+  color: var(--lab-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.lab-comp-card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 22px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--lab-rule-soft);
+}
+.lab-comp-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lab-comp-stat-label {
+  font-family: var(--lab-font-sans);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+}
+.lab-comp-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
 .lab-analyze-btn {
   display: inline-block;
   font-family: var(--lab-font-sans);
@@ -400,6 +585,121 @@
 .lab-analyze-btn:disabled:hover {
   background: transparent;
   color: var(--lab-accent);
+}
+
+/* ----- /articles index ----- */
+
+.lab-articles {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 16px 64px;
+}
+.lab-articles-header {
+  margin: 32px 0 28px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--lab-accent);
+}
+.lab-articles-header h1 {
+  font-family: var(--lab-font-serif, "Source Serif 4", Georgia, serif);
+  margin: 0 0 8px;
+}
+.lab-articles-lede {
+  font-family: var(--lab-font-serif, "Source Serif 4", Georgia, serif);
+  font-style: italic;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--lab-ink-soft);
+  margin: 0;
+}
+.lab-articles-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.lab-article-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  background: var(--lab-panel-alt);
+  border: 1px solid var(--lab-rule);
+  border-left: 4px solid var(--lab-accent);
+  border-radius: 0 3px 3px 0;
+  padding: 22px 28px;
+  text-decoration: none;
+  color: inherit;
+  transition: background 80ms ease;
+}
+.lab-article-card:hover,
+.lab-article-card:focus-visible {
+  background: color-mix(in oklch, var(--lab-accent) 5%, var(--lab-panel-alt));
+}
+.lab-article-card-date {
+  font-family: var(--lab-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
+  margin-bottom: 6px;
+}
+.lab-article-card-title {
+  font-family: var(--lab-font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--lab-ink);
+  margin-bottom: 8px;
+}
+.lab-article-card-desc {
+  font-family: var(--lab-font-serif);
+  font-style: italic;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--lab-ink-soft);
+  margin: 0;
+  max-width: 72ch;
+}
+.lab-article-card-arrow {
+  font-family: var(--lab-font-mono);
+  font-size: 22px;
+  color: var(--lab-ink-muted);
+  flex-shrink: 0;
+  display: inline-block;
+  transition: color 80ms ease, transform 80ms ease;
+}
+.lab-article-card:hover .lab-article-card-arrow,
+.lab-article-card:focus-visible .lab-article-card-arrow {
+  color: var(--lab-accent);
+  transform: translateX(4px);
+}
+
+/* ----- article shell ----- */
+
+.lab-article-nav {
+  max-width: 880px;
+  margin: 24px auto 0;
+  padding: 0 16px;
+}
+.lab-article-back {
+  font-family: var(--lab-font-mono);
+  font-size: 13px;
+  color: var(--lab-ink-muted);
+  text-decoration: none;
+  transition: color 80ms ease;
+}
+.lab-article-back:hover,
+.lab-article-back:focus-visible {
+  color: var(--lab-accent);
+}
+
+@media (max-width: 640px) {
+  .lab-article-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
 }
 
 /* ----- /science page ----- */
@@ -789,13 +1089,6 @@
 
 /* ----- Composed-cell layout classes (web-only; no rendering_html twin) ----- */
 
-/* Action button stack inside completion rows. */
-.lab-comp-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
 .lab-pair-cell,
 .lab-swap-cell {
   display: flex;
@@ -905,7 +1198,273 @@
   height: auto;
 }
 
+/* ===== "Why Not Just Count?" article (validation) ===== */
+
+/* Teammate-% table (shared by the co-occurrence explorer and the two ranked
+ * comparison columns). */
+.lab-teammate-widget {
+  margin: 16px 0 8px;
+}
+.lab-teammate-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--lab-ink-soft);
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.lab-teammate-picker > :last-child {
+  min-width: 220px;
+}
+.lab-teammate-table {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lab-teammate-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.lab-teammate-row:nth-child(odd) {
+  background: color-mix(in oklab, var(--lab-ink) 4%, transparent);
+}
+.lab-teammate-rank {
+  width: 20px;
+  text-align: right;
+  font-family: var(--lab-font-mono);
+  font-size: 12px;
+  color: var(--lab-ink-muted);
+  flex-shrink: 0;
+}
+.lab-teammate-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-teammate-bar-wrap {
+  flex: 0 0 90px;
+  height: 8px;
+  background: color-mix(in oklab, var(--lab-ink) 8%, transparent);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.lab-teammate-bar {
+  display: block;
+  height: 100%;
+  background: var(--lab-accent);
+  border-radius: 4px;
+}
+.lab-teammate-pct {
+  flex: 0 0 48px;
+  text-align: right;
+  font-family: var(--lab-font-mono);
+  font-size: 13px;
+  color: var(--lab-ink-soft);
+}
+
+/* Side-by-side comparison. */
+.lab-vs-widget {
+  margin: 20px 0;
+}
+.lab-vs-picks {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.lab-vs-picks-label {
+  font-size: 14px;
+  color: var(--lab-ink-soft);
+}
+.lab-vs-pick {
+  min-width: 180px;
+}
+.lab-vs-hint {
+  color: var(--lab-ink-muted);
+  font-size: 14px;
+}
+.lab-comparison-columns {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+.lab-comparison-col {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.lab-comparison-col-head {
+  margin: 0 0 10px;
+  font-family: var(--lab-font-serif, "Source Serif 4", Georgia, serif);
+  font-size: 16px;
+  display: flex;
+  flex-direction: column;
+}
+.lab-comparison-col-sub {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--lab-ink-muted);
+  margin-top: 2px;
+}
+.lab-vs-anchor {
+  max-width: 360px;
+  margin: 16px auto 0;
+  text-align: center;
+}
+.lab-vs-anchor .lab-slider {
+  width: 100%;
+}
+.lab-vs-actions {
+  margin: 18px 0 4px;
+  text-align: center;
+}
+.lab-vs-teams {
+  margin-top: 20px;
+}
+.lab-vs-team-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.lab-vs-team-mon {
+  display: flex;
+  justify-content: center;
+}
+.lab-vs-scorecard {
+  display: flex;
+  gap: 20px;
+  margin: 0;
+}
+.lab-vs-scorecard div {
+  display: flex;
+  flex-direction: column;
+}
+.lab-vs-scorecard dt {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--lab-ink-muted);
+}
+.lab-vs-scorecard dd {
+  margin: 0;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Item-modulation cards (§2). */
+.lab-modulation-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin: 20px 0;
+}
+.lab-modulation-card {
+  /* Override the centered inline-flex `.lab-science-section figure` default. */
+  display: block;
+  align-items: stretch;
+  margin: 0;
+  padding: 18px 20px;
+  border: 1px solid var(--lab-border, color-mix(in oklab, var(--lab-ink) 15%, transparent));
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--lab-ink) 2%, transparent);
+}
+.lab-modulation-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.lab-modulation-pair {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.lab-modulation-times {
+  font-size: 18px;
+  color: var(--lab-ink-muted);
+}
+.lab-modulation-headline {
+  margin: 0;
+  font-family: var(--lab-font-serif, "Source Serif 4", Georgia, serif);
+  font-size: 17px;
+}
+.lab-modulation-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.lab-modulation-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.lab-modulation-label {
+  flex: 0 0 130px;
+  font-size: 13px;
+  text-align: right;
+}
+.lab-modulation-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 16px;
+}
+.lab-modulation-axis {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: color-mix(in oklab, var(--lab-ink) 30%, transparent);
+}
+.lab-modulation-fill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 3px;
+}
+.lab-modulation-value {
+  flex: 0 0 48px;
+  font-family: var(--lab-font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.lab-modulation-body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--lab-ink-soft);
+  text-align: left;
+  width: auto;
+  min-width: 0;
+}
+
 /* ===== Responsive overrides ===== */
+
+@media (max-width: 900px) {
+  /* Comparison columns stack; team grids stay side by side but narrower. */
+  .lab-comparison-columns {
+    flex-direction: column;
+    gap: 20px;
+  }
+  .lab-modulation-label {
+    flex-basis: 100px;
+  }
+}
 
 @media (max-width: 640px) {
   /* Roster strip: 3 × 2 keeps all six slots visible. */
@@ -976,18 +1535,6 @@
   .lab-table-cards .lab-comp-freq {
     align-items: flex-start;
   }
-  /* Let completion mons flow as a 2-column grid when there's room. */
-  .lab-table-cards .lab-comp-pair {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-  }
-  .lab-comp-actions {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-
   /* Pair tables (PairwiseJ / ExtremeCouplings): pair horizontal,
    * stats stacked below. */
   .lab-table-pairs {
@@ -1217,11 +1764,27 @@
   font-size: 20px;
   color: var(--lab-ink);
 }
-.lab-feature-modal-item {
-  margin-top: 2px;
-  font-family: var(--lab-font-mono);
-  font-size: 12px;
-  color: var(--lab-ink-soft);
+/* Attribute (track) dropdowns under the species identity. */
+.lab-feature-attrs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-bottom: 12px;
+}
+.lab-feature-attr {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 160px;
+  min-width: 140px;
+}
+.lab-feature-attr-label {
+  font-family: var(--lab-font-sans);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lab-ink-muted);
 }
 
 .lab-feature-modal-body {
@@ -1265,23 +1828,31 @@
   gap: 10px;
   min-width: 0;
 }
-/* Let the partner label shrink + wrap so long "Species @ Item" names never
- * force the two-up grid wider than the modal (would cause horizontal scroll). */
-.lab-feature-coupling-row .lab-feature-link {
+/* Let the partner label shrink + wrap so long species names never force the
+ * row wider than the modal (would cause horizontal scroll). */
+.lab-feature-coupling-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
   flex: 1 1 auto;
   flex-wrap: wrap;
 }
-.lab-feature-coupling-row .lab-comp-mon-name,
-.lab-feature-coupling-row .lab-comp-mon-item {
+.lab-feature-coupling-row .lab-comp-mon-name {
   overflow-wrap: break-word;
 }
 .lab-feature-coupling-val,
+/* The roster strip + its stats can outgrow a narrow dock, so let the stats
+ * drop onto their own line rather than forcing horizontal scroll. */
+.lab-feature-corpus-row {
+  flex-wrap: wrap;
+}
 .lab-feature-corpus-meta {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  margin-left: auto;
 }
 .lab-feature-corpus-share {
   min-width: 48px;
@@ -1289,6 +1860,11 @@
   font-family: var(--lab-font-mono);
   font-size: 11px;
   color: var(--lab-ink-muted);
+}
+/* Compact variant of the analyze link, sized to sit inside a corpus row. */
+.lab-feature-corpus-analyze {
+  font-size: 10px;
+  padding: 2px 6px;
 }
 
 /* Route-aware quick actions. */
@@ -1384,4 +1960,113 @@
   body.feature-docked {
     padding-right: 460px;
   }
+}
+
+/* ----- Species coupling table: expandable rows ----- */
+.lab-species-coupling-row:hover {
+  background: var(--lab-surface-hover, rgba(128, 128, 128, 0.06));
+}
+.lab-species-coupling-row.lab-expanded {
+  background: var(--lab-surface-hover, rgba(128, 128, 128, 0.06));
+}
+.lab-modulation-detail td {
+  padding: 0 !important;
+}
+.lab-modulation-list {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--lab-border);
+}
+.lab-modulation-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lab-ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.lab-modulation-table {
+  width: 100%;
+  font-size: 13px;
+  border-collapse: collapse;
+}
+.lab-modulation-table th {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--lab-ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: left;
+  padding: 2px 8px 4px 0;
+  border-bottom: 1px solid var(--lab-border);
+}
+.lab-modulation-table th.num {
+  text-align: right;
+}
+.lab-modulation-table td {
+  padding: 4px 8px 4px 0;
+  vertical-align: middle;
+}
+.lab-modulation-table td.num {
+  text-align: right;
+  font-family: var(--lab-font-mono);
+}
+.lab-pair-cell-compact {
+  gap: 4px;
+}
+.lab-pair-cell-compact .lab-pair-sep {
+  font-size: 12px;
+}
+/* Modulation table row: whole row drills into the partner species. */
+.lab-modulation-row:hover {
+  background: var(--lab-surface-hover, rgba(128, 128, 128, 0.06));
+}
+/* Item pair cell shows sprite + item only (species are fixed for the table),
+ * so the row stays narrow and the J / deviation columns never clip. */
+.lab-mod-pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.lab-mod-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.lab-mod-item-label {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--lab-ink);
+  overflow-wrap: anywhere;
+}
+
+/* ----- Feature modal: item-shift annotation ----- */
+.lab-feature-item-shift {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  color: var(--lab-ink-muted);
+  margin-left: 4px;
+}
+
+/* ----- Feature modal: expandable coupling rows ----- */
+.lab-feature-coupling-row-wrap {
+  list-style: none;
+}
+.lab-feature-coupling-row-wrap .lab-feature-coupling-row:hover {
+  background: var(--lab-surface-hover, rgba(128, 128, 128, 0.06));
+}
+.lab-feature-coupling-row-wrap .lab-feature-coupling-row.lab-expanded {
+  background: var(--lab-surface-hover, rgba(128, 128, 128, 0.06));
+}
+.lab-feature-coupling-row-wrap .lab-modulation-list {
+  padding: 4px 0 8px;
+  border-top: 1px solid var(--lab-border);
+}
+
+/* ----- Feature modal: corpus item filter ----- */
+.lab-feature-corpus-filter {
+  margin-bottom: 8px;
+  max-width: 240px;
 }

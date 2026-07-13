@@ -124,27 +124,34 @@ export interface ScoreChipProps {
   value: number;
   fmt?: ChipFmt;
   decimals?: number;
+  /** Native hover tooltip (e.g. the value's corpus percentile). */
+  title?: string;
 }
 
-export function ScoreChip({ value, fmt = "signed", decimals }: ScoreChipProps) {
+export function ScoreChip({
+  value,
+  fmt = "signed",
+  decimals,
+  title,
+}: ScoreChipProps) {
   if (fmt === "signed") {
     const d = decimals ?? 3;
     const color = value >= 0 ? "var(--lab-pos)" : "var(--lab-neg)";
     return (
-      <span className="lab-chip" style={{ color }}>
+      <span className="lab-chip" style={{ color }} title={title}>
         {formatSigned(value, d)}
       </span>
     );
   }
   if (fmt === "pct") {
     const d = decimals ?? 1;
-    return <span className="lab-chip">{formatPct(value, d)}</span>;
+    return <span className="lab-chip" title={title}>{formatPct(value, d)}</span>;
   }
   // count
   const n = Math.trunc(value);
   const color = n === 0 ? "var(--lab-ink-muted)" : "var(--lab-ink)";
   return (
-    <span className="lab-chip" style={{ color }}>
+    <span className="lab-chip" style={{ color }} title={title}>
       {n}
     </span>
   );

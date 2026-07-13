@@ -5,12 +5,25 @@
 import { GREEDY_MAX_SWAPS, MF_MAX_ITERS, MF_TOL, TEAM_SIZE } from "../constants";
 import { greedyOptimize } from "../sampler/greedy";
 import { meanfieldMarginals } from "../sampler/meanfield";
+import {
+  buildConstraintSets,
+  occupy,
+  resolveSitePins,
+  violatesConstraints,
+} from "../sampler/energy";
 import type { GreedyChainEntry, IsingModel } from "../sampler/types";
 
 export interface FastPathInput {
   fixed: readonly number[];
+  /** Site-level pins (species fixed, item free). The greedy path has no reroll
+   * machinery, so each is resolved up front to its best placeable feature and
+   * then treated as an ordinary feature pin. */
+  fixedSites?: readonly number[];
   excludedSpecies: readonly string[]; // species-level
   fieldWeight: number;
+  /** Anchor-field tilt alpha ("Anchor Strength"); pins for the tilt are the
+   * feature pins plus the resolved site-pin seeds. Default 1 (no tilt). */
+  anchorStrength?: number;
 }
 
 export interface FastPathResult {
@@ -47,8 +60,21 @@ export function runFastPath(
   model: IsingModel,
   input: FastPathInput,
 ): { ok: true; result: FastPathResult } | { ok: false; error: FastPathError } {
-  const { fixed, fieldWeight } = input;
+  const { fieldWeight } = input;
   const excluded = expandExcludedSpecies(input.excludedSpecies, model);
+  // Resolve site pins to their best feature and treat them as feature pins.
+  const seeds = resolveSitePins(model, input.fixedSites ?? [], input.fixed, excluded);
+  if (seeds === null) {
+    return {
+      ok: false,
+      error: {
+        kind: "over_constrained",
+        message:
+          "Not enough available Pokemon to fill the team after applying constraints.",
+      },
+    };
+  }
+  const fixed = [...input.fixed, ...seeds];
   const kFree = TEAM_SIZE - fixed.length;
   if (kFree < 0) {
     return {
@@ -57,10 +83,12 @@ export function runFastPath(
     };
   }
 
+  const anchorStrength = input.anchorStrength ?? 1;
   const mf = meanfieldMarginals(model, {
     fixed,
     excluded,
     fieldWeight,
+    anchorStrength,
     nIters: MF_MAX_ITERS,
     tol: MF_TOL,
   });
@@ -81,22 +109,13 @@ export function runFastPath(
   for (let i = 0; i < model.V; i++) if (mf.validMask[i]) validIdxs.push(i);
   validIdxs.sort((a, b) => mf.marginals[b] - mf.marginals[a]);
 
-  const usedSp = new Set<string>();
-  const usedItem = new Set<string>();
-  for (const i of fixed) {
-    usedSp.add(model.speciesOf[i]);
-    const it = model.itemOf[i];
-    if (it !== null) usedItem.add(it);
-  }
+  const taken = buildConstraintSets(fixed, model);
   const initFree: number[] = [];
   for (const cand of validIdxs) {
     if (initFree.length === kFree) break;
-    if (usedSp.has(model.speciesOf[cand])) continue;
-    const it = model.itemOf[cand];
-    if (it !== null && usedItem.has(it)) continue;
+    if (violatesConstraints(cand, taken, model)) continue;
     initFree.push(cand);
-    usedSp.add(model.speciesOf[cand]);
-    if (it !== null) usedItem.add(it);
+    occupy(taken, cand, model);
   }
   if (initFree.length < kFree) {
     return {
@@ -115,6 +134,7 @@ export function runFastPath(
     pinned: fixed,
     excluded,
     fieldWeight,
+    anchorStrength,
     maxSwaps: GREEDY_MAX_SWAPS,
   });
   return {

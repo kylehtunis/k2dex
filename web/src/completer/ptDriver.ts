@@ -31,6 +31,7 @@ export function runPT(
   model: IsingModel,
   opts: {
     fixed: readonly number[];
+    fixedSites?: readonly number[];
     excluded: readonly number[];
     fieldWeight: number;
     coldT: number;
@@ -41,6 +42,9 @@ export function runPT(
     burnIn: number;
     swapInterval: number;
     seed?: number;
+    pReroll?: number;
+    anchorStrength?: number;
+    projectToSites?: boolean;
   },
 ): Promise<PTSuccess | PTFailure> {
   return new Promise((resolve) => {
@@ -65,10 +69,13 @@ export function runPT(
         h: model.h,
         m: model.m,
         vocab: model.vocab,
-        speciesOf: model.speciesOf,
-        itemOf: model.itemOf,
+        sites: model.sites,
+        siteOf: model.siteOf,
+        tracks: model.tracks,
+        trackValues: model.trackValues,
       },
       fixed: opts.fixed,
+      fixedSites: opts.fixedSites,
       excluded: opts.excluded,
       fieldWeight: opts.fieldWeight,
       coldT: opts.coldT,
@@ -79,6 +86,9 @@ export function runPT(
       burnIn: opts.burnIn,
       swapInterval: opts.swapInterval,
       seed: opts.seed ?? 0x5eed,
+      pReroll: opts.pReroll,
+      anchorStrength: opts.anchorStrength,
+      projectToSites: opts.projectToSites,
     };
     worker.postMessage(req);
   });

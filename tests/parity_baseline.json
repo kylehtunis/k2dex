@@ -228,6 +228,7 @@
         "fixed": [],
         "excluded": [],
         "fieldWeight": 1,
+        "anchorStrength": 1,
         "nIters": 200,
         "tol": 0.00001,
         "damp": 0.5
@@ -274,6 +275,7 @@
           11
         ],
         "fieldWeight": 0.5,
+        "anchorStrength": 1,
         "nIters": 200,
         "tol": 0.00001,
         "damp": 0.5
@@ -319,6 +321,7 @@
         ],
         "excluded": [],
         "fieldWeight": 0,
+        "anchorStrength": 1,
         "nIters": 200,
         "tol": 0.00001,
         "damp": 0.5
@@ -354,12 +357,58 @@
         ],
         "iters": 23
       }
+    },
+    {
+      "name": "mf_fw_1.0_anchor_2.0",
+      "input": {
+        "fixed": [
+          0
+        ],
+        "excluded": [],
+        "fieldWeight": 1,
+        "anchorStrength": 2,
+        "nIters": 200,
+        "tol": 0.00001,
+        "damp": 0.5
+      },
+      "expected": {
+        "marginals": [
+          1,
+          0.7032443793137326,
+          0.758337114394225,
+          0.6064580987496222,
+          0.33005950881666246,
+          0.15790995270656105,
+          0.12129405961400007,
+          0.17648399151086408,
+          0.3588235676047735,
+          0.6204569317107209,
+          0.7492747697850789,
+          0.7418070847910856
+        ],
+        "validMask": [
+          0,
+          0,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "iters": 24
+      }
     }
   ],
   "greedy": [
     {
       "name": "greedy_fw_1.0_no_pins",
       "input": {
+        "anchorStrength": 1,
         "name": "greedy_fw_1.0_no_pins",
         "startingTeam": [
           0,
@@ -431,6 +480,7 @@
     {
       "name": "greedy_fw_0.5_pinned",
       "input": {
+        "anchorStrength": 1,
         "name": "greedy_fw_0.5_pinned",
         "startingTeam": [
           0,
@@ -491,6 +541,7 @@
     {
       "name": "greedy_fw_0.0_pure_J",
       "input": {
+        "anchorStrength": 1,
         "name": "greedy_fw_0.0_pure_J",
         "startingTeam": [
           1,
@@ -562,6 +613,65 @@
             "inIdx": 0,
             "deltaEAdj": -0.16304476937687085,
             "energyAdjAfter": -1.220348676963907,
+            "energyRawAfter": -0.9203486769639072,
+            "sumJAfter": 1.2203486769639071,
+            "teamAfter": [
+              0,
+              2,
+              9,
+              10
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "greedy_fw_1.0_anchor_2.5",
+      "input": {
+        "anchorStrength": 2.5,
+        "name": "greedy_fw_1.0_anchor_2.5",
+        "startingTeam": [
+          0,
+          2,
+          4,
+          6
+        ],
+        "pinned": [
+          0
+        ],
+        "excluded": [],
+        "fieldWeight": 1,
+        "maxSwaps": 10
+      },
+      "expected": {
+        "finalTeam": [
+          0,
+          2,
+          9,
+          10
+        ],
+        "chain": [
+          {
+            "step": 1,
+            "outIdx": 6,
+            "inIdx": 10,
+            "deltaEAdj": -3.435434384166265,
+            "energyAdjAfter": -1.2250182642406395,
+            "energyRawAfter": -0.1498388444303691,
+            "sumJAfter": 0.949838844430369,
+            "teamAfter": [
+              0,
+              2,
+              4,
+              10
+            ]
+          },
+          {
+            "step": 2,
+            "outIdx": 4,
+            "inIdx": 9,
+            "deltaEAdj": -1.492579298389336,
+            "energyAdjAfter": -2.7175975626299755,
             "energyRawAfter": -0.9203486769639072,
             "sumJAfter": 1.2203486769639071,
             "teamAfter": [
@@ -1073,5 +1183,503 @@
         ]
       }
     }
-  ]
+  ],
+  "siteTables": {
+    "nSites": 6,
+    "siteFeatures": [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        10,
+        11
+      ]
+    ],
+    "itemId": [
+      -1,
+      0,
+      -1,
+      1,
+      -1,
+      0,
+      -1,
+      1,
+      -1,
+      2,
+      -1,
+      3
+    ]
+  },
+  "siteConditional": [
+    {
+      "name": "site0_no_retained",
+      "input": {
+        "site": 0,
+        "rFeat": [],
+        "invTemp": 1,
+        "rWeights": null
+      },
+      "expected": {
+        "feats": [
+          0,
+          1
+        ],
+        "negE": [
+          -0.6,
+          -0.5
+        ],
+        "valid": [
+          1,
+          1
+        ],
+        "logZ": 0.144396660073571
+      }
+    },
+    {
+      "name": "site1_retained_2_4",
+      "input": {
+        "site": 1,
+        "rFeat": [
+          2,
+          4
+        ],
+        "invTemp": 1,
+        "rWeights": null
+      },
+      "expected": {
+        "feats": [
+          2,
+          3
+        ],
+        "negE": [
+          -0.5090251755170129,
+          -0.25943852465211475
+        ],
+        "valid": [
+          1,
+          1
+        ],
+        "logZ": 0.316681890218703
+      }
+    },
+    {
+      "name": "site2_item_exclusion",
+      "input": {
+        "site": 2,
+        "rFeat": [
+          1,
+          3
+        ],
+        "invTemp": 1.5,
+        "rWeights": null
+      },
+      "expected": {
+        "feats": [
+          4,
+          5
+        ],
+        "negE": [
+          -0.6124671852141783,
+          -0.9263735743600547
+        ],
+        "valid": [
+          1,
+          0
+        ],
+        "logZ": -0.6124671852141783
+      }
+    },
+    {
+      "name": "site5_itemless_tempered",
+      "input": {
+        "site": 5,
+        "rFeat": [
+          0,
+          6
+        ],
+        "invTemp": 0.5,
+        "rWeights": null
+      },
+      "expected": {
+        "feats": [
+          10,
+          11
+        ],
+        "negE": [
+          0.3112900719138449,
+          0.3462471476799937
+        ],
+        "valid": [
+          1,
+          1
+        ],
+        "logZ": 1.0220685322232785
+      }
+    },
+    {
+      "name": "site1_anchor_weights",
+      "input": {
+        "site": 1,
+        "rFeat": [
+          2,
+          4
+        ],
+        "invTemp": 1,
+        "rWeights": [
+          2,
+          1
+        ]
+      },
+      "expected": {
+        "feats": [
+          2,
+          3
+        ],
+        "negE": [
+          -0.5090251755170129,
+          -0.15532253795738438
+        ],
+        "valid": [
+          1,
+          1
+        ],
+        "logZ": 0.37653067408836893
+      }
+    }
+  ],
+  "cooccurrence": {
+    "rosters": [
+      {
+        "team": [
+          0,
+          2,
+          4,
+          6
+        ],
+        "count": 8
+      },
+      {
+        "team": [
+          0,
+          3,
+          4,
+          7
+        ],
+        "count": 5
+      },
+      {
+        "team": [
+          1,
+          2,
+          5,
+          8
+        ],
+        "count": 6
+      },
+      {
+        "team": [
+          0,
+          2,
+          5,
+          9
+        ],
+        "count": 4
+      },
+      {
+        "team": [
+          1,
+          3,
+          6,
+          10
+        ],
+        "count": 3
+      },
+      {
+        "team": [
+          0,
+          4,
+          8,
+          10
+        ],
+        "count": 2
+      }
+    ],
+    "build": {
+      "C": [
+        0,
+        0,
+        12,
+        5,
+        15,
+        4,
+        8,
+        5,
+        2,
+        4,
+        2,
+        0,
+        0,
+        0,
+        6,
+        3,
+        0,
+        6,
+        3,
+        0,
+        6,
+        0,
+        3,
+        0,
+        12,
+        6,
+        0,
+        0,
+        8,
+        10,
+        8,
+        0,
+        6,
+        4,
+        0,
+        0,
+        5,
+        3,
+        0,
+        0,
+        5,
+        0,
+        3,
+        5,
+        0,
+        0,
+        3,
+        0,
+        15,
+        0,
+        8,
+        5,
+        0,
+        0,
+        8,
+        5,
+        2,
+        0,
+        2,
+        0,
+        4,
+        6,
+        10,
+        0,
+        0,
+        0,
+        0,
+        0,
+        6,
+        4,
+        0,
+        0,
+        8,
+        3,
+        8,
+        3,
+        8,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+        0,
+        5,
+        0,
+        0,
+        5,
+        5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        6,
+        6,
+        0,
+        2,
+        6,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        4,
+        0,
+        4,
+        0,
+        0,
+        4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        3,
+        0,
+        3,
+        2,
+        0,
+        3,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "m": [
+        0.6785714285714286,
+        0.32142857142857145,
+        0.6428571428571429,
+        0.2857142857142857,
+        0.5357142857142857,
+        0.35714285714285715,
+        0.39285714285714285,
+        0.17857142857142858,
+        0.2857142857142857,
+        0.14285714285714285,
+        0.17857142857142858,
+        0
+      ],
+      "nTeams": 28
+    },
+    "scoreCases": [
+      {
+        "name": "cooc_score_single",
+        "heldIn": [
+          0
+        ],
+        "scores": [
+          0,
+          0,
+          12,
+          5,
+          15,
+          4,
+          8,
+          5,
+          2,
+          4,
+          2,
+          0
+        ]
+      },
+      {
+        "name": "cooc_score_pair",
+        "heldIn": [
+          0,
+          2
+        ],
+        "scores": [
+          12,
+          6,
+          12,
+          5,
+          23,
+          14,
+          16,
+          5,
+          8,
+          8,
+          2,
+          0
+        ]
+      },
+      {
+        "name": "cooc_score_empty",
+        "heldIn": [],
+        "scores": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "greedyCases": [
+      {
+        "name": "cooc_greedy_from_pair",
+        "input": {
+          "fixed": [
+            0,
+            2
+          ],
+          "excluded": []
+        },
+        "finalTeam": [
+          0,
+          2,
+          4,
+          6
+        ]
+      },
+      {
+        "name": "cooc_greedy_with_exclude",
+        "input": {
+          "fixed": [
+            0
+          ],
+          "excluded": [
+            2,
+            3
+          ]
+        },
+        "finalTeam": [
+          0,
+          4,
+          6,
+          10
+        ]
+      }
+    ]
+  }
 }

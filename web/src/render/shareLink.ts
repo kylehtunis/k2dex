@@ -6,20 +6,30 @@
 // contain [a-z0-9-]. base64/gzip would inflate a payload this short, so
 // the readable delimited form is also the most wieldy.
 //
-// Core token `t` (shared by both pages): "<modelSlug>.<fwIndex>.<mons>"
-//   <modelSlug>  the model's id slug (e.g. "reg-m-a-species-item")
-//   <fwIndex>    index into FIELD_WEIGHT_OPTIONS
-//   <mons>       "_"-joined; each "speciesSlug" or "speciesSlug~itemSlug"
+// Core token `t` (shared by both pages): "<modelSlug>.<mons>"
+//   <modelSlug>  the model's id slug, now a per-regulation slug (e.g. "reg-m-a")
+//   <mons>       "_"-joined; each mon is one of:
+//                  "speciesSlug~itemSlug"  a feature pin (species + item locked;
+//                                          itemless builds encode "...~none")
+//                  "speciesSlug"           a site pin (species locked, item free)
+//                Feature mons come first (ascending index) so pre-site-pin
+//                tokens stay byte-identical; site mons are appended.
 //
-// Legacy tokens using "s" or "si" as the model code are decoded to the
-// corresponding slug for backward compatibility.
+// Legacy tokens carried a "<fwIndex>" segment between the model slug and the
+// mons (the retired Bias Adjustment slider position, always all-digits). It is
+// no longer encoded; decode detects and silently drops it.
 //
-// Completer adds default-omitting params: x (excluded), g (greedy),
-// tmp (temperature index), a (advanced PT knobs), seed (reproduces the
-// exact PT run while inputs still match it).
+// Legacy model codes (the short "s"/"si" and the retired split-model slugs)
+// decode to the unified per-regulation slug for backward compatibility.
+//
+// Completer adds default-omitting params: x (excluded), i (included allow-list),
+// g (greedy), anc (Anchor Strength), tmp (temperature index), a (advanced PT
+// knobs), seed (reproduces the exact PT run while inputs still match it).
 
 import {
-  FIELD_WEIGHT_OPTIONS,
+  ANCHOR_MAX,
+  ANCHOR_MIN,
+  DEFAULT_ANCHOR,
   TEMPERATURE_OPTIONS,
   PT_RUNS,
   PT_LADDER_LEVELS,
@@ -30,14 +40,21 @@ import { speciesToSlug, itemToSlug } from "./sprite-url";
 import type { IsingModel } from "../sampler/types";
 
 const LEGACY_CODE_TO_SLUG: Record<string, string> = {
-  s: "reg-m-a-species",
-  si: "reg-m-a-species-item",
+  s: "reg-m-a",
+  si: "reg-m-a",
+  "reg-m-a-species": "reg-m-a",
+  "reg-m-a-species-item": "reg-m-a",
+  "reg-m-a-species-item-weighted": "reg-m-a",
+  "reg-m-b-experimental": "reg-m-b",
+  "reg-m-b-species-item-boltzmann": "reg-m-b",
 };
 
-const DEFAULT_TEMPERATURE = 0.5;
+const DEFAULT_TEMPERATURE = 1.0;
 
 export interface FeatureSlug {
   speciesSlug: string;
+  /** null = a bare mon = site-level pin (species locked, item free); a string
+   * (incl. "none") = a feature pin with that item locked. */
   itemSlug: string | null;
 }
 
@@ -47,38 +64,27 @@ function featureSlug(model: IsingModel, i: number): string {
   return it === null ? sp : `${sp}~${itemToSlug(it)}`;
 }
 
-function fieldWeightIndex(fieldWeight: number): number {
-  const exact = (FIELD_WEIGHT_OPTIONS as readonly number[]).indexOf(fieldWeight);
-  if (exact >= 0) return exact;
-  let best = 0;
-  let bestD = Infinity;
-  FIELD_WEIGHT_OPTIONS.forEach((v, i) => {
-    const d = Math.abs(v - fieldWeight);
-    if (d < bestD) {
-      bestD = d;
-      best = i;
-    }
-  });
-  return best;
-}
-
-/** Build the shared core token from a team of vocab indices. */
+/** Build the shared core token from feature pins (`idxs`) and optional site
+ * pins (`siteIdxs`, site indices). Feature mons keep ascending-index order and
+ * come first; site mons are appended, so a feature-only token is unchanged. */
 export function encodeCore(
   modelId: string,
-  fieldWeight: number,
   idxs: readonly number[],
   model: IsingModel,
+  siteIdxs: readonly number[] = [],
 ): string {
-  const mons = [...idxs]
+  const featureMons = [...idxs]
     .sort((a, b) => a - b)
-    .map((i) => featureSlug(model, i))
-    .join("_");
-  return `${modelId}.${fieldWeightIndex(fieldWeight)}.${mons}`;
+    .map((i) => featureSlug(model, i));
+  const siteMons = [...siteIdxs]
+    .sort((a, b) => a - b)
+    .map((s) => speciesToSlug(model.sites[s]));
+  const mons = [...featureMons, ...siteMons].join("_");
+  return `${modelId}.${mons}`;
 }
 
 export interface DecodedCore {
   modelId: string;
-  fieldWeight: number;
   features: FeatureSlug[];
 }
 
@@ -103,21 +109,31 @@ export function decodeCore(t: string | null): DecodedCore | null {
   if (parts.length < 2) return null;
   const modelId = resolveModelSlug(parts[0]);
   if (!modelId) return null;
-  const fieldWeight = FIELD_WEIGHT_OPTIONS[Number(parts[1])] ?? 0.3;
-  const monsStr = parts.slice(2).join(".");
+  // Legacy tokens carry an all-digit Bias Adjustment index before the mons;
+  // slugs always contain a letter, so plain digits can only be that segment.
+  const monsParts = /^\d+$/.test(parts[1]) ? parts.slice(2) : parts.slice(1);
+  const monsStr = monsParts.join(".");
   const features = monsStr
     ? monsStr.split("_").filter(Boolean).map(parseMon)
     : [];
-  return { modelId, fieldWeight, features };
+  return { modelId, features };
 }
 
 export interface CompleterShareState {
   modelId: string;
-  fieldWeight: number;
   fixedIdxs: readonly number[];
+  /** Site-level pins (site indices). Encoded as bare species slugs. */
+  fixedSites: readonly number[];
+  /** Deactivated attribute-track indices (species-only mode). Encoded as `d`. */
+  inactiveTracks: readonly number[];
   excludedSpecies: readonly string[];
+  /** Inclusion allow-list (species names). Encoded as `i`. */
+  includedSpecies: readonly string[];
   usePT: boolean;
   temperature: number;
+  /** Anchor Strength (anchor-field tilt alpha). Encoded as `anc`, omitted at
+   * the default 1; applies to both the PT and greedy paths. */
+  anchorStrength: number;
   ptRuns: number;
   ptLadder: number;
   ptSweeps: number;
@@ -132,12 +148,26 @@ export function encodeCompleter(
   model: IsingModel,
 ): URLSearchParams {
   const p = new URLSearchParams();
-  p.set("t", encodeCore(s.modelId, s.fieldWeight, s.fixedIdxs, model));
+  p.set("t", encodeCore(s.modelId, s.fixedIdxs, model, s.fixedSites));
   if (s.excludedSpecies.length) {
     p.set(
       "x",
       [...s.excludedSpecies].map(speciesToSlug).sort().join("_"),
     );
+  }
+  if (s.includedSpecies.length) {
+    p.set(
+      "i",
+      [...s.includedSpecies].map(speciesToSlug).sort().join("_"),
+    );
+  }
+  if (s.inactiveTracks.length) {
+    p.set("d", [...s.inactiveTracks].sort((a, b) => a - b).join("-"));
+  }
+  // Anchor Strength applies to both paths, so it encodes before the greedy
+  // early-return.
+  if (s.anchorStrength !== DEFAULT_ANCHOR) {
+    p.set("anc", String(s.anchorStrength));
   }
   if (!s.usePT) {
     p.set("g", "1");
@@ -161,11 +191,13 @@ export function encodeCompleter(
 
 export interface DecodedCompleter {
   modelId: string;
-  fieldWeight: number;
   features: FeatureSlug[];
+  inactiveTracks: number[];
   excludedSlugs: string[];
+  includedSlugs: string[];
   usePT: boolean;
   temperature: number;
+  anchorStrength: number;
   ptRuns: number;
   ptLadder: number;
   ptSweeps: number;
@@ -180,12 +212,27 @@ export function decodeCompleter(params: URLSearchParams): DecodedCompleter | nul
   const usePT = params.get("g") !== "1";
   const x = params.get("x");
   const excludedSlugs = x ? x.split("_").filter(Boolean) : [];
+  const iParam = params.get("i");
+  const includedSlugs = iParam ? iParam.split("_").filter(Boolean) : [];
+  const d = params.get("d");
+  const inactiveTracks = d
+    ? d.split("-").map(Number).filter((n) => Number.isInteger(n) && n >= 0)
+    : [];
 
   let temperature = DEFAULT_TEMPERATURE;
   const tmp = params.get("tmp");
   if (tmp !== null) {
     const v = TEMPERATURE_OPTIONS[Number(tmp)];
     if (v !== undefined) temperature = v;
+  }
+
+  let anchorStrength = DEFAULT_ANCHOR;
+  const anc = params.get("anc");
+  if (anc !== null) {
+    const v = Number(anc);
+    if (Number.isFinite(v) && v >= ANCHOR_MIN && v <= ANCHOR_MAX) {
+      anchorStrength = v;
+    }
   }
 
   let ptRuns = PT_RUNS;
@@ -208,11 +255,13 @@ export function decodeCompleter(params: URLSearchParams): DecodedCompleter | nul
 
   return {
     modelId: core.modelId,
-    fieldWeight: core.fieldWeight,
     features: core.features,
+    inactiveTracks,
     excludedSlugs,
+    includedSlugs,
     usePT,
     temperature,
+    anchorStrength,
     ptRuns,
     ptLadder,
     ptSweeps,

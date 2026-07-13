@@ -288,14 +288,22 @@ def build_species_item_model(
         recency_tau=recency_tau,
         in_person_multiplier=in_person_multiplier,
     )
-    teams = [o.members for o in observations]
+    # Normalize a missing item (Python None) to the string "None" so it becomes
+    # an ordinary Potts state (a real item name) rather than a bare-species
+    # feature. This merges the corpus's split duplicates -- e.g. a Talonflame
+    # observed with no recorded item and a Talonflame recorded with the literal
+    # item "None" collapse into one (Talonflame, "None") feature.
+    teams = [
+        [(species, "None" if item is None else item) for species, item in o.members]
+        for o in observations
+    ]
 
     prior: SpeciesModel | None = None
     if prior_regulation is not None:
         prior = build_species_item_model(regulation=prior_regulation)
 
     raw_counts = Counter(pair for team in teams for pair in team)
-    weighted_counts: dict[tuple[str, str | None], float] = {}
+    weighted_counts: dict[tuple[str, str], float] = {}
     for ti, team in enumerate(teams):
         for pair in team:
             weighted_counts[pair] = weighted_counts.get(pair, 0.0) + w[ti]

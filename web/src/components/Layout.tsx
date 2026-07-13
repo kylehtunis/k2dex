@@ -2,9 +2,8 @@
 // page content + status banner if the active model failed to load.
 //
 // Nav has two groups: left-aligned teambuilding tabs (Team Completer / Team Analysis /
-// Metagame Model) and a right-aligned Science tab to signal it's a separate surface.
-// Model picker is hidden on /science and / since those pages handle selection
-// themselves (/ has a dedicated corpus picker section).
+// Metagame Model) and a right-aligned Articles tab to signal it's a separate surface.
+// Model picker is hidden on /articles only (those pages carry their own).
 
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useModel } from "../state/ModelContext";
@@ -17,23 +16,26 @@ const PRIMARY_TABS = [
   { path: "/analysis/", label: "Team Analysis" },
   { path: "/meta/", label: "Metagame Model" },
 ];
-const SCIENCE_TAB = { path: "/science/", label: "The Science of k2dex" };
+const ARTICLES_TAB = { path: "/articles/", label: "Articles" };
 
 export function Layout() {
   usePageMeta();
   const { status, error } = useModel();
   const location = useLocation();
-  const isHome = location.pathname === "/";
-  const isScience = location.pathname.startsWith("/science");
-  const hideModelPicker = isHome || isScience;
+  const isArticles = location.pathname.startsWith("/articles");
   return (
     <div className="lab-container">
       <AnnouncementBanner />
       <header className="lab-header">
-        <Link to="/" className="lab-wordmark lab-wordmark-link">
-          k2dex
-        </Link>
-        {!hideModelPicker && <ModelPicker />}
+        <div className="lab-wordmark-block">
+          <Link to="/" className="lab-wordmark lab-wordmark-link">
+            k2dex
+          </Link>
+          <Link to="/articles/the-v2-update/" className="lab-wordmark-version">
+            v2.0
+          </Link>
+        </div>
+        {!isArticles && <ModelPicker />}
       </header>
       <nav className="lab-tabs lab-tabs-split">
         <div className="lab-tabs-group">
@@ -49,15 +51,14 @@ export function Layout() {
         </div>
         <div className="lab-tabs-group lab-tabs-group-end">
           <NavLink
-            to={SCIENCE_TAB.path}
+            to={ARTICLES_TAB.path}
             className={({ isActive }) => `lab-tab${isActive ? " active" : ""}`}
           >
-            <span className="lab-tab-label-full">{SCIENCE_TAB.label}</span>
-            <span className="lab-tab-label-short">Science</span>
+            {ARTICLES_TAB.label}
           </NavLink>
         </div>
       </nav>
-      {status === "error" && !isScience && (
+      {status === "error" && !isArticles && (
         <div className="lab-form-error" style={{ marginBottom: 16 }}>
           Failed to load model: {error?.message ?? "unknown error"}
         </div>

@@ -9,16 +9,22 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
-import { loadModel, loadTeamCounts } from "../sampler/model";
-import type { IsingModel, TeamCounts } from "../sampler/types";
+import { loadModel, loadSpeciesGraph, loadTeamCounts } from "../sampler/model";
+import {
+  buildCorpusScoreIndex,
+  type CorpusScoreIndex,
+} from "../render/corpusScore";
+import type { IsingModel, SpeciesGraph, TeamCounts } from "../sampler/types";
 import { loadManifest, type Manifest } from "./manifest";
 
 interface CacheEntry {
   model: IsingModel;
   teamCounts: TeamCounts;
+  speciesGraph: SpeciesGraph | null;
 }
 
 interface ModelContextValue {
@@ -26,6 +32,12 @@ interface ModelContextValue {
   setModelId: (id: string) => void;
   model: IsingModel | null;
   teamCounts: TeamCounts | null;
+  /** Precomputed species-pair interaction graph (APC-corrected synergy).
+   * Null for species-only models or before load completes. */
+  speciesGraph: SpeciesGraph | null;
+  /** Empirical corpus Score distribution (every observed roster scored at
+   * fw = 1), built once per loaded model. Feeds the Percentile displays. */
+  corpusScoreIndex: CorpusScoreIndex | null;
   manifest: Manifest | null;
   status: "idle" | "loading" | "ready" | "error";
   error: Error | null;
@@ -36,20 +48,32 @@ const ModelContext = createContext<ModelContextValue | null>(null);
 const STORAGE_KEY = "k2dex.modelId";
 const LEGACY_STORAGE_KEY = "k2dex.phaseKey";
 
+// Retired split-model ids -> the unified per-regulation model. After the
+// schema collapse each regulation has exactly one artifact, so a returning
+// visitor's stored id (or legacy /science phaseKey) maps to its regulation.
 const LEGACY_MODEL_MAP: Record<string, string> = {
-  species: "reg-m-a-species",
-  species_item: "reg-m-a-species-item",
+  species: "reg-m-a",
+  species_item: "reg-m-a",
+  "reg-m-a-species": "reg-m-a",
+  "reg-m-a-species-item": "reg-m-a",
+  "reg-m-a-species-item-weighted": "reg-m-a",
+  "reg-m-b-experimental": "reg-m-b",
+  "reg-m-b-species-item-boltzmann": "reg-m-b",
 };
 
 function readStoredModelId(manifest: Manifest): string {
+  const inManifest = (id: string) => manifest.models.some((m) => m.id === id);
   try {
     const v = localStorage.getItem(STORAGE_KEY);
-    if (v && manifest.models.some((m) => m.id === v)) return v;
+    if (v) {
+      if (inManifest(v)) return v;
+      const remapped = LEGACY_MODEL_MAP[v];
+      if (remapped && inManifest(remapped)) return remapped;
+    }
 
     const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-    if (legacy && LEGACY_MODEL_MAP[legacy]) {
-      const mapped = LEGACY_MODEL_MAP[legacy];
-      if (manifest.models.some((m) => m.id === mapped)) return mapped;
+    if (legacy && LEGACY_MODEL_MAP[legacy] && inManifest(LEGACY_MODEL_MAP[legacy])) {
+      return LEGACY_MODEL_MAP[legacy];
     }
   } catch { /* localStorage may be unavailable */ }
   return manifest.defaultModel;
@@ -101,10 +125,10 @@ export function ModelProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     setStatus("loading");
     setError(null);
-    Promise.all([loadModel(modelId), loadTeamCounts(modelId)])
-      .then(([model, teamCounts]) => {
+    Promise.all([loadModel(modelId), loadTeamCounts(modelId), loadSpeciesGraph(modelId)])
+      .then(([model, teamCounts, speciesGraph]) => {
         if (cancelled) return;
-        setCache((c) => ({ ...c, [modelId]: { model, teamCounts } }));
+        setCache((c) => ({ ...c, [modelId]: { model, teamCounts, speciesGraph } }));
         setStatus("ready");
       })
       .catch((e: Error) => {
@@ -116,11 +140,18 @@ export function ModelProvider({ children }: { children: ReactNode }) {
   }, [modelId, manifest, cache]);
 
   const entry = cache[modelId] ?? null;
+  const corpusScoreIndex = useMemo(
+    () =>
+      entry ? buildCorpusScoreIndex(entry.model, entry.teamCounts) : null,
+    [entry],
+  );
   const value: ModelContextValue = {
     modelId,
     setModelId,
     model: entry?.model ?? null,
     teamCounts: entry?.teamCounts ?? null,
+    speciesGraph: entry?.speciesGraph ?? null,
+    corpusScoreIndex,
     manifest,
     status,
     error,
