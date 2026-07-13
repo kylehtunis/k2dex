@@ -1,70 +1,11 @@
-// Landing page — intro, model selector, tool index.
+// Landing page — intro, tool index, articles.
 //
-// The model selector here is the canonical place to pick a model on
-// first visit; the header ModelPicker is hidden on this route (see
-// Layout.tsx). After selecting, the choice is persisted via ModelContext
-// (localStorage) so subsequent page visits remember it.
+// Model selection lives in the header ModelPicker here just like every other
+// route (Layout.tsx): nearly everyone stays on the default current-regulation
+// model, so the page no longer carries its own selector.
 
-import { useState } from "react";
 import { Link } from "react-router-dom";
-import { CURRENT_REGULATION } from "../constants";
-import { useModel } from "../state/ModelContext";
-import type { ModelSummary } from "../state/manifest";
-
-function formatDate(iso: string): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
-}
-
-function typeTag(type: string): string {
-  return type.charAt(0).toUpperCase() + type.slice(1);
-}
-
-function ModelCard({
-  m,
-  isActive,
-  status,
-  onSelect,
-}: {
-  m: ModelSummary;
-  isActive: boolean;
-  status: string;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`lab-home-model-card${isActive ? " is-active" : ""}`}
-      aria-pressed={isActive}
-    >
-      {m.isNew && <span className="lab-new-badge lab-home-model-new-badge">New</span>}
-      <div className="lab-home-model-card-header">
-        <span className="lab-home-model-card-label">{m.displayName}</span>
-        <span className="lab-home-model-card-tag">{typeTag(m.type)}</span>
-      </div>
-      <div className="lab-home-model-card-footer">
-        <span className="lab-home-model-stats">
-          {m.V.toLocaleString()} features
-          <span className="lab-home-model-sep">·</span>
-          {m.nCorpusTeams.toLocaleString()} teams
-          {m.latestTournamentDate && (
-            <>
-              <span className="lab-home-model-sep">·</span>
-              {formatDate(m.latestTournamentDate)}
-            </>
-          )}
-        </span>
-        {isActive && (
-          <span className="lab-home-model-active-mark">
-            {status === "loading" ? "Loading…" : "✓ active"}
-          </span>
-        )}
-      </div>
-    </button>
-  );
-}
+import { ArticleList } from "../components/ArticleList";
 
 const TOOLS = [
   {
@@ -88,23 +29,6 @@ const TOOLS = [
 ];
 
 export function HomePage() {
-  const { modelId, setModelId, manifest, status } = useModel();
-  const [legacyOpen, setLegacyOpen] = useState(false);
-
-  const currentModels: ModelSummary[] = [];
-  const legacyGrouped = new Map<string, ModelSummary[]>();
-  if (manifest) {
-    for (const m of manifest.models) {
-      const reg = m.regulation || "Other";
-      if (reg === CURRENT_REGULATION) {
-        currentModels.push(m);
-      } else {
-        if (!legacyGrouped.has(reg)) legacyGrouped.set(reg, []);
-        legacyGrouped.get(reg)!.push(m);
-      }
-    }
-  }
-
   return (
     <div className="lab-home">
       {/* Hero */}
@@ -121,54 +45,6 @@ export function HomePage() {
           attract and repel each other in the teambuilding process. Use it to complete rosters, diagnose
           team synergy, and explore format-wide patterns.
         </p>
-      </section>
-
-      {/* Model selector */}
-      <section className="lab-home-section">
-        <div className="lab-home-section-head">
-          <span className="lab-section-num">§</span>
-          <span className="lab-section-title">Choose a model</span>
-        </div>
-        <p className="lab-home-section-note">
-          Each model is fit on real team rosters from recent
-          VGC tournaments (64+ players).
-        </p>
-
-        {manifest && currentModels.length > 0 && (
-          <div className="lab-home-model-group">
-            <div className="lab-home-model-cards">
-              {currentModels.map((m) => (
-                <ModelCard key={m.id} m={m} isActive={m.id === modelId} status={status} onSelect={() => setModelId(m.id)} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {manifest && legacyGrouped.size > 0 && (
-          <div className="lab-home-legacy">
-            <button
-              type="button"
-              className="lab-home-legacy-toggle"
-              onClick={() => setLegacyOpen((o) => !o)}
-              aria-expanded={legacyOpen}
-            >
-              <span>Legacy regulations</span>
-              <span className={`lab-home-legacy-chevron${legacyOpen ? " open" : ""}`}>
-                &#9662;
-              </span>
-            </button>
-            {legacyOpen && [...legacyGrouped.entries()].map(([reg, models]) => (
-              <div key={reg} className="lab-home-model-group">
-                <div className="lab-home-model-group-label">Reg {reg}</div>
-                <div className="lab-home-model-cards">
-                  {models.map((m) => (
-                    <ModelCard key={m.id} m={m} isActive={m.id === modelId} status={status} onSelect={() => setModelId(m.id)} />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </section>
 
       {/* Tools */}
@@ -189,24 +65,16 @@ export function HomePage() {
         </div>
       </section>
 
-      {/* Science */}
+      {/* Articles */}
       <section className="lab-home-section lab-home-section-last">
         <div className="lab-home-section-head">
           <span className="lab-section-num">§</span>
-          <span className="lab-section-title">The science</span>
+          <span className="lab-section-title">Articles</span>
         </div>
-        <Link to="/articles/the-science-of-k2dex/" className="lab-home-science-card">
-          <div className="lab-home-science-inner">
-            <div>
-              <div className="lab-home-science-label">The Science of k2dex</div>
-              <p className="lab-home-science-desc">
-                An interactive explainer that will take you from ferromagnets and lattice models
-                to the inverse Ising problem, explaining exactly how k2dex works under the hood.
-              </p>
-            </div>
-            <span className="lab-home-science-arrow">→</span>
-          </div>
-        </Link>
+        <p className="lab-home-section-note">
+          Write-ups on the ideas, findings, and implementation details behind k2dex.
+        </p>
+        <ArticleList />
       </section>
     </div>
   );

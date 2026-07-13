@@ -262,162 +262,6 @@
   max-width: 62ch;
 }
 
-/* Corpus / model picker cards */
-.lab-home-model-group {
-  margin-bottom: 18px;
-}
-.lab-home-model-group-label {
-  font-family: var(--lab-font-sans);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--lab-ink-muted);
-  margin-bottom: 8px;
-}
-.lab-home-model-cards {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  max-width: 760px;
-}
-
-.lab-home-legacy {
-  margin-top: 8px;
-}
-.lab-home-legacy-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 6px 0;
-  font-family: var(--lab-font-sans);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--lab-ink-muted);
-}
-.lab-home-legacy-toggle:hover {
-  color: var(--lab-ink);
-}
-.lab-home-legacy-chevron {
-  font-size: 9px;
-  transition: transform 0.15s ease;
-}
-.lab-home-legacy-chevron.open {
-  transform: rotate(180deg);
-}
-
-.lab-home-model-card {
-  appearance: none;
-  background: var(--lab-panel);
-  border: 1px solid var(--lab-rule);
-  border-top: 3px solid transparent;
-  border-radius: 0 0 3px 3px;
-  padding: 22px 24px 18px;
-  text-align: left;
-  cursor: pointer;
-  font-family: inherit;
-  transition: border-top-color 80ms ease, background 80ms ease;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  position: relative;
-}
-
-.lab-home-model-new-badge {
-  position: absolute;
-  top: 12px;
-  right: 14px;
-}
-
-.lab-home-model-card:hover {
-  border-top-color: var(--lab-ink-muted);
-}
-
-.lab-home-model-card.is-active {
-  border-top-color: var(--lab-accent);
-  background: color-mix(in oklch, var(--lab-accent) 4%, var(--lab-panel));
-}
-
-.lab-home-model-card-header {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-}
-
-.lab-home-model-card-label {
-  font-family: var(--lab-font-mono);
-  font-size: 17px;
-  font-weight: 500;
-  color: var(--lab-ink);
-}
-
-.lab-home-model-card-tag {
-  font-family: var(--lab-font-sans);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-  color: var(--lab-ink-muted);
-}
-
-.lab-home-model-card-desc {
-  font-family: var(--lab-font-serif);
-  font-style: italic;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--lab-ink-soft);
-  margin: 0;
-  flex: 1;
-}
-
-.lab-home-model-card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 4px;
-  min-height: 18px;
-}
-
-.lab-home-model-stats {
-  font-family: var(--lab-font-mono);
-  font-size: 11px;
-  color: var(--lab-accent);
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.lab-home-model-sep {
-  opacity: 0.4;
-}
-
-.lab-home-model-loading {
-  font-family: var(--lab-font-mono);
-  font-size: 11px;
-  color: var(--lab-ink-muted);
-  font-style: italic;
-}
-
-.lab-home-model-select-hint {
-  font-family: var(--lab-font-mono);
-  font-size: 11px;
-  color: var(--lab-rule);
-}
-
-.lab-home-model-active-mark {
-  font-family: var(--lab-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--lab-accent);
-}
-
 /* Tool cards */
 .lab-home-tool-grid {
   display: grid;
@@ -483,80 +327,14 @@
   transform: translateX(3px);
 }
 
-/* Science card */
-.lab-home-science-card {
-  display: block;
-  background: var(--lab-panel-alt);
-  border: 1px solid var(--lab-rule);
-  border-left: 4px solid var(--lab-accent);
-  border-radius: 0 3px 3px 0;
-  padding: 22px 28px;
-  text-decoration: none;
-  color: inherit;
-  transition: background 80ms ease;
-}
-
-.lab-home-science-card:hover {
-  background: color-mix(in oklch, var(--lab-accent) 5%, var(--lab-panel-alt));
-}
-
-.lab-home-science-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 32px;
-}
-
-.lab-home-science-label {
-  font-family: var(--lab-font-serif);
-  font-size: 22px;
-  font-weight: 400;
-  color: var(--lab-ink);
-  margin-bottom: 8px;
-}
-
-.lab-home-science-desc {
-  font-family: var(--lab-font-serif);
-  font-style: italic;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--lab-ink-soft);
-  margin: 0;
-  max-width: 72ch;
-}
-
-.lab-home-science-arrow {
-  font-family: var(--lab-font-mono);
-  font-size: 22px;
-  color: var(--lab-ink-muted);
-  flex-shrink: 0;
-  display: inline-block;
-  transition: color 80ms ease, transform 80ms ease;
-}
-
-.lab-home-science-card:hover .lab-home-science-arrow {
-  color: var(--lab-accent);
-  transform: translateX(4px);
-}
-
 /* ===== Keyboard parity for hover affordances ===== */
 
-.lab-home-model-card:focus-visible {
-  border-top-color: var(--lab-ink-muted);
-}
 .lab-home-tool-card:focus-visible {
   border-top-color: var(--lab-accent);
 }
 .lab-home-tool-card:focus-visible .lab-home-tool-arrow {
   color: var(--lab-accent);
   transform: translateX(3px);
-}
-.lab-home-science-card:focus-visible {
-  background: color-mix(in oklch, var(--lab-accent) 5%, var(--lab-panel-alt));
-}
-.lab-home-science-card:focus-visible .lab-home-science-arrow {
-  color: var(--lab-accent);
-  transform: translateX(4px);
 }
 
 /* ===== Form-section grids =====
@@ -654,11 +432,5 @@
   }
   .lab-home-display {
     font-size: 38px;
-  }
-  .lab-home-model-cards {
-    grid-template-columns: 1fr;
-  }
-  .lab-home-science-inner {
-    gap: 16px;
   }
 }

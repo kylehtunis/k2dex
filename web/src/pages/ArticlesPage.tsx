@@ -1,12 +1,10 @@
 // /articles — index of write-ups (insights, learnings, implementation notes).
-// Cards are driven by the ARTICLES registry, newest first. The first (and for
-// now only) article is "The Science of k2dex".
+// Cards are driven by the ARTICLES registry, newest first (see ArticleList,
+// shared with the home page's Articles section).
 
-import { Link } from "react-router-dom";
-import { articlePath, articlesByDate, formatArticleDate } from "../articles/articles";
+import { ArticleList } from "../components/ArticleList";
 
 export function ArticlesPage() {
-  const articles = articlesByDate();
   return (
     <div className="lab-articles">
       <header className="lab-articles-header">
@@ -15,20 +13,7 @@ export function ArticlesPage() {
           Write-ups on the ideas, findings, and implementation details behind k2dex.
         </p>
       </header>
-      <ul className="lab-articles-list">
-        {articles.map((a) => (
-          <li key={a.slug}>
-            <Link to={`/${articlePath(a.slug)}/`} className="lab-article-card">
-              <div className="lab-article-card-body">
-                <div className="lab-article-card-date">{formatArticleDate(a.date)}</div>
-                <div className="lab-article-card-title">{a.title}</div>
-                <p className="lab-article-card-desc">{a.description}</p>
-              </div>
-              <span className="lab-article-card-arrow">→</span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <ArticleList />
     </div>
   );
 }

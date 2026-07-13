@@ -3,8 +3,7 @@
 //
 // Nav has two groups: left-aligned teambuilding tabs (Team Completer / Team Analysis /
 // Metagame Model) and a right-aligned Articles tab to signal it's a separate surface.
-// Model picker is hidden on /articles and / since those pages handle selection
-// themselves (/ has a dedicated corpus picker section; articles carry their own).
+// Model picker is hidden on /articles only (those pages carry their own).
 
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useModel } from "../state/ModelContext";
@@ -23,9 +22,7 @@ export function Layout() {
   usePageMeta();
   const { status, error } = useModel();
   const location = useLocation();
-  const isHome = location.pathname === "/";
   const isArticles = location.pathname.startsWith("/articles");
-  const hideModelPicker = isHome || isArticles;
   return (
     <div className="lab-container">
       <AnnouncementBanner />
@@ -33,7 +30,7 @@ export function Layout() {
         <Link to="/" className="lab-wordmark lab-wordmark-link">
           k2dex
         </Link>
-        {!hideModelPicker && <ModelPicker />}
+        {!isArticles && <ModelPicker />}
       </header>
       <nav className="lab-tabs lab-tabs-split">
         <div className="lab-tabs-group">
