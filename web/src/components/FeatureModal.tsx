@@ -18,7 +18,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import Select, { type SingleValue } from "react-select";
 import { Modal } from "./Modal";
 import { topModulationEntries } from "../meta/couplings";
@@ -35,6 +35,7 @@ import {
   siteCorpusAppearances,
   speciesCouplings,
 } from "../render/featureDetail";
+import { encodeCore } from "../render/shareLink";
 import { TEAM_SIZE } from "../constants";
 import type { IsingModel } from "../sampler/types";
 
@@ -285,6 +286,14 @@ function FeatureModalBody({
                       size={32}
                       interactive
                     />
+                    <Link
+                      to={`/analysis?t=${encodeCore(model.id, t.team, model)}`}
+                      className="lab-analyze-btn lab-feature-corpus-analyze"
+                      title="Send to Analysis"
+                      onClick={onClose}
+                    >
+                      Analyze
+                    </Link>
                     <span className="lab-feature-corpus-meta">
                       <ScoreChip value={t.count} fmt="count" />
                       <span className="lab-feature-corpus-share">

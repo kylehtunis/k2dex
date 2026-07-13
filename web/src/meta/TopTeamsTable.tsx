@@ -5,6 +5,7 @@
 //
 // No Streamlit counterpart yet; this section is webapp-only.
 
+import { Link } from "react-router-dom";
 import { ScoreChip, MiniBar } from "../render/atoms";
 import { TeamMiniStrip } from "../render/cells";
 import { ScrollX } from "../components/ScrollX";
@@ -13,6 +14,7 @@ import {
   type CorpusScoreIndex,
 } from "../render/corpusScore";
 import { teamObservables } from "../render/observables";
+import { encodeCore } from "../render/shareLink";
 import type { IsingModel } from "../sampler/types";
 import type { TopTeam } from "./topTeams";
 
@@ -42,6 +44,7 @@ export function TopTeamsTable({
           <tr>
             <th className="num">#</th>
             <th>team</th>
+            <th />
             <th className="num">score</th>
             <th className="num">coherence</th>
             <th className="num">count</th>
@@ -63,6 +66,14 @@ export function TopTeamsTable({
                     size={40}
                     interactive
                   />
+                </td>
+                <td className="actions">
+                  <Link
+                    to={`/analysis?t=${encodeCore(model.id, r.team, model)}`}
+                    className="lab-analyze-btn"
+                  >
+                    Send to Analysis
+                  </Link>
                 </td>
                 <td className="num" data-label="score">
                   <ScoreChip

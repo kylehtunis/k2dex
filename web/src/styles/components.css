@@ -1842,11 +1842,17 @@ button.lab-comp-tile {
   overflow-wrap: break-word;
 }
 .lab-feature-coupling-val,
+/* The roster strip + its stats can outgrow a narrow dock, so let the stats
+ * drop onto their own line rather than forcing horizontal scroll. */
+.lab-feature-corpus-row {
+  flex-wrap: wrap;
+}
 .lab-feature-corpus-meta {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  margin-left: auto;
 }
 .lab-feature-corpus-share {
   min-width: 48px;
@@ -1854,6 +1860,11 @@ button.lab-comp-tile {
   font-family: var(--lab-font-mono);
   font-size: 11px;
   color: var(--lab-ink-muted);
+}
+/* Compact variant of the analyze link, sized to sit inside a corpus row. */
+.lab-feature-corpus-analyze {
+  font-size: 10px;
+  padding: 2px 6px;
 }
 
 /* Route-aware quick actions. */
