@@ -62,12 +62,46 @@ const BASE_ROUTES: readonly RouteMeta[] = [
       "Explore the VGC metagame at a glance: the most common tournament teams, and the strongest synergies and anti-synergies between Pokemon in the format.",
   },
   {
+    path: "pokemon",
+    title: "VGC Pokémon Index | k2dex",
+    description:
+      "Browse every Pokémon in the current VGC regulation by tournament usage. Click through for best teammates, item builds, synergies, and real tournament teams.",
+  },
+  {
     path: "articles",
     title: "Articles | k2dex",
     description:
       "Write-ups on the ideas, findings, and implementation details behind k2dex.",
   },
 ];
+
+/** URL segment for a species page under /pokemon/. Deliberately NOT the sprite
+ *  slug (render/sprite-url.ts collapses gendered formes and Lycanroc Midday
+ *  onto their base species): words hyphenated, gender symbols mapped to f/m,
+ *  so every distinct vocab species gets a distinct segment. The prerender
+ *  asserts uniqueness across the model's sites at build time. */
+export function speciesPageSlug(species: string): string {
+  return species
+    .toLowerCase()
+    .replace(/♀/g, " f")
+    .replace(/♂/g, " m")
+    .replace(/[^a-z0-9\s-]+/g, "")
+    .trim()
+    .split(/\s+/)
+    .join("-");
+}
+
+/** RouteMeta for one species page. Shared by the prerender (which appends one
+ *  per model site) and usePageMeta (client-side navigation onto the page). */
+export function speciesRouteMeta(species: string, regulation: string): RouteMeta {
+  return {
+    path: `pokemon/${speciesPageSlug(species)}`,
+    title: `${species} VGC Teammates & Synergies | k2dex`,
+    description:
+      `${species} in VGC Regulation ${regulation}: best teammates, strongest synergies and anti-synergies, ` +
+      `item builds, and real tournament teams featuring ${species}, computed by the k2dex model.`,
+  };
+}
 
 /** One indexable route per article, derived from the shared ARTICLES list. */
 const ARTICLE_ROUTES: readonly RouteMeta[] = ARTICLES.map((a) => ({

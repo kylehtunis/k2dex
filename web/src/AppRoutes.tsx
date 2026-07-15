@@ -12,6 +12,8 @@ import { HomePage } from "./pages/HomePage";
 import { CompleterPage } from "./pages/CompleterPage";
 import { AnalysisPage } from "./pages/AnalysisPage";
 import { MetaPage } from "./pages/MetaPage";
+import { PokedexPage } from "./pages/PokedexPage";
+import { PokemonPage } from "./pages/PokemonPage";
 
 const ArticlesPage = lazy(() => import("./pages/ArticlesPage"));
 const ArticlePage = lazy(() => import("./pages/ArticlePage"));
@@ -29,6 +31,8 @@ export function AppRoutes() {
           <Route path="completer" element={<CompleterPage />} />
           <Route path="analysis" element={<AnalysisPage />} />
           <Route path="meta" element={<MetaPage />} />
+          <Route path="pokemon" element={<PokedexPage />} />
+          <Route path="pokemon/:slug" element={<PokemonPage />} />
           <Route path="articles" element={<ArticlesPage />} />
           <Route path="articles/:slug" element={<ArticlePage />} />
           {/* Legacy /science URL: the explainer now lives as an article. */}

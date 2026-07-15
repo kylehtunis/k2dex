@@ -26,6 +26,12 @@ const TOOLS = [
     label: "Metagame Model",
     desc: "General information about how the k2dex model sees the current metagame, with the most used teams and strongest synergies and anti-synergies.",
   },
+  {
+    path: "/pokemon/",
+    num: "§04",
+    label: "Pokémon Index",
+    desc: "Per-Pokémon breakdowns: usage, best teammates, item builds, and the strongest synergies and anti-synergies for every Pokémon in the format.",
+  },
 ];
 
 export function HomePage() {

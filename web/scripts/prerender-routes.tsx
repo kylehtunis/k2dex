@@ -25,7 +25,13 @@ import { Writable } from "node:stream";
 import { renderToPipeableStream } from "react-dom/server";
 import { StaticRouter } from "react-router-dom/server";
 
-import { ROUTE_META, canonicalUrl, type RouteMeta } from "../src/siteMeta";
+import {
+  ROUTE_META,
+  canonicalUrl,
+  speciesPageSlug,
+  speciesRouteMeta,
+  type RouteMeta,
+} from "../src/siteMeta";
 import { ARTICLE_SOURCES } from "../src/articles/components";
 import { AppRoutes } from "../src/AppRoutes";
 import { PageStateProvider } from "../src/state/PageStateContext";
@@ -275,7 +281,21 @@ async function main() {
 
   const stamped = stampModelPreloads(template, modelId);
 
-  for (const meta of ROUTE_META) {
+  // One route per species in the default model (/pokemon/<slug>). Slugs must
+  // be unique or two species would silently share (and overwrite) one page.
+  const slugToSpecies = new Map<string, string>();
+  for (const species of model.sites) {
+    const slug = speciesPageSlug(species);
+    const clash = slugToSpecies.get(slug);
+    if (clash) throw new Error(`species page slug collision: "${species}" vs "${clash}" -> ${slug}`);
+    slugToSpecies.set(slug, species);
+  }
+  const speciesRoutes: RouteMeta[] = model.sites.map((species) =>
+    speciesRouteMeta(species, model.regulation),
+  );
+  const allRoutes: RouteMeta[] = [...ROUTE_META, ...speciesRoutes];
+
+  for (const meta of allRoutes) {
     let html = applyMeta(stamped, meta);
     // Redirect routes (meta.canonical set) keep an empty body: rendering them
     // would just duplicate the target's content under the legacy URL.
@@ -286,13 +306,16 @@ async function main() {
     const dir = meta.path ? resolve(distDir, meta.path) : distDir;
     mkdirSync(dir, { recursive: true });
     writeFileSync(resolve(dir, "index.html"), html);
-    console.log(`prerendered: ${meta.path ? `${meta.path}/index.html` : "index.html (home)"}`);
+    if (!meta.path.startsWith("pokemon/")) {
+      console.log(`prerendered: ${meta.path ? `${meta.path}/index.html` : "index.html (home)"}`);
+    }
   }
+  console.log(`prerendered: ${speciesRoutes.length} species pages under pokemon/`);
 
   const sitemap =
     '<?xml version="1.0" encoding="UTF-8"?>\n' +
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
-    ROUTE_META.filter((m) => !m.canonical)
+    allRoutes.filter((m) => !m.canonical)
       .map((m) => `  <url>\n    <loc>${canonicalUrl(m.path)}</loc>\n  </url>`)
       .join("\n") +
     "\n</urlset>\n";

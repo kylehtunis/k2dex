@@ -10,7 +10,16 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 
-import { SITE_NAME, canonicalUrl, metaForPath, normalizePath } from "./siteMeta";
+import { useModel } from "./state/ModelContext";
+import {
+  SITE_NAME,
+  canonicalUrl,
+  metaForPath,
+  normalizePath,
+  speciesPageSlug,
+  speciesRouteMeta,
+  type RouteMeta,
+} from "./siteMeta";
 
 /** Find a matching <head> element (creating it if absent) and apply `mutate`. */
 function upsertHeadEl<T extends HTMLElement>(
@@ -40,9 +49,20 @@ function setMeta(attr: "name" | "property", key: string, content: string): void 
 
 export function usePageMeta(): void {
   const { pathname } = useLocation();
+  const { model } = useModel();
   useEffect(() => {
-    const meta = metaForPath(normalizePath(pathname));
-    const url = canonicalUrl(normalizePath(pathname));
+    const path = normalizePath(pathname);
+    let meta: RouteMeta = metaForPath(path);
+    // Species pages aren't in the static ROUTE_META (they're derived from the
+    // model); resolve their meta dynamically. Until the model loads, leave the
+    // head alone: on a hard load it already carries the prerendered values.
+    const species = path.match(/^pokemon\/([^/]+)$/);
+    if (species) {
+      if (!model) return;
+      const name = model.sites.find((s) => speciesPageSlug(s) === species[1]);
+      if (name) meta = speciesRouteMeta(name, model.regulation);
+    }
+    const url = canonicalUrl(path);
 
     document.title = meta.title;
     setMeta("name", "description", meta.description);
@@ -63,5 +83,5 @@ export function usePageMeta(): void {
         l.href = url;
       },
     );
-  }, [pathname]);
+  }, [pathname, model]);
 }

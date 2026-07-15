@@ -2070,3 +2070,88 @@ button.lab-comp-tile {
   margin-bottom: 8px;
   max-width: 240px;
 }
+
+/* ----- Species pages (/pokemon, /pokemon/<slug>) + modal open-page link ----- */
+
+.lab-feature-modal-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lab-feature-modal-open {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  color: var(--lab-ink-muted);
+}
+.lab-feature-modal-open:hover {
+  color: var(--lab-accent);
+}
+
+/* The species page reuses the modal's section classes; the page wrapper keeps
+   the content readable on wide screens. */
+.lab-pokemon-page {
+  max-width: 760px;
+}
+.lab-pokemon-detail {
+  border: 1px solid var(--lab-rule);
+  background: var(--lab-paper, transparent);
+}
+.lab-pokemon-detail .lab-feature-modal-body {
+  overflow-y: visible;
+}
+.lab-pokemon-caption {
+  font-family: var(--lab-font-sans);
+  font-size: 11px;
+  color: var(--lab-ink-muted);
+  margin-bottom: 8px;
+}
+/* Partner names in the coupling lists render as links on the page. */
+a.lab-feature-coupling-name {
+  color: inherit;
+  text-decoration: none;
+}
+a.lab-feature-coupling-name:hover .lab-comp-mon-name {
+  color: var(--lab-accent);
+  text-decoration: underline;
+}
+
+.lab-pokedex-grid {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+.lab-pokedex-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--lab-rule);
+  text-decoration: none;
+  color: var(--lab-ink);
+  font-family: var(--lab-font-sans);
+  font-size: 13px;
+}
+.lab-pokedex-card:hover {
+  border-color: var(--lab-accent);
+}
+.lab-pokedex-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-pokedex-usage {
+  margin-left: auto;
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  color: var(--lab-ink-muted);
+}
+@media (max-width: 640px) {
+  .lab-pokedex-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+}
