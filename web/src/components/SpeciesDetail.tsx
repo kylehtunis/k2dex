@@ -283,7 +283,16 @@ function ExpandableCouplingList({
                     <Link
                       to={partnerHref(c.species)}
                       className="lab-feature-coupling-name"
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        // The href exists for crawlers and modifier-clicks
+                        // (open in new tab); a plain click behaves like the
+                        // rest of the row and just toggles the expander.
+                        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+                          e.stopPropagation();
+                        } else {
+                          e.preventDefault();
+                        }
+                      }}
                     >
                       {nameCell}
                     </Link>

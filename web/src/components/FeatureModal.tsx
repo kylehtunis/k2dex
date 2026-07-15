@@ -59,7 +59,9 @@ export function FeatureModalProvider({ children }: { children: ReactNode }) {
     setStack([]);
   }, [model?.id]);
 
-  const value = useMemo(() => ({ openFeature }), [openFeature]);
+  const openSite = useCallback((site: number) => setStack([site]), []);
+
+  const value = useMemo(() => ({ openFeature, openSite }), [openFeature, openSite]);
   const currentSite = stack.length > 0 ? stack[stack.length - 1] : null;
 
   return (
@@ -106,6 +108,7 @@ function FeatureModalShell({
         const idx = model.indexOf.get(name);
         if (idx !== undefined) onDrillSite(model.siteOf[idx]);
       },
+      openSite: onDrillSite,
     }),
     [model, onDrillSite],
   );

@@ -1,20 +1,24 @@
 // /pokemon/<slug> — a species' detail as a standalone page: the same
 // SpeciesDetail body the feature modal shows, plus crawlable partner links
-// (partnerHref) so the species pages cross-link into a walkable graph.
-// Prerendered per species by scripts/prerender-routes.tsx from the default
-// model; at runtime it reflects the active model, and a species missing from
-// it (e.g. after switching regulation) gets a friendly fallback.
+// (partnerHref) so the species pages cross-link into a walkable graph. Those
+// links navigate only on modifier-click; a plain click matches the modal's
+// behavior (row expands, and an expanded modulation row opens the feature
+// modal via openSite rather than navigating the page). Prerendered per
+// species by scripts/prerender-routes.tsx from the default model; at runtime
+// it reflects the active model, and a species missing from it (e.g. after
+// switching regulation) gets a friendly fallback.
 
 import { useMemo } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useModel } from "../state/ModelContext";
+import { useFeatureModal } from "../components/FeatureModalContext";
 import { SpeciesDetail } from "../components/SpeciesDetail";
 import { speciesPageSlug } from "../siteMeta";
 
 export function PokemonPage() {
   const { slug = "" } = useParams();
   const { model, status } = useModel();
-  const navigate = useNavigate();
+  const featureModal = useFeatureModal();
 
   const siteBySlug = useMemo(
     () =>
@@ -53,9 +57,7 @@ export function PokemonPage() {
                 Reg {model.regulation} · {model.nCorpusTeams.toLocaleString()} teams
               </div>
             }
-            onDrillSite={(s) =>
-              navigate(`/pokemon/${speciesPageSlug(model.sites[s])}/`)
-            }
+            onDrillSite={(s) => featureModal?.openSite(s)}
             partnerHref={(sp) => `/pokemon/${speciesPageSlug(sp)}/`}
           />
         </div>

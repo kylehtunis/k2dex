@@ -11,6 +11,9 @@ export interface FeatureModalValue {
   /** Open the detail modal for a feature by its vocab string (resolved to an
    * index internally). No-op for unknown strings. */
   openFeature: (name: string) => void;
+  /** Open the detail modal directly at a site (species) index. Inside the
+   * modal's own drill context this pushes onto the navigation stack. */
+  openSite: (site: number) => void;
 }
 
 export const FeatureModalContext = createContext<FeatureModalValue | null>(null);
