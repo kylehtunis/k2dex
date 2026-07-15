@@ -2073,10 +2073,12 @@ button.lab-comp-tile {
 
 /* ----- Species pages (/pokemon, /pokemon/<slug>) + modal open-page link ----- */
 
-.lab-feature-modal-head-actions {
-  display: inline-flex;
+/* Species name + the modal's open-full-page link, inline. */
+.lab-feature-modal-title-wrap {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  min-width: 0;
 }
 .lab-feature-modal-open {
   display: inline-flex;

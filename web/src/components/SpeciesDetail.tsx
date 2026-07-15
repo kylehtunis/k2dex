@@ -41,6 +41,9 @@ export interface SpeciesDetailProps {
   headExtra?: ReactNode;
   /** id for the species heading, for the modal's aria-labelledby. */
   titleId?: string;
+  /** Rendered inline next to the species name (the modal's open-full-page
+   * link). */
+  titleExtra?: ReactNode;
   /** Heading element for the species name: h2 in the modal, h1 on the page. */
   headingLevel?: "h1" | "h2";
   /** When set (the page), partner species names in the coupling lists render
@@ -55,6 +58,7 @@ export function SpeciesDetail({
   onLeave,
   headExtra,
   titleId,
+  titleExtra,
   headingLevel = "h2",
   partnerHref,
 }: SpeciesDetailProps) {
@@ -109,10 +113,11 @@ export function SpeciesDetail({
         {headExtra}
         <div className="lab-feature-modal-identity">
           <SpriteBox name={species} size={64} />
-          <div>
+          <div className="lab-feature-modal-title-wrap">
             <Heading id={titleId} className="lab-feature-modal-title">
               {species}
             </Heading>
+            {titleExtra}
           </div>
         </div>
         <StatStrip
