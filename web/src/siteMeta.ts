@@ -39,27 +39,30 @@ export interface RouteMeta {
 const BASE_ROUTES: readonly RouteMeta[] = [
   {
     path: "",
-    title: "k2dex | Competitive Pokemon Team Analysis",
+    title: "k2dex | VGC Team Builder with Autocomplete & Meta Analysis",
     description:
-      "k2dex learns teambuilding patterns from thousands of real VGC tournament teams using a statistical physics model. Explore which Pokemon pair well, complete partial teams, and analyze metagame trends.",
+      "k2dex is a VGC team builder that autocompletes partial teams using a statistical physics model learned from thousands of real tournament teams. Analyze team synergy and explore the metagame.",
   },
   {
     path: "completer",
-    title: "Team Completer | k2dex",
+    title: "VGC Team Builder & Autocompleter | k2dex",
     description:
-      "Complete a partial competitive Pokemon (VGC) team or generate full teams. Suggestions are driven by a model trained on thousands of real tournament rosters.",
+      "Free VGC team builder and autocompleter: pick any partial roster and get optimal completions learned from thousands of real tournament teams. Build around any Pokemon.",
   },
   {
     path: "analysis",
-    title: "Team Analysis | k2dex",
+    title: "VGC Team Analysis & Synergy Checker | k2dex",
     description:
-      "Analyze a competitive Pokemon (VGC) team: see pairwise synergy strengths, overall coherence score, and the closest teams from real tournament results.",
+      "Analyze a competitive Pokemon VGC team: pairwise synergy strengths, overall coherence score, suggested swaps, and the closest real tournament teams.",
   },
+  // Fallback for /meta before the model loads on client-side navigation; the
+  // prerendered file and the loaded-model runtime head use metaRouteMeta()
+  // below, which carries the active regulation for "reg X teams" queries.
   {
     path: "meta",
-    title: "Metagame Statistics | k2dex",
+    title: "VGC Metagame Stats: Top Teams & Synergies | k2dex",
     description:
-      "Explore the VGC metagame at a glance: the most common tournament teams, and the strongest synergies and anti-synergies between Pokemon in the format.",
+      "The VGC metagame at a glance: the most common tournament teams and the strongest Pokemon synergies and anti-synergies in the format.",
   },
   {
     path: "pokemon",
@@ -89,6 +92,21 @@ export function speciesPageSlug(species: string): string {
     .trim()
     .split(/\s+/)
     .join("-");
+}
+
+/** RouteMeta for /meta with the active regulation in the title, capturing the
+ *  time-sensitive "reg X teams" queries. The prerender substitutes it for the
+ *  static BASE_ROUTES fallback at build time (so a regulation rotation updates
+ *  the shipped title on the next deploy automatically), and usePageMeta does
+ *  the same at runtime once the model is loaded. */
+export function metaRouteMeta(regulation: string): RouteMeta {
+  return {
+    path: "meta",
+    title: `VGC Metagame Stats: Top Teams & Synergies (Reg ${regulation}) | k2dex`,
+    description:
+      `The Reg ${regulation} VGC metagame at a glance: the most common tournament teams ` +
+      `and the strongest Pokemon synergies and anti-synergies in the format.`,
+  };
 }
 
 /** RouteMeta for one species page. Shared by the prerender (which appends one

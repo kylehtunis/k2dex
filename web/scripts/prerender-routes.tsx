@@ -28,6 +28,7 @@ import { StaticRouter } from "react-router-dom/server";
 import {
   ROUTE_META,
   canonicalUrl,
+  metaRouteMeta,
   speciesPageSlug,
   speciesRouteMeta,
   type RouteMeta,
@@ -293,7 +294,12 @@ async function main() {
   const speciesRoutes: RouteMeta[] = model.sites.map((species) =>
     speciesRouteMeta(species, model.regulation),
   );
-  const allRoutes: RouteMeta[] = [...ROUTE_META, ...speciesRoutes];
+  // /meta ships with the active regulation in its title (the BASE_ROUTES
+  // entry is only the model-less client fallback).
+  const allRoutes: RouteMeta[] = [
+    ...ROUTE_META.map((m) => (m.path === "meta" ? metaRouteMeta(model.regulation) : m)),
+    ...speciesRoutes,
+  ];
 
   for (const meta of allRoutes) {
     let html = applyMeta(stamped, meta);

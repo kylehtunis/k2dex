@@ -15,6 +15,7 @@ import {
   SITE_NAME,
   canonicalUrl,
   metaForPath,
+  metaRouteMeta,
   normalizePath,
   speciesPageSlug,
   speciesRouteMeta,
@@ -62,6 +63,9 @@ export function usePageMeta(): void {
       const name = model.sites.find((s) => speciesPageSlug(s) === species[1]);
       if (name) meta = speciesRouteMeta(name, model.regulation);
     }
+    // /meta carries the active regulation in its title once the model is
+    // loaded (mirrors the prerendered head).
+    if (path === "meta" && model) meta = metaRouteMeta(model.regulation);
     const url = canonicalUrl(path);
 
     document.title = meta.title;
