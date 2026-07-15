@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import Select, { type SelectInstance, type SingleValue } from "react-select";
+import { MENU_PORTAL_TARGET } from "./portalTarget";
 import type { IsingModel } from "../sampler/types";
 import type { RosterSlot } from "../state/PageStateContext";
 import { SpriteBox } from "../render/Sprite";
@@ -145,7 +146,7 @@ export function RosterEditor({
             tabSelectsValue={false}
             placeholder="Pokémon"
             aria-label={`Slot ${i + 1} Pokémon`}
-            menuPortalTarget={document.body}
+            menuPortalTarget={MENU_PORTAL_TARGET}
             styles={portalStyles}
           />
           {itemActive && (
@@ -163,7 +164,7 @@ export function RosterEditor({
               tabSelectsValue={false}
               placeholder={itemPlaceholder}
               aria-label={`Slot ${i + 1} item`}
-              menuPortalTarget={document.body}
+              menuPortalTarget={MENU_PORTAL_TARGET}
               styles={portalStyles}
             />
           )}
@@ -184,7 +185,7 @@ export function RosterEditor({
             onChange={(o: SingleValue<Opt>) => o && addSpecies(Number(o.value))}
             placeholder="add a Pokémon"
             aria-label={`Slot ${i + 1} — add a Pokémon`}
-            menuPortalTarget={document.body}
+            menuPortalTarget={MENU_PORTAL_TARGET}
             styles={portalStyles}
           />
         </div>,

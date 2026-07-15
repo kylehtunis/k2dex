@@ -10,10 +10,16 @@ export interface ChainStripProps {
   height: number;
 }
 
+import { useIsClient } from "./useIsClient";
+
 const COLORS = ["#1f4e8c", "#9c2a2a", "#2f7d4f", "#b3791c", "#6a3d9a", "#777"];
 
 export function ChainStrip({ history, K, width, height }: ChainStripProps) {
+  const isClient = useIsClient();
   const sweeps = history.length;
+  if (!isClient) {
+    return <svg width={width} height={height} className="lab-chainstrip" />;
+  }
   const rowH = height / K;
   const colW = sweeps === 0 ? 0 : width / sweeps;
   return (

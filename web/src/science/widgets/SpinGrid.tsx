@@ -2,6 +2,7 @@
 // for the most-recently-considered cell (used by S3 in step-by-step mode).
 
 import type { Lattice } from "../primitives/lattice";
+import { useIsClient } from "./useIsClient";
 
 export interface SpinGridProps {
   lattice: Lattice;
@@ -10,10 +11,14 @@ export interface SpinGridProps {
 }
 
 export function SpinGrid({ lattice, cell = 14, highlight = null }: SpinGridProps) {
+  const isClient = useIsClient();
   const R = lattice.length;
   const C = lattice[0]?.length ?? 0;
   const W = C * cell;
   const H = R * cell;
+  if (!isClient) {
+    return <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="lab-spingrid" />;
+  }
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="lab-spingrid" shapeRendering="crispEdges">
       {lattice.flatMap((row, i) =>

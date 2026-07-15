@@ -159,6 +159,22 @@ export function ModelProvider({ children }: { children: ReactNode }) {
   return <ModelContext.Provider value={value}>{children}</ModelContext.Provider>;
 }
 
+/** Prerender-only provider: supplies an already-loaded model synchronously so
+ * the build-time renderToString pass (scripts/prerender-routes.ts) can render
+ * the real pages with live data. Never mounted in the browser — the app always
+ * goes through ModelProvider's fetch-on-mount path. */
+export function StaticModelProvider({
+  value,
+  children,
+}: {
+  value: ModelContextValue;
+  children: ReactNode;
+}) {
+  return <ModelContext.Provider value={value}>{children}</ModelContext.Provider>;
+}
+
+export type { ModelContextValue };
+
 export function useModel(): ModelContextValue {
   const ctx = useContext(ModelContext);
   if (ctx === null) {

@@ -20,6 +20,7 @@ import {
 } from "react";
 import { Link, useLocation } from "react-router-dom";
 import Select, { type SingleValue } from "react-select";
+import { MENU_PORTAL_TARGET } from "./portalTarget";
 import { Modal } from "./Modal";
 import { topModulationEntries } from "../meta/couplings";
 import { FeatureModalContext } from "./FeatureModalContext";
@@ -519,7 +520,7 @@ function CorpusItemSelector({
           onChange(o.value === ALL_ITEMS_VALUE ? null : Number(o.value));
         }}
         isSearchable={options.length > 8}
-        menuPortalTarget={document.body}
+        menuPortalTarget={MENU_PORTAL_TARGET}
         styles={attrPortalStyles}
         aria-label={`Filter by ${track.name}`}
       />

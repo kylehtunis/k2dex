@@ -6,6 +6,10 @@ const STORAGE_PREFIX = "k2dex-dismissed-announcement:";
 export function AnnouncementBanner() {
   const [dismissed, setDismissed] = useState(() => {
     if (!ANNOUNCEMENT) return true;
+    // Build-time prerender: no real storage, so render the banner (what a
+    // first-time visitor sees). Skipping the access also avoids Node's
+    // --localstorage-file warning.
+    if (typeof window === "undefined") return false;
     try {
       return localStorage.getItem(STORAGE_PREFIX + ANNOUNCEMENT) === "1";
     } catch {

@@ -20,7 +20,9 @@ export function ArticlePage() {
           ← Articles
         </Link>
       </nav>
-      <Suspense fallback={null}>
+      <Suspense
+        fallback={<p style={{ color: "var(--lab-ink-muted)" }}>Loading article…</p>}
+      >
         <Body />
       </Suspense>
     </div>

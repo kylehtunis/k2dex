@@ -6,6 +6,7 @@
 
 import { useMemo, useState } from "react";
 import Select, { type SingleValue } from "react-select";
+import { MENU_PORTAL_TARGET } from "../../components/portalTarget";
 import type { IsingModel } from "../../sampler/types";
 import { SpriteBox } from "../../render/Sprite";
 import {
@@ -56,7 +57,7 @@ export function TeammateTable({
           options={options}
           value={options.find((o) => o.value === anchor) ?? null}
           onChange={(o: SingleValue<Opt>) => o && setAnchor(o.value)}
-          menuPortalTarget={document.body}
+          menuPortalTarget={MENU_PORTAL_TARGET}
           styles={portalStyles}
           aria-label="Anchor species"
         />

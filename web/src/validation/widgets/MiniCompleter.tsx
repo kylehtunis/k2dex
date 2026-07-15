@@ -8,6 +8,7 @@
 
 import { useMemo, useState } from "react";
 import Select, { type SingleValue } from "react-select";
+import { MENU_PORTAL_TARGET } from "../../components/portalTarget";
 import type { IsingModel, TeamCounts } from "../../sampler/types";
 import { SpriteBox } from "../../render/Sprite";
 import { teamObservables } from "../../render/observables";
@@ -145,7 +146,7 @@ export function MiniCompleter({
             onChange={(o: SingleValue<Opt>) => setSlot(i, o ? o.value : null)}
             isClearable
             placeholder={i === 0 ? "pick a Pokémon" : "add another"}
-            menuPortalTarget={document.body}
+            menuPortalTarget={MENU_PORTAL_TARGET}
             styles={portalStyles}
             aria-label={`Pick ${i + 1}`}
           />

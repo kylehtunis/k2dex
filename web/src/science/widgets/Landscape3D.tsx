@@ -10,6 +10,7 @@ import {
   project,
   type IsoProjection,
 } from "../primitives/landscape";
+import { useIsClient } from "./useIsClient";
 
 export interface Walker {
   x: number;
@@ -46,6 +47,7 @@ export function Landscape3D({
   walkers = [],
   grid = 28,
 }: Landscape3DProps) {
+  const isClient = useIsClient();
   const proj: IsoProjection = useMemo(
     () => ({
       scaleXY: width / 8.4,
@@ -102,6 +104,13 @@ export function Landscape3D({
     quads.sort((p, q) => p.depth - q.depth);
     return { quads };
   }, [grid, proj]);
+
+  // After all hooks: skip the mesh during build-time prerendering.
+  if (!isClient) {
+    return (
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="lab-landscape3d" />
+    );
+  }
 
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="lab-landscape3d">

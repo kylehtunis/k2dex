@@ -4,6 +4,7 @@
 
 
 import Select, { type MultiValue } from "react-select";
+import { MENU_PORTAL_TARGET } from "./portalTarget";
 import type { IsingModel } from "../sampler/types";
 
 export interface VocabOption {
@@ -52,7 +53,7 @@ export function VocabSelect({
       noOptionsMessage={() =>
         atLimit ? `Max ${maxSelections} selected` : "No matches"
       }
-      menuPortalTarget={document.body}
+      menuPortalTarget={MENU_PORTAL_TARGET}
       styles={{
         menuPortal: (base) => ({ ...base, zIndex: 9999 }),
       }}
@@ -89,7 +90,7 @@ export function SpeciesSelect({
       onChange={(sel) => onChange((sel as MultiValue<{ value: string }>).map((o) => o.value))}
       placeholder={placeholder}
       aria-label={ariaLabel}
-      menuPortalTarget={document.body}
+      menuPortalTarget={MENU_PORTAL_TARGET}
       styles={{
         menuPortal: (base) => ({ ...base, zIndex: 9999 }),
       }}

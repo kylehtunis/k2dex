@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SpinGrid } from "../widgets/SpinGrid";
+
+// The widget SSR-skips its cells (useIsClient gate); this test checks the
+// full client markup, so force the client path.
+vi.mock("../widgets/useIsClient", () => ({ useIsClient: () => true }));
 
 describe("SpinGrid", () => {
   it("renders one rect per spin", () => {
