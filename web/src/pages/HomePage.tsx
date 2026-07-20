@@ -17,8 +17,8 @@ const TOOLS = [
   {
     path: "/analysis/",
     num: "§02",
-    label: "Team Analysis",
-    desc: "Detailed analysis of a full team of six, including energy, coupling, and suggested improvements.",
+    label: "Team Rater & Analysis",
+    desc: "Rate a full team of six: score and coherence rating, synergies and anti-synergies, and suggested swaps.",
   },
   {
     path: "/meta/",

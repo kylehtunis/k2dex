@@ -223,7 +223,7 @@ export function AnalysisPage() {
     <>
       <PageTitle
         eyebrow="VGC TOOL"
-        h1="Team analysis"
+        h1="Team rater & analysis"
         rightCaption={corpusCaption}
       />
 

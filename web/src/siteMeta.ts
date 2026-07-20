@@ -51,9 +51,9 @@ const BASE_ROUTES: readonly RouteMeta[] = [
   },
   {
     path: "analysis",
-    title: "VGC Team Analysis & Synergy Checker | k2dex",
+    title: "VGC Team Analysis: Rating, Synergies & Suggestions | k2dex",
     description:
-      "Analyze a competitive Pokemon VGC team: pairwise synergy strengths, overall coherence score, suggested swaps, and the closest real tournament teams.",
+      "Rate my VGC team: score and analyze a competitive Pokemon team, see its synergy and coherence, suggested swaps, and similar real tournament teams.",
   },
   // Fallback for /meta before the model loads on client-side navigation; the
   // prerendered file and the loaded-model runtime head use metaRouteMeta()
