@@ -37,10 +37,15 @@ export interface PTOpts {
   /** Probability an item-track model rerolls (vs species-swaps) each sweep.
    * Ignored for species-only models. Default 0.5. */
   pReroll?: number;
-  /** Site-level pins (species fixed, track values free). Each is seeded to its
-   * best placeable feature, then its slot is locked against species-swaps but
-   * still rerolled. Empty = feature-level pins only. */
+  /** Site-level pins (species fixed, some/all track values free). Each is seeded
+   * to its best placeable feature, then its slot is locked against species-swaps
+   * but still rerolled. Empty = feature-level pins only. */
   fixedSites?: readonly number[];
+  /** Per-`fixedSites` entry, its per-track pinned value (partial pins): `null`
+   * or a `null` track value leaves that track free (a pure site pin), a value
+   * string locks it (seed matches it and it never rerolls). Omitted ⇒ every site
+   * pin is fully free. */
+  sitePinTrackValues?: readonly (readonly (string | null)[] | null)[];
   /** Anchor-field tilt alpha ("Anchor Strength"): samples from
    * H_alpha = H - (alpha-1)·Σ_{p∈pins, j free} J[p,j]s_j, concentrating mass
    * on teams that couple well to the pins (feature + site). 1 = no tilt
@@ -59,7 +64,8 @@ export function parallelTemperedMcmc(
   // Resolve site-level pins to concrete seed features (species fixed, item
   // free). They occupy free slots that are locked against species-swaps but
   // still rerolled; the remaining slots fill randomly.
-  const seeds = resolveSitePins(model, opts.fixedSites ?? [], opts.fixed, opts.excluded);
+  const seeds = resolveSitePins(
+    model, opts.fixedSites ?? [], opts.fixed, opts.excluded, opts.sitePinTrackValues);
   if (seeds === null) return null;
 
   const available = availableIndices(model, opts.fixed, opts.excluded);
@@ -81,6 +87,15 @@ export function parallelTemperedMcmc(
   // Seed features are NOT masked off: their slot rerolls among the site's items.
   const lockedSlots = new Set<number>();
   for (let i = 0; i < seeds.length; i++) lockedSlots.add(i);
+  // Per-seed-slot track locks: a track pinned to a value (partial pin) must not
+  // reroll. Only built when some pin carries track values; pure site pins get
+  // an all-free mask (no effect).
+  const slotTrackLocks: boolean[][] | undefined = opts.sitePinTrackValues
+    ? seeds.map((_, i) => {
+        const pins = opts.sitePinTrackValues![i] ?? null;
+        return model.tracks.map((_t, t) => (pins ? pins[t] !== null : false));
+      })
+    : undefined;
   const anchorStrength = opts.anchorStrength ?? 1;
   // Per-track reroll weights (item ≫ ability) from the shared constant, keyed
   // by track name; a track absent from the map gets weight 0 (never rerolled).
@@ -95,6 +110,7 @@ export function parallelTemperedMcmc(
     lockedSlots,
     anchorStrength,
     trackRerollWeights,
+    slotTrackLocks,
   };
   const hasTracks = model.tracks.length > 0;
   const pReroll = opts.pReroll ?? 0.5;

@@ -204,6 +204,11 @@ export interface PottsContext {
    * disables rerolling that track (e.g. an excluded attribute). Undefined ⇒
    * every track weighted equally. */
   trackRerollWeights?: Float64Array;
+  /** Per site-pinned slot (onNf positions `0..L-1`), a per-track lock mask:
+   * `true` = that track is pinned on this slot (a partial pin, e.g. species +
+   * item locked with ability free) and must not reroll. Undefined/short ⇒ no
+   * partial-pin locks (pure site pins reroll every track). */
+  slotTrackLocks?: readonly (readonly boolean[])[];
 }
 
 /** The retained team (all on-team features except the slot at `onNfPos` of the
@@ -384,10 +389,21 @@ export function pottsTrackReroll(
 ): void {
   const { nTracks, trackVid } = tables;
   if (chain.onNf.length === 0 || nTracks === 0) return;
-  const track = pickTrack(nTracks, ctx.trackRerollWeights, rng);
+  const outK = rng.integers(chain.onNf.length);
+  // A partial-pinned slot's locked tracks are excluded from the reroll (weight
+  // 0), so only its free tracks resample; pure slots use the base weights.
+  const locks = ctx.slotTrackLocks?.[outK];
+  let weights = ctx.trackRerollWeights;
+  if (locks) {
+    const w = new Float64Array(nTracks);
+    for (let t = 0; t < nTracks; t++) {
+      w[t] = locks[t] ? 0 : ctx.trackRerollWeights ? ctx.trackRerollWeights[t] : 1;
+    }
+    weights = w;
+  }
+  const track = pickTrack(nTracks, weights, rng);
   if (track < 0) return;
   const invTemp = 1 / T;
-  const outK = rng.integers(chain.onNf.length);
   const outFeat = chain.onNf[outK];
   const site = model.siteOf[outFeat];
   const { rFeat, rItemId, rPin } = retained(chain, outK, ctx, tables);

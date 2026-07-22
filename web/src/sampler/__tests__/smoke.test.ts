@@ -8,7 +8,8 @@ import { describe, expect, it } from "vitest";
 import type { IsingModel } from "../types";
 import { initChain, swapMcmc } from "../swap";
 import { parallelTemperedMcmc } from "../pt";
-import { unpackLowerTriangle, factoredFromSpeciesItem, withInactiveTracks } from "../model";
+import type { TrackDef } from "../types";
+import { unpackLowerTriangle, factoredFromSpeciesItem, deriveFactored, withInactiveTracks } from "../model";
 import {
   availableIndices,
   buildConstraintSets,
@@ -266,6 +267,96 @@ describe("species-only sampling (degenerate item track)", () => {
         species.add(model.speciesOf[i]);
       }
     }
+  });
+});
+
+// 4 species carrying item + ability tracks; P's item x is split across two
+// abilities so a partial pin (item locked, ability free) has room to reroll.
+//   P(0): (x,a)(x,b)(y,a)  Q(1): (x,a)(z,b)  R(2): (y,b)(w,a)  S(3): (u,a)(v,b)
+function buildTwoTrackModel(teamSize = 3): IsingModel {
+  const sites = ["P", "Q", "R", "S"];
+  const siteOf = [0, 0, 0, 1, 1, 2, 2, 3, 3];
+  const items = ["x", "x", "y", "x", "z", "y", "w", "u", "v"];
+  const abils = ["a", "b", "a", "a", "b", "b", "a", "a", "b"];
+  const trackValues: (string | null)[][] = items.map((it, i) => [it, abils[i]]);
+  const tracks: TrackDef[] = [
+    { name: "item", cardinality: 1, crossSlotUnique: true, withinSlotUnique: false },
+    { name: "ability", cardinality: 1, crossSlotUnique: false, withinSlotUnique: false },
+  ];
+  const V = siteOf.length;
+  const lowerN = (V * (V - 1)) / 2;
+  const lowerFlat = new Float32Array(lowerN);
+  let k = 0;
+  for (let i = 1; i < V; i++) {
+    for (let j = 0; j < i; j++) {
+      lowerFlat[k++] = 0.4 * Math.sin(0.8 * (i + 1)) * Math.cos(0.4 * (j + 1));
+    }
+  }
+  const J = unpackLowerTriangle(lowerFlat, V);
+  const h = new Float64Array(V);
+  for (let i = 0; i < V; i++) h[i] = -0.4 + 0.1 * i;
+  const m = new Float64Array(V).fill(0.15);
+  const vocab = trackValues.map((tv, i) => `${sites[siteOf[i]]} @ ${tv[0]} (${tv[1]})`);
+  const indexOf = new Map<string, number>();
+  vocab.forEach((v, i) => indexOf.set(v, i));
+  const derived = deriveFactored(sites, siteOf, trackValues);
+  return {
+    id: "t2", displayName: "t2", regulation: "test", latestTournamentDate: "",
+    V, teamSize, vocab, sites, siteOf, tracks, trackValues, ...derived,
+    m, J, h, indexOf, nCorpusTeams: 0, name: "t2",
+  };
+}
+
+describe("partial pins (species + one track locked, others free)", () => {
+  it("keeps the pinned item fixed while the ability rerolls", () => {
+    const model = buildTwoTrackModel();
+    // Pin site P (0) with item x locked, ability free.
+    const result = parallelTemperedMcmc(model, {
+      fixed: [], excluded: [], fieldWeight: 1.0,
+      fixedSites: [0],
+      sitePinTrackValues: [["x", null]],
+      tLadder: [1.0, 2.0, 4.0],
+      nSteps: 400, burnIn: 50, swapInterval: 10, seed: 9,
+      pReroll: 0.6,
+    });
+    expect(result).not.toBeNull();
+    const abilitiesSeen = new Set<string | null>();
+    for (const team of result!.samples) {
+      expect(team.length).toBe(model.teamSize);
+      // Exactly one P feature present, and it holds the pinned item x.
+      const pFeats = team.filter((i) => model.siteOf[i] === 0);
+      expect(pFeats.length).toBe(1);
+      expect(model.trackValues[pFeats[0]][0]).toBe("x"); // item locked
+      abilitiesSeen.add(model.trackValues[pFeats[0]][1]);
+      // Species (site) uniqueness across the team.
+      const seen = new Set<number>();
+      for (const i of team) {
+        expect(seen.has(model.siteOf[i])).toBe(false);
+        seen.add(model.siteOf[i]);
+      }
+    }
+    // The free ability track actually explores both of x's abilities (a, b).
+    expect(abilitiesSeen.size).toBeGreaterThan(1);
+  });
+
+  it("a pure site pin (no track values) still rerolls every track", () => {
+    const model = buildTwoTrackModel();
+    const result = parallelTemperedMcmc(model, {
+      fixed: [], excluded: [], fieldWeight: 1.0,
+      fixedSites: [0], // no sitePinTrackValues -> fully free
+      tLadder: [1.0, 2.0, 4.0],
+      nSteps: 400, burnIn: 50, swapInterval: 10, seed: 5,
+      pReroll: 0.6,
+    });
+    expect(result).not.toBeNull();
+    const itemsSeen = new Set<string | null>();
+    for (const team of result!.samples) {
+      const pFeats = team.filter((i) => model.siteOf[i] === 0);
+      expect(pFeats.length).toBe(1);
+      itemsSeen.add(model.trackValues[pFeats[0]][0]);
+    }
+    // Item is free here, so P visits more than one item value.
+    expect(itemsSeen.size).toBeGreaterThan(1);
   });
 });
 

@@ -157,33 +157,43 @@ export function initializeState(
   return null;
 }
 
-/** Resolve site-level pins (species fixed, track values free) to concrete seed
- * features: for each site, its highest-marginal feature that is available and
- * doesn't collide with the feature pins / earlier seeds on any unique track.
- * Returns one feature per `fixedSites` entry (aligned), or null if some site has
- * no placeable feature under the constraints.
+/** Resolve site-level pins (species fixed, some/all track values free) to
+ * concrete seed features: for each site, its highest-marginal feature that is
+ * available, matches any pinned track values, and doesn't collide with the
+ * feature pins / earlier seeds on any unique track. Returns one feature per
+ * `fixedSites` entry (aligned), or null if some site has no placeable feature.
+ *
+ * `sitePinTrackValues` (optional, aligned with `fixedSites`) carries each pin's
+ * per-track pinned value: entry `null` (or a track value `null`) leaves that
+ * track free (a pure site pin), a value string restricts the seed to features
+ * holding it on that track (a partial pin — e.g. species + item locked, ability
+ * free). Omitted ⇒ every pin is a pure site pin (all tracks free).
  *
  * Used two ways: to seed the PT chains at site-pinned slots (where the seed's
- * track values then reroll during sampling), and to resolve a site pin to an
- * ordinary feature pin on the greedy fast path (which has no reroll machinery,
- * so the seed stays put). */
+ * free track values then reroll during sampling), and to resolve a site pin to
+ * an ordinary feature pin on the greedy fast path (which has no reroll
+ * machinery, so the seed stays put — a point argmax over the free tracks). */
 export function resolveSitePins(
   model: IsingModel,
   fixedSites: readonly number[],
   fixedFeatures: readonly number[],
   excluded: Iterable<number>,
+  sitePinTrackValues?: readonly (readonly (string | null)[] | null)[],
 ): number[] | null {
   if (fixedSites.length === 0) return [];
   const exSet = new Set<number>(excluded);
   const taken = buildConstraintSets(fixedFeatures, model);
   const seeds: number[] = [];
-  for (const site of fixedSites) {
+  for (let s = 0; s < fixedSites.length; s++) {
+    const site = fixedSites[s];
     if (taken.usedSites.has(site)) return null; // site already taken by a feature pin / duplicate
+    const pins = sitePinTrackValues?.[s] ?? null;
     let best = -1;
     let bestM = -Infinity;
     for (const f of model.siteFeatures[site]) {
       if (exSet.has(f)) continue;
       if (violatesConstraints(f, taken, model)) continue;
+      if (pins && !matchesPinnedTracks(model, f, pins)) continue;
       if (model.m[f] > bestM) { bestM = model.m[f]; best = f; }
     }
     if (best < 0) return null;
@@ -191,6 +201,17 @@ export function resolveSitePins(
     occupy(taken, best, model);
   }
   return seeds;
+}
+
+/** True iff feature `f` holds every pinned track value (`null` entries are
+ * free and impose no constraint). */
+function matchesPinnedTracks(
+  model: IsingModel, f: number, pins: readonly (string | null)[],
+): boolean {
+  for (let t = 0; t < pins.length; t++) {
+    if (pins[t] !== null && model.trackValues[f][t] !== pins[t]) return false;
+  }
+  return true;
 }
 
 /** Anchor-field tilt boost for static (feature-pin) surfaces:
