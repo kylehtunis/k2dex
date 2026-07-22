@@ -15,10 +15,13 @@ import type { GreedyChainEntry, IsingModel } from "../sampler/types";
 
 export interface FastPathInput {
   fixed: readonly number[];
-  /** Site-level pins (species fixed, item free). The greedy path has no reroll
-   * machinery, so each is resolved up front to its best placeable feature and
-   * then treated as an ordinary feature pin. */
+  /** Site-level pins (species fixed, some/all tracks free). The greedy path has
+   * no reroll machinery, so each is resolved up front to its best placeable
+   * feature matching any pinned track values, then treated as a feature pin —
+   * the free tracks become a point argmax, not a marginal. */
   fixedSites?: readonly number[];
+  /** Per-`fixedSites` entry, its per-track pinned value (partial pins). */
+  sitePinTrackValues?: readonly (readonly (string | null)[] | null)[];
   excludedSpecies: readonly string[]; // species-level
   fieldWeight: number;
   /** Anchor-field tilt alpha ("Anchor Strength"); pins for the tilt are the
@@ -63,7 +66,8 @@ export function runFastPath(
   const { fieldWeight } = input;
   const excluded = expandExcludedSpecies(input.excludedSpecies, model);
   // Resolve site pins to their best feature and treat them as feature pins.
-  const seeds = resolveSitePins(model, input.fixedSites ?? [], input.fixed, excluded);
+  const seeds = resolveSitePins(
+    model, input.fixedSites ?? [], input.fixed, excluded, input.sitePinTrackValues);
   if (seeds === null) {
     return {
       ok: false,

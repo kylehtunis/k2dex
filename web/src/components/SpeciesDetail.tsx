@@ -15,6 +15,7 @@ import { MENU_PORTAL_TARGET } from "./portalTarget";
 import { topModulationEntries } from "../meta/couplings";
 import { useModel } from "../state/ModelContext";
 import { usePageState } from "../state/PageStateContext";
+import { emptySlot } from "../state/roster";
 import { SpriteBox } from "../render/Sprite";
 import { TeamMiniStrip } from "../render/cells";
 import { ScoreChip, SignedBar, StatStrip } from "../render/atoms";
@@ -479,7 +480,7 @@ function SpeciesActions({
     const excluded = completer.excludedSpecies.includes(species);
     const pinSite = () => {
       setCompleter({
-        roster: [...completer.roster, { site, feature: null }],
+        roster: [...completer.roster, emptySlot(model, site)],
         excludedSpecies: completer.excludedSpecies.filter((s) => s !== species),
       });
       onLeave?.();
@@ -533,7 +534,7 @@ function SpeciesActions({
               setAnalysis({
                 roster: [
                   ...analysis.roster,
-                  { site, feature: null },
+                  emptySlot(model, site),
                 ],
               });
               onLeave?.();

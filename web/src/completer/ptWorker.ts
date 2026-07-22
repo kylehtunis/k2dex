@@ -28,8 +28,11 @@ export interface PTRequest {
     trackValues: readonly (readonly (string | null)[])[];
   };
   fixed: readonly number[];
-  /** Site-level pins (species fixed, item free to reroll). */
+  /** Site-level pins (species fixed, some/all tracks free to reroll). */
   fixedSites?: readonly number[];
+  /** Per-`fixedSites` entry, its per-track pinned value (partial pins); null /
+   * null-track = free. */
+  sitePinTrackValues?: readonly (readonly (string | null)[] | null)[];
   excluded: readonly number[];
   fieldWeight: number;
   /** Cold target T (smallest), at index 0 in the rebuilt ladder. */
@@ -48,10 +51,11 @@ export interface PTRequest {
   pReroll?: number;
   /** Anchor-field tilt alpha ("Anchor Strength"); 1 = no tilt. */
   anchorStrength?: number;
-  /** Aggregate completions by species (site) set instead of by full feature
-   * set — used when an attribute is deactivated, to marginalize it out. Each
-   * bucket keeps its most-frequent real feature-team as the representative. */
-  projectToSites?: boolean;
+  /** Deactivated attribute-track indices. Their reroll is disabled and they are
+   * marginalized out of the completion distribution: completions bucket by
+   * (site, active-track values), each bucket keeping its most-frequent real
+   * feature-team as the representative. Empty ⇒ bucket by full feature set. */
+  inactiveTracks?: readonly number[];
 }
 
 export interface PTResponse {
@@ -98,14 +102,20 @@ function aggregate(
   return { dist, nKept: total };
 }
 
-/** Like `aggregate`, but buckets by the team's species (site) set — the item(s)
- * are marginalized out. Each bucket's `team` is its most-frequent real
- * feature-team (a genuine sampled completion), so downstream observables and
- * corpus lookups stay meaningful; the UI hides the item column. */
-function aggregateBySite(
+/** Like `aggregate`, but buckets by each member's projected key (site plus its
+ * value on every *active* track) — the inactive tracks are marginalized out.
+ * Each bucket's `team` is its most-frequent real feature-team (a genuine sampled
+ * completion), so downstream observables and corpus lookups stay meaningful; the
+ * UI hides the inactive tracks' columns. With no active tracks this is the
+ * species-set projection; with every track active it matches `aggregate`. */
+function aggregateProjected(
   allSamples: TeamIndices[][],
   siteOf: readonly number[],
+  trackValues: readonly (readonly (string | null)[])[],
+  activeTracks: readonly number[],
 ): { dist: Array<{ team: number[]; count: number }>; nKept: number } {
+  const memberKey = (f: number): string =>
+    `${siteOf[f]}#${activeTracks.map((t) => trackValues[f][t] ?? "").join("|")}`;
   interface Bucket {
     count: number;
     reps: Map<string, { team: number[]; count: number }>;
@@ -116,11 +126,11 @@ function aggregateBySite(
     for (const team of samples) {
       total++;
       const sorted = [...team].sort((a, b) => a - b);
-      const siteKey = sorted.map((i) => siteOf[i]).sort((a, b) => a - b).join(",");
-      let bucket = buckets.get(siteKey);
+      const projKey = sorted.map(memberKey).sort().join(",");
+      let bucket = buckets.get(projKey);
       if (!bucket) {
         bucket = { count: 0, reps: new Map() };
-        buckets.set(siteKey, bucket);
+        buckets.set(projKey, bucket);
       }
       bucket.count++;
       const featKey = sorted.join(",");
@@ -178,6 +188,7 @@ self.onmessage = (e: MessageEvent<PTRequest>) => {
       const res = parallelTemperedMcmc(model, {
         fixed: req.fixed,
         fixedSites: req.fixedSites,
+        sitePinTrackValues: req.sitePinTrackValues,
         excluded: req.excluded,
         fieldWeight: req.fieldWeight,
         tLadder: ladder,
@@ -187,6 +198,7 @@ self.onmessage = (e: MessageEvent<PTRequest>) => {
         seed: req.seed + run, // independent stream per run
         pReroll: req.pReroll,
         anchorStrength: req.anchorStrength,
+        inactiveTracks: req.inactiveTracks,
       });
       if (res === null) {
         const reply: PTError = {
@@ -200,8 +212,12 @@ self.onmessage = (e: MessageEvent<PTRequest>) => {
       localAcceptSum += res.localAccept;
       swapAcceptSum += res.swapAccept;
     }
-    const { dist, nKept } = req.projectToSites
-      ? aggregateBySite(allSamples, md.siteOf)
+    const inactive = new Set(req.inactiveTracks ?? []);
+    const activeTracks = md.tracks
+      .map((_t, t) => t)
+      .filter((t) => !inactive.has(t));
+    const { dist, nKept } = inactive.size > 0
+      ? aggregateProjected(allSamples, md.siteOf, md.trackValues, activeTracks)
       : aggregate(allSamples);
     const reply: PTResponse = {
       ok: true,

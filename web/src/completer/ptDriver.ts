@@ -32,6 +32,7 @@ export function runPT(
   opts: {
     fixed: readonly number[];
     fixedSites?: readonly number[];
+    sitePinTrackValues?: readonly (readonly (string | null)[] | null)[];
     excluded: readonly number[];
     fieldWeight: number;
     coldT: number;
@@ -44,7 +45,7 @@ export function runPT(
     seed?: number;
     pReroll?: number;
     anchorStrength?: number;
-    projectToSites?: boolean;
+    inactiveTracks?: readonly number[];
   },
 ): Promise<PTSuccess | PTFailure> {
   return new Promise((resolve) => {
@@ -76,6 +77,7 @@ export function runPT(
       },
       fixed: opts.fixed,
       fixedSites: opts.fixedSites,
+      sitePinTrackValues: opts.sitePinTrackValues,
       excluded: opts.excluded,
       fieldWeight: opts.fieldWeight,
       coldT: opts.coldT,
@@ -88,7 +90,7 @@ export function runPT(
       seed: opts.seed ?? 0x5eed,
       pReroll: opts.pReroll,
       anchorStrength: opts.anchorStrength,
-      projectToSites: opts.projectToSites,
+      inactiveTracks: opts.inactiveTracks,
     };
     worker.postMessage(req);
   });

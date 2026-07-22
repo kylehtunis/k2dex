@@ -1,16 +1,16 @@
 // Factored roster editor for the completer. A grid of `teamSize` slots; each
-// filled slot is a species picker + an optional item picker. Leaving a slot's
-// item unset makes it a site pin (species locked, item filled by the completer);
-// choosing an item makes it a feature pin. Empty slots are filled entirely by
-// the completer. This is the factored counterpart to the flat feature list —
-// species and item are separate dimensions, and "unspecified" is the default
-// (not an explicit "any item" choice).
+// filled slot is a species picker plus one optional picker per attribute track
+// (item, ability, …). Leaving a track unset makes the completer fill it (a site
+// or partial pin); setting every track that narrows the species to a single
+// feature makes a feature pin. Empty slots are filled entirely by the completer.
+// "Unspecified" is the default (not an explicit "any" choice).
 
 import { useEffect, useMemo, useRef } from "react";
 import Select, { type SelectInstance, type SingleValue } from "react-select";
 import { MENU_PORTAL_TARGET } from "./portalTarget";
 import type { IsingModel } from "../sampler/types";
 import type { RosterSlot } from "../state/PageStateContext";
+import { emptySlot, setSlotTrack, slotFeature } from "../state/roster";
 import { SpriteBox } from "../render/Sprite";
 
 interface Opt {
@@ -20,18 +20,42 @@ interface Opt {
 
 const portalStyles = { menuPortal: (base: Record<string, unknown>) => ({ ...base, zIndex: 9999 }) };
 
-/** Item label for a feature: its item-track value verbatim (e.g. "Life Orb",
- * "None") — treated as an ordinary item string, no special-casing. */
-function itemLabel(model: IsingModel, feature: number): string {
-  const v = model.trackValues[feature][0];
-  return v ?? "—";
+/** Distinct values on track `t` among the slot's features that match every
+ * *other* pinned track (a cascade, so a chosen combination always exists). In
+ * first-appearance (vocab) order; a `null` value renders as an em dash. */
+function trackOptions(model: IsingModel, slot: RosterSlot, t: number): Opt[] {
+  const seen = new Set<string | null>();
+  const opts: Opt[] = [];
+  for (const f of model.siteFeatures[slot.site]) {
+    let ok = true;
+    for (let o = 0; o < slot.trackValues.length; o++) {
+      if (o !== t && slot.trackValues[o] !== null && model.trackValues[f][o] !== slot.trackValues[o]) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) continue;
+    const v = model.trackValues[f][t];
+    if (seen.has(v)) continue;
+    seen.add(v);
+    opts.push({ label: v ?? "—", value: v ?? "" });
+  }
+  return opts;
+}
+
+/** Number of distinct values a species carries on track `t` (ignoring pins) —
+ * used to hide a picker for a degenerate track (one value). */
+function trackCardinality(model: IsingModel, site: number, t: number): number {
+  const seen = new Set<string | null>();
+  for (const f of model.siteFeatures[site]) seen.add(model.trackValues[f][t]);
+  return seen.size;
 }
 
 export function RosterEditor({
   model,
   roster,
   onChange,
-  itemActive,
+  trackActive = () => true,
   teamSize = 6,
   itemPlaceholder = "item (optional)",
   emptyHint = "empty",
@@ -39,13 +63,15 @@ export function RosterEditor({
   model: IsingModel;
   roster: readonly RosterSlot[];
   onChange: (next: RosterSlot[]) => void;
-  itemActive: boolean;
+  /** Whether a track's picker is shown/editable. The completer passes the
+   * "not in Excluded attributes" predicate; analysis leaves every track active.
+   * Track 0 (item) always shows when active (even for a single-item species);
+   * later tracks (ability) show only when the species is non-degenerate. */
+  trackActive?: (track: number) => boolean;
   teamSize?: number;
-  /** Placeholder for the item picker. The completer says the completer fills
-   * an unset item; analysis (feature-level) leaves it plain. */
+  /** Placeholder for the first (item) track picker. */
   itemPlaceholder?: string;
-  /** Hint shown in trailing inert slots. `null` renders just the ordinal —
-   * used on analysis, where an empty slot isn't "filled by" anything. */
+  /** Hint shown in trailing inert slots. `null` renders just the ordinal. */
   emptyHint?: string | null;
 }) {
   const sitePop = useMemo(() => {
@@ -64,30 +90,34 @@ export function RosterEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model, sitePop, usedKey]);
 
-  // Per-slot select instances, so a species pick can jump the cursor to its
-  // item picker and a clear can send it back to the species picker. Populated
-  // by ref callbacks; entries null out on unmount.
+  // Per-slot select instances so a species pick can jump the cursor to its first
+  // track picker and a clear can send it back to the species picker.
   const speciesRefs = useRef<(SelectInstance<Opt> | null)[]>([]);
-  const itemRefs = useRef<(SelectInstance<Opt> | null)[]>([]);
-  const pendingFocus = useRef<{ kind: "species" | "item"; slot: number } | null>(null);
+  const firstTrackRefs = useRef<(SelectInstance<Opt> | null)[]>([]);
+  const pendingFocus = useRef<{ kind: "species" | "track"; slot: number } | null>(null);
 
-  // After a roster change re-renders, apply the queued focus. The target
-  // mounts in the same commit, so its ref is set before this effect runs;
-  // attempt once and clear so a stale target can't grab focus on a later
-  // unrelated render.
   useEffect(() => {
     const p = pendingFocus.current;
     if (!p) return;
     pendingFocus.current = null;
-    const inst = p.kind === "item" ? itemRefs.current[p.slot] : speciesRefs.current[p.slot];
+    const inst = p.kind === "track" ? firstTrackRefs.current[p.slot] : speciesRefs.current[p.slot];
     inst?.focus();
   });
 
-  // After choosing a species, jump to that slot's item picker; with no item
-  // track, jump to the next species picker (the next mon / the add slot).
-  const focusAfterSpecies = (slot: number) => {
-    pendingFocus.current = itemActive
-      ? { kind: "item", slot }
+  // The visible track indices for a slot: active tracks, with track 0 always
+  // shown and later tracks only when the species is non-degenerate on them.
+  const visibleTracks = (site: number): number[] => {
+    const out: number[] = [];
+    for (let t = 0; t < model.tracks.length; t++) {
+      if (!trackActive(t)) continue;
+      if (t === 0 || trackCardinality(model, site, t) > 1) out.push(t);
+    }
+    return out;
+  };
+
+  const focusAfterSpecies = (slot: number, site: number) => {
+    pendingFocus.current = visibleTracks(site).length > 0
+      ? { kind: "track", slot }
       : slot + 1 < teamSize
         ? { kind: "species", slot: slot + 1 }
         : null;
@@ -95,40 +125,28 @@ export function RosterEditor({
 
   const setSpecies = (slot: number, site: number | null) => {
     if (site === null) {
-      // Clearing a slot removes the mon; send focus to the species picker that
-      // now occupies this index (next mon shifted up, or the add slot).
       pendingFocus.current = { kind: "species", slot };
       onChange(roster.filter((_, i) => i !== slot));
     } else {
-      // New species → item resets to unset (items are species-specific).
-      focusAfterSpecies(slot);
-      onChange(roster.map((s, i) => (i === slot ? { site, feature: null } : s)));
+      // New species → tracks reset to unset (values are species-specific).
+      focusAfterSpecies(slot, site);
+      onChange(roster.map((s, i) => (i === slot ? emptySlot(model, site) : s)));
     }
   };
-  const setItem = (slot: number, feature: number | null) =>
-    onChange(roster.map((s, i) => (i === slot ? { ...s, feature } : s)));
+  const setTrack = (slot: number, track: number, value: string | null) =>
+    onChange(roster.map((s, i) => (i === slot ? setSlotTrack(s, track, value) : s)));
   const addSpecies = (site: number) => {
-    focusAfterSpecies(roster.length);
-    onChange([...roster, { site, feature: null }]);
+    focusAfterSpecies(roster.length, site);
+    onChange([...roster, emptySlot(model, site)]);
   };
 
   const slots = [];
   for (let i = 0; i < teamSize; i++) {
     if (i < roster.length) {
       const slot = roster[i];
-      const spriteName =
-        slot.feature !== null ? model.vocab[slot.feature] : model.sites[slot.site];
-      const itemOptions: Opt[] = model.siteFeatures[slot.site]
-        .slice()
-        .sort((a, b) => model.m[b] - model.m[a])
-        .map((f) => ({
-          label: itemLabel(model, f),
-          value: `${f}`,
-        }));
-      const itemValue: Opt | null =
-        slot.feature !== null
-          ? { label: itemLabel(model, slot.feature), value: `${slot.feature}` }
-          : null;
+      const feat = slotFeature(model, slot);
+      const spriteName = feat !== null ? model.vocab[feat] : model.sites[slot.site];
+      const tracks = visibleTracks(slot.site);
       slots.push(
         <div className="lab-roster-slot" key={`slot-${i}`}>
           <SpriteBox name={spriteName} size={56} className="lab-roster-slot-sprite" />
@@ -149,25 +167,29 @@ export function RosterEditor({
             menuPortalTarget={MENU_PORTAL_TARGET}
             styles={portalStyles}
           />
-          {itemActive && (
-            <Select
-              ref={(el) => {
-                itemRefs.current[i] = el;
-              }}
-              classNamePrefix="lab-select"
-              className="lab-roster-item"
-              options={itemOptions}
-              value={itemValue}
-              onChange={(o: SingleValue<Opt>) => setItem(i, o ? Number(o.value) : null)}
-              isClearable
-              openMenuOnFocus
-              tabSelectsValue={false}
-              placeholder={itemPlaceholder}
-              aria-label={`Slot ${i + 1} item`}
-              menuPortalTarget={MENU_PORTAL_TARGET}
-              styles={portalStyles}
-            />
-          )}
+          {tracks.map((t, ti) => {
+            const v = slot.trackValues[t];
+            return (
+              <Select
+                key={`track-${t}`}
+                ref={(el) => {
+                  if (ti === 0) firstTrackRefs.current[i] = el;
+                }}
+                classNamePrefix="lab-select"
+                className="lab-roster-item"
+                options={trackOptions(model, slot, t)}
+                value={v !== null ? { label: v, value: v } : null}
+                onChange={(o: SingleValue<Opt>) => setTrack(i, t, o ? o.value : null)}
+                isClearable
+                openMenuOnFocus
+                tabSelectsValue={false}
+                placeholder={t === 0 ? itemPlaceholder : `${model.tracks[t].name} (optional)`}
+                aria-label={`Slot ${i + 1} ${model.tracks[t].name}`}
+                menuPortalTarget={MENU_PORTAL_TARGET}
+                styles={portalStyles}
+              />
+            );
+          })}
         </div>,
       );
     } else if (i === roster.length) {

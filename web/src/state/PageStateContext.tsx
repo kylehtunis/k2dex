@@ -22,12 +22,14 @@ import {
 } from "../constants";
 import { useModel } from "./ModelContext";
 
-/** One filled roster slot. `feature` is the flat vocab index when the user has
- * pinned a specific item (a feature pin); `null` when only the species is
- * chosen and the completer fills the item (a site pin). */
+/** One filled roster slot: a species (`site`) plus a per-track pinned value
+ * (`trackValues[t]`) or `null` = free (the completer fills it). Length matches
+ * `model.tracks` (empty for a species-only model). All tracks free = a site
+ * pin; all set (resolving to a real feature) = a feature pin; mixed = a partial
+ * pin. Resolve with `state/roster.ts:slotFeature`. */
 export interface RosterSlot {
   site: number;
-  feature: number | null;
+  trackValues: (string | null)[];
 }
 
 export interface CompleterInputs {

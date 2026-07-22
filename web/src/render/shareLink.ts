@@ -88,21 +88,47 @@ function featureSlug(model: IsingModel, i: number): string {
   return `${sp}~${itSeg}~${abilityToSlug(ability)}`;
 }
 
+/** A site/partial pin's token: the species slug plus its pinned track prefix
+ * (item, then ability). The format is positional, so encoding stops at the
+ * first free track — a bare species is a pure site pin, `species~item` a
+ * partial pin (item locked, ability free), `species~item~ability` all locked.
+ * (A track pinned while an earlier one is free can't be represented and encodes
+ * as free; that combination is not reachable from the cascading UI pickers.) */
+function sitePinSlug(
+  model: IsingModel, site: number, pins: readonly (string | null)[] | null,
+): string {
+  const sp = speciesToSlug(model.sites[site]);
+  if (!pins) return sp;
+  const abIdx = abilityTrackIdx(model);
+  const segs = [sp];
+  for (let t = 0; t < pins.length; t++) {
+    const v = pins[t];
+    if (v === null) break; // positional: stop at the first free track
+    if (t === 0) segs.push(v === "None" ? "none" : itemToSlug(v));
+    else if (t === abIdx) segs.push(abilityToSlug(v));
+    else break;
+  }
+  return segs.join("~");
+}
+
 /** Build the shared core token from feature pins (`idxs`) and optional site
- * pins (`siteIdxs`, site indices). Feature mons keep ascending-index order and
- * come first; site mons are appended, so a feature-only token is unchanged. */
+ * pins (`siteIdxs`, site indices, with per-pin `sitePinTrackValues`). Feature
+ * mons keep ascending-index order and come first; site mons are appended, so a
+ * feature-only token is unchanged and a pure site pin stays a bare species. */
 export function encodeCore(
   modelId: string,
   idxs: readonly number[],
   model: IsingModel,
   siteIdxs: readonly number[] = [],
+  sitePinTrackValues: readonly (readonly (string | null)[] | null)[] = [],
 ): string {
   const featureMons = [...idxs]
     .sort((a, b) => a - b)
     .map((i) => featureSlug(model, i));
-  const siteMons = [...siteIdxs]
-    .sort((a, b) => a - b)
-    .map((s) => speciesToSlug(model.sites[s]));
+  const siteMons = siteIdxs
+    .map((s, k) => ({ s, pins: sitePinTrackValues[k] ?? null }))
+    .sort((a, b) => a.s - b.s)
+    .map(({ s, pins }) => sitePinSlug(model, s, pins));
   const mons = [...featureMons, ...siteMons].join("_");
   return `${modelId}.${mons}`;
 }
@@ -148,8 +174,11 @@ export function decodeCore(t: string | null): DecodedCore | null {
 export interface CompleterShareState {
   modelId: string;
   fixedIdxs: readonly number[];
-  /** Site-level pins (site indices). Encoded as bare species slugs. */
+  /** Site-level pins (site indices). Encoded as bare species slugs, or with a
+   * pinned track prefix for partial pins. */
   fixedSites: readonly number[];
+  /** Per-`fixedSites` entry, its per-track pinned value (partial pins). */
+  sitePinTrackValues?: readonly (readonly (string | null)[] | null)[];
   /** Deactivated attribute-track indices (species-only mode). Encoded as `d`. */
   inactiveTracks: readonly number[];
   excludedSpecies: readonly string[];
@@ -174,7 +203,7 @@ export function encodeCompleter(
   model: IsingModel,
 ): URLSearchParams {
   const p = new URLSearchParams();
-  p.set("t", encodeCore(s.modelId, s.fixedIdxs, model, s.fixedSites));
+  p.set("t", encodeCore(s.modelId, s.fixedIdxs, model, s.fixedSites, s.sitePinTrackValues));
   if (s.excludedSpecies.length) {
     p.set(
       "x",

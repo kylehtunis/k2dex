@@ -19,6 +19,7 @@ import {
 } from "../constants";
 import { useModel } from "../state/ModelContext";
 import { usePageState, type RosterSlot } from "../state/PageStateContext";
+import { slotFeature, slotFromFeature } from "../state/roster";
 import { PageTitle, SectionLabel, StatStrip } from "../render/atoms";
 import { RosterEditor } from "../components/RosterEditor";
 import type { IsingModel } from "../sampler/types";
@@ -41,9 +42,9 @@ import { ChainTable } from "../analysis/ChainTable";
 import { ScrollX } from "../components/ScrollX";
 
 /** Feature indices → roster slots (each a feature pin). Analysis is
- * feature-level, so every entry carries a concrete item. */
+ * feature-level, so every entry carries a concrete item (and ability). */
 function idxsToRoster(model: IsingModel, idxs: readonly number[]): RosterSlot[] {
-  return idxs.map((i) => ({ site: model.siteOf[i], feature: i }));
+  return idxs.map((i) => slotFromFeature(model, i));
 }
 
 export function AnalysisPage() {
@@ -55,8 +56,11 @@ export function AnalysisPage() {
   // The complete team = roster slots with an item pinned. Species-only slots
   // are in-progress picks that don't count until an item is chosen.
   const teamIdxs = useMemo(
-    () => roster.filter((s) => s.feature !== null).map((s) => s.feature as number),
-    [roster],
+    () =>
+      model
+        ? roster.map((s) => slotFeature(model, s)).filter((f): f is number => f !== null)
+        : [],
+    [model, roster],
   );
 
   // The share token currently reflected in (or being applied from) the URL.
@@ -240,7 +244,6 @@ export function AnalysisPage() {
         model={model}
         roster={roster}
         onChange={(next) => setAnalysis({ roster: next })}
-        itemActive
         teamSize={TEAM_SIZE}
         itemPlaceholder="item"
         emptyHint={null}
@@ -364,9 +367,7 @@ export function AnalysisPage() {
               onAcceptSwap={(out, inn) =>
                 setAnalysis({
                   roster: roster.map((s) =>
-                    s.feature === out
-                      ? { site: model.siteOf[inn], feature: inn }
-                      : s,
+                    slotFeature(model, s) === out ? slotFromFeature(model, inn) : s,
                   ),
                 })
               }

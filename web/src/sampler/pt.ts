@@ -51,6 +51,10 @@ export interface PTOpts {
    * on teams that couple well to the pins (feature + site). 1 = no tilt
    * (default); no effect when nothing is pinned. */
   anchorStrength?: number;
+  /** Deactivated attribute-track indices ("Excluded attributes"): their reroll
+   * weight is zeroed so they never resample (their value stays whatever it was
+   * seeded to and is marginalized out downstream). */
+  inactiveTracks?: readonly number[];
 }
 
 export function parallelTemperedMcmc(
@@ -99,9 +103,12 @@ export function parallelTemperedMcmc(
   const anchorStrength = opts.anchorStrength ?? 1;
   // Per-track reroll weights (item ≫ ability) from the shared constant, keyed
   // by track name; a track absent from the map gets weight 0 (never rerolled).
+  const inactive = new Set(opts.inactiveTracks ?? []);
   const trackRerollWeights = new Float64Array(model.tracks.length);
   for (let t = 0; t < model.tracks.length; t++) {
-    trackRerollWeights[t] = POTTS_TRACK_REROLL_WEIGHTS[model.tracks[t].name] ?? 0;
+    trackRerollWeights[t] = inactive.has(t)
+      ? 0
+      : POTTS_TRACK_REROLL_WEIGHTS[model.tracks[t].name] ?? 0;
   }
   const ctx: PottsContext = {
     fixed: opts.fixed,
