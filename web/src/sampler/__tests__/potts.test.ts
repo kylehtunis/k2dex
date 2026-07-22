@@ -5,7 +5,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { IsingModel } from "../types";
-import { factoredFromSpeciesItem, unpackLowerTriangle } from "../model";
+import type { TrackDef } from "../types";
+import { deriveFactored, factoredFromSpeciesItem, unpackLowerTriangle } from "../model";
 import {
   buildSiteTables,
   siteConditional,
@@ -41,7 +42,7 @@ function buildModel(
   vocab.forEach((v, i) => indexOf.set(v, i));
   const factored = factoredFromSpeciesItem(speciesOf, itemOf);
   return {
-    id: "t", displayName: "t", regulation: "test", featureDimensions: 2,
+    id: "t", displayName: "t", regulation: "test",
     latestTournamentDate: "", V, teamSize, vocab, speciesOf, itemOf, ...factored,
     m, J, h, indexOf, nCorpusTeams: 0, name: "t",
   };
@@ -62,6 +63,45 @@ function speciesOnlyModel(): IsingModel {
   const species = ["A", "B", "C", "D", "E", "F"];
   const items: (string | null)[] = species.map(() => null);
   return buildModel(species, items, 4);
+}
+
+// 3 species carrying item + ability tracks. P has all 4 item×ability combos;
+// Q and R have two each. Team size 3 so a reroll always has retained context.
+//   P(0): (x,a)(x,b)(y,a)(y,b) feats 0-3
+//   Q(1): (x,a)(z,b)           feats 4,5
+//   R(2): (y,a)(w,b)           feats 6,7
+function twoTrackModel(teamSize = 3): IsingModel {
+  const sites = ["P", "Q", "R"];
+  const siteOf = [0, 0, 0, 0, 1, 1, 2, 2];
+  const items = ["x", "x", "y", "y", "x", "z", "y", "w"];
+  const abils = ["a", "b", "a", "b", "a", "b", "a", "b"];
+  const trackValues: (string | null)[][] = items.map((it, i) => [it, abils[i]]);
+  const tracks: TrackDef[] = [
+    { name: "item", cardinality: 1, crossSlotUnique: true, withinSlotUnique: false },
+    { name: "ability", cardinality: 1, crossSlotUnique: false, withinSlotUnique: false },
+  ];
+  const V = siteOf.length;
+  const lowerN = (V * (V - 1)) / 2;
+  const lowerFlat = new Float32Array(lowerN);
+  let k = 0;
+  for (let i = 1; i < V; i++) {
+    for (let j = 0; j < i; j++) {
+      lowerFlat[k++] = 0.4 * Math.sin(0.9 * (i + 1)) * Math.cos(0.5 * (j + 1));
+    }
+  }
+  const J = unpackLowerTriangle(lowerFlat, V);
+  const h = new Float64Array(V);
+  for (let i = 0; i < V; i++) h[i] = -0.5 + 0.13 * i;
+  const m = new Float64Array(V).fill(0.2);
+  const vocab = trackValues.map((tv, i) => `${sites[siteOf[i]]} @ ${tv[0]} (${tv[1]})`);
+  const indexOf = new Map<string, number>();
+  vocab.forEach((v, i) => indexOf.set(v, i));
+  const derived = deriveFactored(sites, siteOf, trackValues);
+  return {
+    id: "t2", displayName: "t2", regulation: "test", latestTournamentDate: "",
+    V, teamSize, vocab, sites, siteOf, tracks, trackValues, ...derived,
+    m, J, h, indexOf, nCorpusTeams: 0, name: "t2",
+  };
 }
 
 function ctxFor(model: IsingModel, fixed: number[], excluded: number[]): PottsContext {
@@ -202,6 +242,46 @@ describe("pottsSpeciesSwap / pottsTrackReroll invariants", () => {
     const before = [...chain.state];
     pottsTrackReroll(chain, model, hEff, 1.0, ctx.tables, ctx, rng);
     expect([...chain.state]).toEqual(before);
+  });
+
+  // Per-track reroll writes only its track: an ability-only reroll leaves the
+  // team's item multiset fixed (species roster + items unchanged), and an
+  // item-only reroll leaves the ability multiset fixed. Mirrors the models.py
+  // batched invariant test_track_reroll_writes_only_its_track.
+  it("rerolls only the targeted track, holding the others fixed", () => {
+    for (const [name, weights] of [
+      ["ability-only", new Float64Array([0, 1])],
+      ["item-only", new Float64Array([1, 0])],
+    ] as [string, Float64Array][]) {
+      const model = twoTrackModel();
+      const rng = new Rng(name === "ability-only" ? 11 : 23);
+      const ctx = { ...ctxFor(model, [], []), trackRerollWeights: weights };
+      const constraints = buildConstraintSets([], model);
+      const hEff = new Float64Array(model.V);
+      for (let i = 0; i < model.V; i++) hEff[i] = model.h[i];
+      const chain = initChain(
+        model, [], [...Array(model.V).keys()], model.teamSize, constraints, hEff, rng)!;
+      expect(chain).not.toBeNull();
+      // The invariant track (0 = item for ability-only, 1 = ability for
+      // item-only): its sorted multiset over the team never changes.
+      const invariantTrack = name === "ability-only" ? 0 : 1;
+      const snapshot = () => {
+        const vals: (string | null)[] = [];
+        for (let i = 0; i < model.V; i++) {
+          if (chain.state[i]) vals.push(model.trackValues[i][invariantTrack]);
+        }
+        return vals.sort();
+      };
+      const before = snapshot();
+      for (let s = 0; s < 300; s++) {
+        pottsTrackReroll(chain, model, hEff, 1.0, ctx.tables, ctx, rng);
+        const team: number[] = [];
+        for (let i = 0; i < model.V; i++) if (chain.state[i]) team.push(i);
+        expect(team.length).toBe(model.teamSize);
+        assertValid(team, model);
+        expect(snapshot()).toEqual(before);
+      }
+    }
   });
 });
 

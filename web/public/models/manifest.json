@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "default_model": "reg-m-b",
   "types": {
     "standard": {
@@ -12,7 +12,6 @@
       "display_name": "Reg. M-B",
       "regulation": "M-B",
       "type": "standard",
-      "feature_dimensions": 2,
       "V": 790,
       "n_corpus_teams": 13390,
       "latest_tournament_date": "2026-07-13T01:00:00.000Z",
@@ -20,7 +19,9 @@
       "tracks": [
         {
           "name": "item",
-          "unique": true
+          "cardinality": 1,
+          "crossSlotUnique": true,
+          "withinSlotUnique": false
         }
       ],
       "new": true
@@ -30,7 +31,6 @@
       "display_name": "Reg. M-A",
       "regulation": "M-A",
       "type": "standard",
-      "feature_dimensions": 2,
       "V": 843,
       "n_corpus_teams": 22037,
       "latest_tournament_date": "2026-06-15T23:00:00.000Z",
@@ -38,7 +38,9 @@
       "tracks": [
         {
           "name": "item",
-          "unique": true
+          "cardinality": 1,
+          "crossSlotUnique": true,
+          "withinSlotUnique": false
         }
       ]
     }

@@ -4,6 +4,15 @@
 // lower energy = more probable. Sign-flip to "Score" happens at the
 // render layer only, exactly as in the Python sampling.py.
 
+/** One attribute track (item, ability, ...) a model's features carry.
+ * Mirrors the `tracks` block of the v4 meta.json artifact. */
+export interface TrackDef {
+  readonly name: string;
+  readonly cardinality: number;
+  readonly crossSlotUnique: boolean;
+  readonly withinSlotUnique: boolean;
+}
+
 export interface IsingModel {
   /** Unique slug identifier (e.g. "reg-m-a"). */
   readonly id: string;
@@ -11,8 +20,6 @@ export interface IsingModel {
   readonly displayName: string;
   /** Regulation this model was fit on (e.g. "M-A"). */
   readonly regulation: string;
-  /** 1 for species-only, 2 for species+item. */
-  readonly featureDimensions: number;
   /** ISO date string of the most recent tournament in the corpus. */
   readonly latestTournamentDate: string;
   /** Vocab size (number of features). */
@@ -25,8 +32,12 @@ export interface IsingModel {
   readonly sites: readonly string[];
   /** Per-feature site index (into `sites`), length V. */
   readonly siteOf: readonly number[];
-  /** Track (attribute) definitions. Empty for species-only models. */
-  readonly tracks: readonly { name: string; unique: boolean }[];
+  /** Track (attribute) definitions. Empty for species-only models. `cardinality`
+   * is how many values a member holds on this track (1 for item/ability);
+   * `crossSlotUnique` is the no-two-members-share-this-value team rule (item:
+   * true, ability: false); `withinSlotUnique` is the no-duplicate-within-a-member
+   * rule (only meaningful for cardinality > 1; both current tracks: false). */
+  readonly tracks: readonly TrackDef[];
   /** Per-feature track values, length V; each entry has one value per track
    * (`null` = undetermined/inapplicable on that track). */
   readonly trackValues: readonly (readonly (string | null)[])[];

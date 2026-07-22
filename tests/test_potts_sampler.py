@@ -15,24 +15,43 @@ import numpy as np
 from k2dex.models import (
     _advance_bank_potts,
     _bank_flat_indices,
+    _build_feat_lookup,
     _build_site_tables,
     _group_ids,
+    _potts_track_reroll_sweep,
     _site_conditional,
     fit_boltzmann_ising,
 )
 from k2dex.sampling import estimate_moments, initialize_state
 
 
-def _factored_bank(team_flat, species_id, site):
+def _single_track_vids(item_of, V):
+    """Per-feature per-track value ids for a single item track (V, 1). Uses
+    none_sentinel=False so an itemless value is an ordinary indexable state --
+    exactly what the fit's setup does."""
+    vid = _group_ids(item_of, V, none_sentinel=False)
+    assert vid is not None
+    return vid[:, None]
+
+
+def _potts_setup(species_of, item_of, V):
+    """Build (species_id, item_id, track_vids, site, feat_lookup) for a
+    single-item-track Potts bank, mirroring `fit_boltzmann_ising`'s setup."""
+    species_id = _group_ids(species_of, V, none_sentinel=False)
+    item_id = _group_ids(item_of, V, none_sentinel=True)
+    assert species_id is not None and item_id is not None
+    track_vids = _single_track_vids(item_of, V)
+    site = _build_site_tables(species_id, track_vids, item_id, V)
+    feat_lookup = _build_feat_lookup(species_id, track_vids, V)
+    return species_id, item_id, track_vids, site, feat_lookup
+
+
+def _factored_bank(team_flat, species_id, track_vids):
     """Convert a flat-index bank (n_temps, n_chains, k) to the factored
-    (team_sites, team_values, feat_lookup) form the Potts sampler now uses."""
-    _S, sp_item_feat, sp_item_valid, _iid = site
-    V = species_id.shape[0]
-    feat_to_val0 = np.zeros(V, dtype=np.int64)
-    feat_to_val0[sp_item_feat[sp_item_valid]] = np.nonzero(sp_item_valid)[1]
+    (team_sites, team_values) form the Potts sampler now uses."""
     team_sites = species_id[team_flat]
-    team_values = feat_to_val0[team_flat][..., None]
-    return team_sites, team_values, sp_item_feat
+    team_values = track_vids[team_flat]
+    return team_sites, team_values
 
 
 def _valid_teams(V, k, species_of, item_of):
@@ -76,10 +95,8 @@ def _potts_moments(J, h, k, species_of, item_of, *, seed,
                    n_chains=250, burn=1000, snapshots=200, stride=4):
     """Pooled moments from a single persistent Potts-kernel bank at T=1."""
     V = len(h)
-    species_id = _group_ids(species_of, V, none_sentinel=False)
-    item_id = _group_ids(item_of, V, none_sentinel=True)
-    assert species_id is not None and item_id is not None
-    site = _build_site_tables(species_id, item_id, V)
+    species_id, item_id, track_vids, site, feat_lookup = _potts_setup(
+        species_of, item_of, V)
     rng = np.random.default_rng(seed)
     available = np.arange(V)
     temps = np.array([1.0])
@@ -87,7 +104,7 @@ def _potts_moments(J, h, k, species_of, item_of, *, seed,
     for c in range(n_chains):
         team[0, c] = initialize_state(
             available, k, set(), set(), species_of, item_of, rng)
-    team_sites, team_values, feat_lookup = _factored_bank(team, species_id, site)
+    team_sites, team_values = _factored_bank(team, species_id, track_vids)
     _advance_bank_potts(team_sites, team_values, J, h, temps, item_id, site,
                         feat_lookup, rng,
                         n_sweeps=burn, swap_interval=10, p_reroll=0.5)
@@ -159,10 +176,7 @@ class TestQ2Degeneracy(unittest.TestCase):
         J = 0.5 * (J + J.T)
         np.fill_diagonal(J, 0.0)
         h = rng.normal(0, 0.5, V)
-        species_id = _group_ids(species_of, V, none_sentinel=False)
-        item_id = _group_ids(item_of, V, none_sentinel=True)
-        assert species_id is not None and item_id is not None
-        site = _build_site_tables(species_id, item_id, V)
+        species_id, item_id, _, site, _ = _potts_setup(species_of, item_of, V)
 
         # Held members R = {2, 3}; swap species A (feat 0) for B (feat 1).
         R_feat = np.array([[2, 3]])
@@ -208,16 +222,14 @@ class TestConstraintInvariants(unittest.TestCase):
         J = 0.5 * (J + J.T)
         np.fill_diagonal(J, 0.0)
         h = rng.normal(0, 0.5, V)
-        species_id = _group_ids(_SPECIES, V, none_sentinel=False)
-        item_id = _group_ids(_ITEM, V, none_sentinel=True)
-        assert species_id is not None and item_id is not None
-        site = _build_site_tables(species_id, item_id, V)
+        species_id, item_id, track_vids, site, feat_lookup = _potts_setup(
+            _SPECIES, _ITEM, V)
         available = np.arange(V)
         team = np.empty((1, 32, k), dtype=np.int64)
         for c in range(32):
             team[0, c] = initialize_state(
                 available, k, set(), set(), _SPECIES, _ITEM, rng)
-        team_sites, team_values, feat_lookup = _factored_bank(team, species_id, site)
+        team_sites, team_values = _factored_bank(team, species_id, track_vids)
         _advance_bank_potts(team_sites, team_values, J, h, np.array([1.0]),
                             item_id, site, feat_lookup, rng,
                             n_sweeps=250, swap_interval=10, p_reroll=0.5)
@@ -237,16 +249,14 @@ class TestConstraintInvariants(unittest.TestCase):
         J = 0.5 * (J + J.T)
         np.fill_diagonal(J, 0.0)
         h = rng.normal(0, 0.5, V)
-        species_id = _group_ids(_SPECIES, V, none_sentinel=False)
-        item_id = _group_ids(_ITEM, V, none_sentinel=True)
-        assert species_id is not None and item_id is not None
-        site = _build_site_tables(species_id, item_id, V)
+        species_id, item_id, track_vids, site, feat_lookup = _potts_setup(
+            _SPECIES, _ITEM, V)
         available = np.arange(V)
         team = np.empty((1, 24, k), dtype=np.int64)
         for c in range(24):
             team[0, c] = initialize_state(
                 available, k, set(), set(), _SPECIES, _ITEM, rng)
-        team_sites, team_values, feat_lookup = _factored_bank(team, species_id, site)
+        team_sites, team_values = _factored_bank(team, species_id, track_vids)
         # p_reroll=1.0 -> only value rerolls; team_sites (the species roster) is
         # never touched, so the sorted per-chain species multiset is invariant.
         before = np.sort(team_sites[0], axis=1).copy()
@@ -306,6 +316,121 @@ class TestPottsFitPath(unittest.TestCase):
         # than the Potts-vs-exact gate (test_matches_exact_moments).
         m_data = X.mean(axis=0)
         self.assertLess(np.abs(m_hat - m_data).max(), 0.08)
+
+
+class TestTwoTrackExactMoments(unittest.TestCase):
+    """The correctness proof for the multi-track kernel: with two tracks (item
+    cross-slot-unique, ability free), the factored PCD bank must reproduce the
+    exact enumerated moments, hold item-exclusion, let abilities duplicate
+    freely, and rewrite only the target track on a per-track reroll.
+
+    Vocab: species {A, B, C} x item {x, y} x ability {p, q}, with C restricted to
+    item x (ragged padding). Team size 2 -> a valid team is two distinct species
+    with distinct items; abilities are unconstrained.
+    """
+    _SP = ["A", "A", "A", "A", "B", "B", "B", "B", "C", "C"]
+    _IT: list[str | None] = ["x", "x", "y", "y", "x", "x", "y", "y", "x", "x"]
+    _AB = ["p", "q", "p", "q", "p", "q", "p", "q", "p", "q"]
+
+    def _setup(self, V):
+        species_id = _group_ids(self._SP, V, none_sentinel=False)
+        item_id = _group_ids(self._IT, V, none_sentinel=True)
+        item_vid = _group_ids(self._IT, V, none_sentinel=False)
+        ability_vid = _group_ids(self._AB, V, none_sentinel=False)
+        assert (species_id is not None and item_id is not None
+                and item_vid is not None and ability_vid is not None)
+        track_vids = np.stack([item_vid, ability_vid], axis=1)
+        site = _build_site_tables(species_id, track_vids, item_id, V)
+        feat_lookup = _build_feat_lookup(species_id, track_vids, V)
+        return species_id, item_id, track_vids, site, feat_lookup
+
+    def _moments(self, J, h, k, *, seed, n_chains=300, burn=1500,
+                 snapshots=250, stride=4, track_weights=None):
+        V = len(h)
+        species_id, item_id, track_vids, site, feat_lookup = self._setup(V)
+        rng = np.random.default_rng(seed)
+        available = np.arange(V)
+        team = np.empty((1, n_chains, k), dtype=np.int64)
+        for c in range(n_chains):
+            team[0, c] = initialize_state(
+                available, k, set(), set(), self._SP, self._IT, rng)
+        team_sites, team_values = _factored_bank(team, species_id, track_vids)
+        _advance_bank_potts(team_sites, team_values, J, h, np.array([1.0]),
+                            item_id, site, feat_lookup, rng,
+                            n_sweeps=burn, swap_interval=10, p_reroll=0.5,
+                            track_weights=track_weights)
+        m_acc = np.zeros(V)
+        C_acc = np.zeros((V, V))
+        for _ in range(snapshots):
+            _advance_bank_potts(team_sites, team_values, J, h, np.array([1.0]),
+                                item_id, site, feat_lookup, rng,
+                                n_sweeps=stride, swap_interval=10, p_reroll=0.5,
+                                track_weights=track_weights)
+            flat = _bank_flat_indices(team_sites[0], team_values[0], feat_lookup)
+            m_acc += np.bincount(flat.ravel(), minlength=V) / n_chains
+            for row in flat:
+                C_acc[np.ix_(row, row)] += 1.0
+        m_acc /= snapshots
+        C_acc /= snapshots * n_chains
+        return m_acc, C_acc
+
+    def test_matches_exact_and_constraints(self) -> None:
+        rng = np.random.default_rng(0)
+        V, k = 10, 2
+        J = rng.normal(0, 0.5, (V, V))
+        J = 0.5 * (J + J.T)
+        np.fill_diagonal(J, 0.0)
+        sid = _group_ids(self._SP, V, none_sentinel=False)
+        assert sid is not None
+        J[sid[:, None] == sid[None, :]] = 0.0
+        h = rng.normal(0, 0.4, V)
+
+        m_ex, C_ex = _exact_moments(J, h, k, self._SP, self._IT)
+        m, C = self._moments(J, h, k, seed=5)
+        self.assertLess(np.abs(m - m_ex).max(), 0.05)
+        self.assertLess(np.abs(C - C_ex).max(), 0.05)
+        # Item-exclusion holds: A@x@p (0) & B@x@p (4) share item x; A@x@p (0) &
+        # A@x@q (1) share species A. Both must never co-occur.
+        self.assertAlmostEqual(C[0, 4], 0.0, places=7)
+        self.assertAlmostEqual(C[0, 1], 0.0, places=7)
+        # Abilities duplicate freely: A@x@p (0) & B@y@p (6) differ in species and
+        # item but share ability p -- a legal, positive-probability co-occurrence.
+        self.assertGreater(C_ex[0, 6], 0.0)  # the exact ensemble allows it
+        self.assertGreater(C[0, 6], 0.0)     # and the sampler produces it
+
+    def test_track_reroll_writes_only_its_track(self) -> None:
+        V, k = 10, 2
+        rng = np.random.default_rng(3)
+        J = rng.normal(0, 0.4, (V, V))
+        J = 0.5 * (J + J.T)
+        np.fill_diagonal(J, 0.0)
+        h = rng.normal(0, 0.4, V)
+        species_id, item_id, track_vids, site, feat_lookup = self._setup(V)
+        available = np.arange(V)
+        n_chains = 64
+        team = np.empty((1, n_chains, k), dtype=np.int64)
+        for c in range(n_chains):
+            team[0, c] = initialize_state(
+                available, k, set(), set(), self._SP, self._IT, rng)
+        team_sites, team_values = _factored_bank(team, species_id, track_vids)
+        ts = team_sites.reshape(n_chains, k)
+        tv = team_values.reshape(n_chains, k, 2)
+
+        # Rerolling ability (track 1) must leave the item column (track 0) and the
+        # species roster untouched.
+        item_before = tv[..., 0].copy()
+        sites_before = ts.copy()
+        for _ in range(30):
+            _potts_track_reroll_sweep(
+                ts, tv, J, h, item_id, site, feat_lookup, rng, track=1, temp=1.0)
+        np.testing.assert_array_equal(tv[..., 0], item_before)
+        np.testing.assert_array_equal(ts, sites_before)
+        # Rerolling item (track 0) must leave the ability column (track 1) fixed.
+        ability_before = tv[..., 1].copy()
+        for _ in range(30):
+            _potts_track_reroll_sweep(
+                ts, tv, J, h, item_id, site, feat_lookup, rng, track=0, temp=1.0)
+        np.testing.assert_array_equal(tv[..., 1], ability_before)
 
 
 if __name__ == "__main__":

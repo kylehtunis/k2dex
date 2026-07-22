@@ -121,3 +121,9 @@ export function itemSpriteUrl(item: string | null | undefined): string | null {
   if (!item) return null;
   return `${ITEM_CDN}/${itemToSlug(item)}.png`;
 }
+
+/** Ability slug for share tokens. Abilities slugify the same way items do
+ * (lowercase, non-alphanumeric runs collapse to a hyphen); a separate name
+ * keeps the two dimensions distinguishable at call sites and free to diverge
+ * later. */
+export const abilityToSlug = itemToSlug;

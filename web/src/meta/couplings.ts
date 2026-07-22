@@ -14,17 +14,21 @@ export interface CouplingPair {
 }
 
 /** True when (i, j) is a *structural* coupling worth surfacing — i.e. not a
- * mechanical mutual exclusion. Same-species pairs, and same-item pairs on
- * Species @ Item vocab, couple purely because the two builds can't co-exist on
- * a team, so they carry no metagame signal. On Species-only vocab (unique
- * species, all-null items) both checks are no-ops, so every off-diagonal pair
- * is structural. Shared by filteredCouplings and render/featureDetail. */
+ * mechanical mutual exclusion. Same-species pairs, and same-value pairs on any
+ * cross-slot-unique track (today: item only), couple purely because the two
+ * builds can't co-exist on a team, so they carry no metagame signal. On
+ * Species-only vocab (unique species, all-null items) both checks are no-ops,
+ * so every off-diagonal pair is structural. Shared by filteredCouplings and
+ * render/featureDetail. */
 export function isStructuralPair(model: IsingModel, i: number, j: number): boolean {
-  const { speciesOf, itemOf } = model;
+  const { speciesOf, tracks, trackValues } = model;
   if (speciesOf[i] === speciesOf[j]) return false;
-  const itI = itemOf[i];
-  const itJ = itemOf[j];
-  if (itI !== null && itJ !== null && itI === itJ) return false;
+  for (let t = 0; t < tracks.length; t++) {
+    if (!tracks[t].crossSlotUnique) continue;
+    const vi = trackValues[i][t];
+    const vj = trackValues[j][t];
+    if (vi !== null && vj !== null && vi === vj) return false;
+  }
   return true;
 }
 

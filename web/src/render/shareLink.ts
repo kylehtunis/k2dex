@@ -9,11 +9,18 @@
 // Core token `t` (shared by both pages): "<modelSlug>.<mons>"
 //   <modelSlug>  the model's id slug, now a per-regulation slug (e.g. "reg-m-a")
 //   <mons>       "_"-joined; each mon is one of:
+//                  "speciesSlug~itemSlug~abilitySlug"  a feature pin with an
+//                                          ability track locked too
 //                  "speciesSlug~itemSlug"  a feature pin (species + item locked;
-//                                          itemless builds encode "...~none")
+//                                          itemless builds encode "...~none");
+//                                          byte-identical to the pre-ability
+//                                          token, so legacy links decode as
+//                                          ability-free partial pins
 //                  "speciesSlug"           a site pin (species locked, item free)
 //                Feature mons come first (ascending index) so pre-site-pin
-//                tokens stay byte-identical; site mons are appended.
+//                tokens stay byte-identical; site mons are appended. There is
+//                no "None" ability, so an ability segment is only ever
+//                present alongside a real (possibly "none") item segment.
 //
 // Legacy tokens carried a "<fwIndex>" segment between the model slug and the
 // mons (the retired Bias Adjustment slider position, always all-digits). It is
@@ -36,7 +43,7 @@ import {
   PT_SWEEPS,
   PT_SWAP_INTERVAL,
 } from "../constants";
-import { speciesToSlug, itemToSlug } from "./sprite-url";
+import { speciesToSlug, itemToSlug, abilityToSlug } from "./sprite-url";
 import type { IsingModel } from "../sampler/types";
 
 const LEGACY_CODE_TO_SLUG: Record<string, string> = {
@@ -56,12 +63,29 @@ export interface FeatureSlug {
   /** null = a bare mon = site-level pin (species locked, item free); a string
    * (incl. "none") = a feature pin with that item locked. */
   itemSlug: string | null;
+  /** null = no ability track on this model, or (today) every committed
+   * artifact predates the ability track; a string = that ability locked.
+   * Only ever set alongside a non-null itemSlug (there is no "None" ability
+   * to fall back to for an itemless build). */
+  abilitySlug: string | null;
+}
+
+function abilityTrackIdx(model: IsingModel): number {
+  return model.tracks.findIndex((t) => t.name === "ability");
 }
 
 function featureSlug(model: IsingModel, i: number): string {
   const sp = speciesToSlug(model.speciesOf[i]);
   const it = model.itemOf[i];
-  return it === null ? sp : `${sp}~${itemToSlug(it)}`;
+  const abIdx = abilityTrackIdx(model);
+  const ability = abIdx >= 0 ? model.trackValues[i][abIdx] : null;
+  if (ability === null) {
+    return it === null ? sp : `${sp}~${itemToSlug(it)}`;
+  }
+  // An ability segment always follows a real item segment to keep position
+  // stable; itemless builds carry the literal "none" item value already.
+  const itSeg = it === null ? "none" : itemToSlug(it);
+  return `${sp}~${itSeg}~${abilityToSlug(ability)}`;
 }
 
 /** Build the shared core token from feature pins (`idxs`) and optional site
@@ -89,10 +113,12 @@ export interface DecodedCore {
 }
 
 function parseMon(s: string): FeatureSlug {
-  const tilde = s.indexOf("~");
-  return tilde < 0
-    ? { speciesSlug: s, itemSlug: null }
-    : { speciesSlug: s.slice(0, tilde), itemSlug: s.slice(tilde + 1) };
+  const segs = s.split("~");
+  return {
+    speciesSlug: segs[0],
+    itemSlug: segs.length > 1 ? segs[1] : null,
+    abilitySlug: segs.length > 2 ? segs[2] : null,
+  };
 }
 
 /** Resolve the model slug from the first token segment, handling legacy codes. */

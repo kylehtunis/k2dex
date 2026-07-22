@@ -78,7 +78,7 @@ export function occupy(
 ): void {
   c.usedSites.add(model.siteOf[i]);
   for (let t = 0; t < model.tracks.length; t++) {
-    if (!model.tracks[t].unique) continue;
+    if (!model.tracks[t].crossSlotUnique) continue;
     const v = model.trackValues[i][t];
     if (v !== null) c.usedTrackValues[t].add(v);
   }
@@ -95,7 +95,7 @@ export function violatesConstraints(
 ): boolean {
   if (c.usedSites.has(model.siteOf[i])) return true;
   for (let t = 0; t < model.tracks.length; t++) {
-    if (!model.tracks[t].unique) continue;
+    if (!model.tracks[t].crossSlotUnique) continue;
     const v = model.trackValues[i][t];
     if (v !== null && c.usedTrackValues[t].has(v)) return true;
   }
@@ -119,7 +119,7 @@ export function swapViolatesUniqueness(
     if (model.siteOf[onNf[k]] === site) return true;
   }
   for (let t = 0; t < model.tracks.length; t++) {
-    if (!model.tracks[t].unique) continue;
+    if (!model.tracks[t].crossSlotUnique) continue;
     const target = model.trackValues[iIn][t];
     if (target === null) continue;
     if (constraints.usedTrackValues[t].has(target)) return true;

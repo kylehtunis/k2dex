@@ -8,7 +8,7 @@
 
 import { deriveFactored } from "../sampler/model";
 import { parallelTemperedMcmc } from "../sampler/pt";
-import type { IsingModel, TeamIndices } from "../sampler/types";
+import type { IsingModel, TeamIndices, TrackDef } from "../sampler/types";
 
 export interface PTRequest {
   /** Slim view of the model. Worker reconstructs an IsingModel-shaped
@@ -24,7 +24,7 @@ export interface PTRequest {
     vocab: readonly string[];
     sites: readonly string[];
     siteOf: readonly number[];
-    tracks: readonly { name: string; unique: boolean }[];
+    tracks: readonly TrackDef[];
     trackValues: readonly (readonly (string | null)[])[];
   };
   fixed: readonly number[];
@@ -152,7 +152,6 @@ self.onmessage = (e: MessageEvent<PTRequest>) => {
       id: "",
       displayName: "",
       regulation: "",
-      featureDimensions: md.tracks.length + 1,
       latestTournamentDate: "",
       V: md.V,
       teamSize: md.teamSize,

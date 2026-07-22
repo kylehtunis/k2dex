@@ -4,7 +4,7 @@ Fits a single PL inverse-Ising model per invocation and serializes the
 artifacts the JS client needs into `web/public/models/<slug>/`:
 
     meta.json           — vocab, sites, site_of, tracks, track_values,
-                          scalars, fit hyperparams (schema v3, factored)
+                          scalars, fit hyperparams (schema v4, factored)
     J.bin               — float32 lower triangle, V*(V-1)/2 entries
                           ordering: [J[i,j] for i in range(1,V) for j in range(i)]
     h.bin               — float32, V entries
@@ -248,7 +248,7 @@ def write_model(
               f"(intercept_prior_weight={intercept_prior_weight})")
 
     builder = MODEL_BUILDERS[builder_type]
-    vocab, m, J, h, team_counts, species_of, item_of, latest_date = builder(
+    model = builder(
         regulation=regulation,
         min_team_count=min_team_count,
         lam=lam,
@@ -259,15 +259,22 @@ def write_model(
         method=method,
         boltzmann_opts=boltzmann_opts,
     )
+    vocab = model.vocab
+    m, J, h = model.m, model.J, model.h
+    team_counts = model.team_counts
+    species_of = model.species_of
+    item_of = model.item_of
+    track_specs = model.track_specs
+    latest_date = model.latest_date
     V = len(vocab)
     n_teams = int(sum(team_counts.values()))
-    feature_dimensions = 1 if all(i is None for i in item_of) else 2
+    has_unique_track = any(t.cross_slot_unique for t in track_specs)
     print(f"  V = {V}, corpus teams = {n_teams:,}, latest tournament = {latest_date}")
 
     # Factored (sites + tracks) schema derivation. Sites are the distinct
     # species in first-appearance (vocab) order; site_of maps each feature to
-    # its site. A species+item model carries one "item" track (unique per team);
-    # a species-only model carries no tracks (each site has a single feature).
+    # its site. The tracks block is emitted straight from the model's attribute
+    # tracks (item + ability for the standard build; empty for species-only).
     # site_features is intentionally NOT stored -- it is a pure projection of
     # site_of that both loaders and the TS sampler rederive.
     sites: list[str] = []
@@ -277,12 +284,16 @@ def write_model(
             site_index[sp] = len(sites)
             sites.append(sp)
     site_of = [site_index[sp] for sp in species_of]
-    if feature_dimensions == 2:
-        tracks = [{"name": "item", "unique": True}]
-        track_values: list[list[str | None]] = [[it] for it in item_of]
-    else:
-        tracks = []
-        track_values = [[] for _ in vocab]
+    tracks = [
+        {
+            "name": t.name,
+            "cardinality": t.cardinality,
+            "crossSlotUnique": t.cross_slot_unique,
+            "withinSlotUnique": t.within_slot_unique,
+        }
+        for t in track_specs
+    ]
+    track_values: list[list[str | None]] = [list(tv) for tv in model.track_values_of]
 
     model_dir.mkdir(parents=True, exist_ok=True)
 
@@ -299,7 +310,6 @@ def write_model(
         "display_name": display_name,
         "regulation": regulation,
         "type": product_type,
-        "feature_dimensions": feature_dimensions,
         "latest_tournament_date": latest_date,
         "V": V,
         "team_size": TEAM_SIZE,
@@ -329,7 +339,7 @@ def write_model(
                 else {}
             ),
         },
-        "schema_version": 3,
+        "schema_version": 4,
     }
     if description:
         meta["description"] = description
@@ -351,11 +361,13 @@ def write_model(
           f"({len(tc_serialized):,} unique rosters)")
 
     # Species-pair interaction graph (APC-corrected synergy). Only meaningful
-    # for species+item models where each species has multiple item-states.
-    if feature_dimensions == 2:
+    # for models with a cross-slot-unique track, where each species has multiple
+    # states (the species+item+ability build).
+    if has_unique_track:
         fitted = PottsFittedModel(
             vocab=vocab, species_of=species_of, item_of=item_of,
             J=J, h=h, m=m, team_size=TEAM_SIZE, n_corpus_teams=n_teams,
+            track_values_of=[list(tv) for tv in model.track_values_of],
         )
         sg = species_apc_graph(fitted)
         S = len(sg.species)
@@ -398,7 +410,6 @@ def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> Non
             "display_name": meta.get("display_name", slug),
             "regulation": meta.get("regulation", ""),
             "type": product_type,
-            "feature_dimensions": meta.get("feature_dimensions", 1),
             "V": meta["V"],
             "n_corpus_teams": meta["n_corpus_teams"],
             "latest_tournament_date": meta.get("latest_tournament_date", ""),
@@ -433,7 +444,7 @@ def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> Non
     }
 
     manifest = {
-        "schema_version": 3,
+        "schema_version": 4,
         "default_model": resolved_default,
         "types": types,
         "models": models,
@@ -472,7 +483,6 @@ def recompute_all(
         print(f"No models found in {out_dir}")
         return
 
-    type_by_dim = {1: "species", 2: "species_item"}
     print(f"Output root: {out_dir}")
     if regulation_filter is not None:
         print(f"Regulation filter: {regulation_filter!r} (skipping others)\n")
@@ -485,10 +495,9 @@ def recompute_all(
         if regulation_filter is not None and reg != regulation_filter:
             print(f"  skip {meta_path.parent.name}: regulation {reg!r} != {regulation_filter!r}")
             continue
-        builder_type = type_by_dim.get(meta.get("feature_dimensions", 1))
-        if builder_type is None:
-            print(f"  skip {meta_path.parent.name}: unknown feature_dimensions")
-            continue
+        # A model with any attribute track is a species+item build; no tracks =
+        # species-only. (Replaces the retired feature_dimensions dispatch.)
+        builder_type = "species_item" if meta.get("tracks") else "species"
         fit = meta.get("fit", {})
         slug = meta.get("id", meta_path.parent.name)
         has_team_counts = (meta_path.parent / "team_counts.json").exists()

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { IsingModel } from "../../sampler/types";
+import type { IsingModel, TrackDef } from "../../sampler/types";
 import { deriveFactored } from "../../sampler/model";
 import { buildSlugIndex, resolveFeature } from "../vocab-match";
 import { encodeCore, decodeCore } from "../shareLink";
@@ -13,7 +13,7 @@ function loadMeta(name: string): IsingModel {
   const vocab = meta.vocab as string[];
   const sites = meta.sites as string[];
   const siteOf = meta.site_of as number[];
-  const tracks = meta.tracks as { name: string; unique: boolean }[];
+  const tracks = meta.tracks as TrackDef[];
   const trackValues = meta.track_values as (string | null)[][];
   const { siteFeatures, speciesOf, itemOf } = deriveFactored(sites, siteOf, trackValues);
   const indexOf = new Map<string, number>();
@@ -22,7 +22,6 @@ function loadMeta(name: string): IsingModel {
     id: meta.id ?? meta.name,
     displayName: meta.display_name ?? meta.name,
     regulation: meta.regulation ?? "",
-    featureDimensions: meta.feature_dimensions ?? (tracks.length + 1),
     latestTournamentDate: meta.latest_tournament_date ?? "",
     V,
     teamSize: meta.team_size,

@@ -42,6 +42,11 @@ from numpy.typing import NDArray
 
 # ---------- Loading a fitted artifact ----------
 
+# Artifact schema versions this loader accepts. No back-compat: a bump requires
+# a full `--recompute` of committed artifacts.
+_SUPPORTED_SCHEMA_VERSIONS = frozenset({4})
+
+
 @dataclass
 class FittedModel:
     """A fitted species+item model loaded from a precompute artifact.
@@ -59,6 +64,11 @@ class FittedModel:
     m: NDArray[np.float64]
     team_size: int
     n_corpus_teams: int
+    # Per-feature per-track values (item, ability, ...), in track order. The
+    # item-based fields above are the track-0 view; this carries every track so
+    # the hierarchical (item -> ability) decomposition can read the ability
+    # states. None for legacy constructions that only supply the item view.
+    track_values_of: list[list[str | None]] | None = None
 
     @property
     def V(self) -> int:
@@ -110,6 +120,12 @@ def load_fitted_model(model_dir: str | Path) -> FittedModel:
     reconstructs the full symmetric matrix."""
     model_dir = Path(model_dir)
     meta = json.loads((model_dir / "meta.json").read_text())
+    schema_version = int(meta.get("schema_version", 0))
+    if schema_version not in _SUPPORTED_SCHEMA_VERSIONS:
+        raise ValueError(
+            f"unsupported model schema version {schema_version} "
+            f"(supported: {sorted(_SUPPORTED_SCHEMA_VERSIONS)})"
+        )
     V = int(meta["V"])
     tri = np.fromfile(model_dir / "J.bin", dtype=np.float32).astype(np.float64)
     J = np.zeros((V, V), dtype=np.float64)
@@ -119,11 +135,13 @@ def load_fitted_model(model_dir: str | Path) -> FittedModel:
     h = np.fromfile(model_dir / "h.bin", dtype=np.float32).astype(np.float64)
     m = np.fromfile(model_dir / "m.bin", dtype=np.float32).astype(np.float64)
     # Reconstruct the per-feature (species, item) view this module's analysis
-    # API is built on from the factored v3 schema: species_of[i] = sites[site_of[i]],
+    # API is built on from the factored schema: species_of[i] = sites[site_of[i]],
     # item_of[i] = the first track's value (None when the model has no tracks).
+    # track_values_of keeps every track (item, ability, ...) for the
+    # hierarchical decomposition.
     sites = list(meta["sites"])
     site_of = list(meta["site_of"])
-    track_values = list(meta["track_values"])
+    track_values = [list(vals) for vals in meta["track_values"]]
     species_of = [sites[s] for s in site_of]
     item_of: list[str | None] = [
         (vals[0] if vals else None) for vals in track_values
@@ -135,6 +153,7 @@ def load_fitted_model(model_dir: str | Path) -> FittedModel:
         J=J, h=h, m=m,
         team_size=int(meta["team_size"]),
         n_corpus_teams=int(meta["n_corpus_teams"]),
+        track_values_of=track_values,
     )
 
 
@@ -191,6 +210,127 @@ def row_modulation(B: NDArray[np.float64]) -> NDArray[np.float64]:
     return B - B.mean(axis=0, keepdims=True)
 
 
+# ---------- Hierarchical (item -> ability) decomposition ----------
+#
+# With an ability track a species' states are (item, ability) pairs, so a
+# species-pair block has more structure than the flat 2-way ANOVA sees. The
+# hierarchical split separates the item-level coupling from the finer
+# ability-conditional deviation:
+#
+#   1. Collapse each species' states to items by a *usage-weighted* average over
+#      the abilities sharing an item -> the ability-marginalized item block.
+#   2. Run the flat 2-way ANOVA on that item block (species synergy + zero-sum
+#      item modulation) -- identical to `decompose_block` today, because when
+#      every item has one ability the collapse is the identity.
+#   3. The ability residual is the full block minus the item-level
+#      reconstruction: within each (item_P, item_Q) cell it is the deviation of
+#      the concrete (ability_P, ability_Q) coupling from the item-level value,
+#      and its usage-weighted mean over abilities is zero by construction.
+#
+# Grouping is by `item_of` (track 0) only; the residual absorbs whatever
+# sub-item (ability) variation exists, so the math needs no ability labels.
+
+
+def _item_groups(
+    model: FittedModel, species: str,
+) -> tuple[list[str | None], NDArray[np.int64], NDArray[np.float64]]:
+    """Group a species' states by item. Returns ``(item_labels, state_item,
+    collapse)``: the distinct items (flat-index / first-appearance order); a
+    per-state item index (into ``item_labels``); and a ``(n_items, k)`` collapse
+    matrix whose row ``i`` holds the within-item usage weights (from the marginal
+    ``m``, renormalized within the item group; uniform for a zero-mass group), so
+    ``collapse @ B`` is the usage-weighted ability-marginalized block."""
+    idx = model.site_index[species]
+    items = [model.item_of[i] for i in idx]
+    labels: list[str | None] = []
+    label_pos: dict[str | None, int] = {}
+    state_item = np.empty(len(idx), dtype=np.int64)
+    for a, it in enumerate(items):
+        if it not in label_pos:
+            label_pos[it] = len(labels)
+            labels.append(it)
+        state_item[a] = label_pos[it]
+    n_items = len(labels)
+    mvals = model.m[idx].astype(np.float64)
+    collapse = np.zeros((n_items, len(idx)), dtype=np.float64)
+    for a in range(len(idx)):
+        collapse[state_item[a], a] = mvals[a]
+    for g in range(n_items):
+        members = state_item == g
+        total = collapse[g].sum()
+        if total <= 1e-12:
+            collapse[g, members] = 1.0 / int(members.sum())
+        else:
+            collapse[g] /= total
+    return labels, state_item, collapse
+
+
+@dataclass
+class HierarchicalBlockDecomposition:
+    """Item -> ability hierarchical split of one species-pair block.
+
+    ``synergy`` is the usage-weighted signed species-level coupling over the full
+    (item x ability) alphabet -- the same figure ``species_apc_graph.synergy``
+    reports. ``item_synergy`` + ``item_row`` + ``item_col`` + ``item_interaction``
+    are the flat 2-way ANOVA of the ability-marginalized **item block** (matching
+    ``decompose_block`` when abilities are degenerate). ``ability_residual``
+    (k_P, k_Q) is the full-state deviation from the item-level reconstruction (the
+    conditional ability effect). ``item_of_row`` / ``item_of_col`` map each full
+    state to its item index; ``item_block`` is the (n_items_P, n_items_Q)
+    ability-marginalized block. The five item/ability pieces reconstruct the full
+    block exactly (see :meth:`reconstruct`).
+    """
+    synergy: float
+    item_synergy: float
+    item_row: NDArray[np.float64]
+    item_col: NDArray[np.float64]
+    item_interaction: NDArray[np.float64]
+    ability_residual: NDArray[np.float64]
+    item_of_row: NDArray[np.int64]
+    item_of_col: NDArray[np.int64]
+    item_block: NDArray[np.float64]
+
+    def item_level(self) -> NDArray[np.float64]:
+        """The item-level reconstruction, full-state shape (k_P, k_Q)."""
+        lvl = (self.item_synergy + self.item_row[:, None]
+               + self.item_col[None, :] + self.item_interaction)
+        return lvl[np.ix_(self.item_of_row, self.item_of_col)]
+
+    def reconstruct(self) -> NDArray[np.float64]:
+        """Rebuild the full species-pair block: item level + ability residual."""
+        return self.item_level() + self.ability_residual
+
+
+def decompose_block_hierarchical(
+    model: FittedModel, P: str, Q: str,
+) -> HierarchicalBlockDecomposition:
+    """Hierarchically decompose the P->Q block into item-level synergy/modulation
+    plus the ability-conditional residual. See
+    :class:`HierarchicalBlockDecomposition`. Reduces to :func:`decompose_block`
+    (ability residual identically zero) when both species are ability-degenerate.
+    """
+    B = species_block(model, P, Q)
+    _, ip, cP = _item_groups(model, P)
+    _, iq, cQ = _item_groups(model, Q)
+    item_block = cP @ B @ cQ.T
+    dec = decompose_block(item_block)
+    ability_residual = B - item_block[np.ix_(ip, iq)]
+    wP = model.item_weights(P)
+    wQ = model.item_weights(Q)
+    synergy = float(wP @ B @ wQ)
+    return HierarchicalBlockDecomposition(
+        synergy=synergy,
+        item_synergy=dec.synergy,
+        item_row=dec.row_effects,
+        item_col=dec.col_effects,
+        item_interaction=dec.interaction,
+        ability_residual=ability_residual,
+        item_of_row=ip,
+        item_of_col=iq,
+        item_block=item_block,
+    )
+
+
 # ---------- Item-modulation table (the headline artifact) ----------
 
 @dataclass
@@ -215,48 +355,79 @@ class ModulationRow:
 
     ``synergy_frob`` is the complementary state-independent (species-level)
     coupling magnitude. ``n_items`` and ``appearances`` are the support columns.
+
+    The ``mod_*`` figures are the **item-level** modulation (ability
+    marginalized); the parallel ``ability_mod_*`` figures are the finer
+    ability-conditional modulation -- the same three normalizations applied to
+    the ability residual (how much the coupling depends on which *ability* the
+    species holds, given its item). An **ability-degenerate** species (every item
+    has a single ability, ``n_states == n_items``) scores ``ability_mod_* == 0``
+    by construction, the ability analogue of the ``n_items == 1`` item case.
     """
     species: str
     n_items: int
+    n_states: int
     appearances: float
     mod_frob: float
     mod_rms: float
     mod_frac: float
+    ability_mod_frob: float
+    ability_mod_rms: float
+    ability_mod_frac: float
     synergy_frob: float
 
 
 def modulation_scores(model: FittedModel) -> list[ModulationRow]:
-    """Item-modulation table over all species, most item-defined first (by the
-    scale-free ``mod_frac``). Aggregates each species' cross-species blocks
-    (self-block excluded: a species never shares a team with itself). A species
-    with a single observed item has zero modulation by construction (no item
-    variation) -- correct behaviour, flagged by ``n_items == 1``.
+    """Item- and ability-modulation table over all species, most item-defined
+    first (by the scale-free ``mod_frac``). Aggregates each species' cross-species
+    blocks (self-block excluded: a species never shares a team with itself). The
+    ``mod_*`` columns are item-level (ability marginalized), ``ability_mod_*`` the
+    ability-conditional residual. A species with a single observed item has zero
+    item modulation (``n_items == 1``); an ability-degenerate species has zero
+    ability modulation. Both reduce to the pre-ability flat modulation when the
+    model carries no ability track.
     """
     sites = model.sites
     idx = model.site_index
     rows: list[ModulationRow] = []
     for P in sites:
         iP = idx[P]
-        mod_sq = 0.0      # sum of squared modulation entries
-        full_sq = 0.0     # sum of squared block entries (denominator for frac)
-        syn_sq = 0.0      # sum of squared synergies (species-level magnitude)
-        n_entries = 0
+        item_mod_sq = 0.0      # item-level modulation energy
+        abil_mod_sq = 0.0      # ability-residual modulation energy
+        full_sq = 0.0          # full block energy (denominator for frac)
+        syn_sq = 0.0           # sum of squared item synergies (species-level)
+        item_entries = 0
+        abil_entries = 0
+        n_items = 0
         for Q in sites:
             if Q == P:
                 continue
-            B = species_block(model, P, Q)
-            mod = row_modulation(B)
-            mod_sq += float((mod ** 2).sum())
-            full_sq += float((B ** 2).sum())
-            syn_sq += float(B.mean()) ** 2
-            n_entries += B.size
+            hd = decompose_block_hierarchical(model, P, Q)
+            n_items = hd.item_block.shape[0]
+            _, _, cQ = _item_groups(model, Q)
+            # Item-level modulation of the row species P: row_modulation of the
+            # ability-marginalized item block (= item_row + item_interaction).
+            item_mod = hd.item_row[:, None] + hd.item_interaction
+            item_mod_sq += float((item_mod ** 2).sum())
+            item_entries += hd.item_block.size
+            # Ability modulation of P: marginalize the residual over Q's abilities
+            # (usage-weighted) so it isolates P's ability-conditional deviation.
+            abil_P = hd.ability_residual @ cQ.T
+            abil_mod_sq += float((abil_P ** 2).sum())
+            abil_entries += abil_P.size
+            full_sq += float((species_block(model, P, Q) ** 2).sum())
+            syn_sq += hd.item_synergy ** 2
         rows.append(ModulationRow(
             species=P,
-            n_items=len(iP),
+            n_items=n_items,
+            n_states=len(iP),
             appearances=model.appearances(P),
-            mod_frob=mod_sq ** 0.5,
-            mod_rms=(mod_sq / n_entries) ** 0.5 if n_entries else 0.0,
-            mod_frac=(mod_sq / full_sq) if full_sq > 1e-12 else 0.0,
+            mod_frob=item_mod_sq ** 0.5,
+            mod_rms=(item_mod_sq / item_entries) ** 0.5 if item_entries else 0.0,
+            mod_frac=(item_mod_sq / full_sq) if full_sq > 1e-12 else 0.0,
+            ability_mod_frob=abil_mod_sq ** 0.5,
+            ability_mod_rms=(abil_mod_sq / abil_entries) ** 0.5 if abil_entries else 0.0,
+            ability_mod_frac=(abil_mod_sq / full_sq) if full_sq > 1e-12 else 0.0,
             synergy_frob=syn_sq ** 0.5,
         ))
     rows.sort(key=lambda r: -r.mod_frac)

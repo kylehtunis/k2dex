@@ -2,18 +2,19 @@
 //
 // Per-chain mirror of the batched training kernel in k2dex/models.py
 // (`_build_site_tables`, `_site_conditional`, `_potts_species_swap_sweep`,
-// `_potts_item_reroll_sweep`). The deterministic pieces (`buildSiteTables`,
+// `_potts_track_reroll_sweep`). The deterministic pieces (`buildSiteTables`,
 // `siteConditional`) are parity-gated against sampling.py; the stochastic moves
 // (`pottsSpeciesSwap`, `pottsTrackReroll`) are JS smoke-tested only.
 //
-// The model is treated as a Potts model: sites = species, states = the item
-// features within a species (relative to the absent reference). A species-swap
-// integrates the item out (Metropolized-Gibbs, accept on Z_B / Z_A, then draw
-// the item from the exact conditional); a track-reroll resamples one on-team
-// slot's item from its exact conditional. For a species-only model (no tracks)
-// each site has one feature, so the species-swap acceptance Z_B / Z_A reduces to
-// exp(-ΔH/T) — algebraically identical to the atomic `localSwapStep` — and no
-// reroll occurs.
+// The model is treated as a Potts model: sites = species, states = a species'
+// full features (points in the product of the per-track value alphabets: item ×
+// ability × ...), relative to the absent reference. A species-swap integrates
+// the whole state out (Metropolized-Gibbs, accept on Z_B / Z_A, then draw the
+// full state from the exact conditional); a per-track reroll resamples one
+// on-team slot's value on a single track (pinning the others) from its exact
+// conditional. For a species-only model (no tracks) each site has one feature,
+// so the species-swap acceptance Z_B / Z_A reduces to exp(-ΔH/T) — algebraically
+// identical to the atomic `localSwapStep` — and no reroll occurs.
 
 import type { IsingModel } from "./types";
 import type { Rng } from "./rng";
@@ -28,6 +29,13 @@ export interface SiteTables {
    * item string (first-appearance order), -1 for itemless / no unique track.
    * Mirrors `models._group_ids(item_of, none_sentinel=True)`. */
   itemId: Int32Array;
+  /** Number of attribute tracks (item, ability, ...). 0 for species-only. */
+  nTracks: number;
+  /** Per-feature per-track dense value id, flat row-major `f*nTracks + t`.
+   * Unlike `itemId` this is dense (null / itemless gets a real id) so it can
+   * pin a track to an exact value. Mirrors `models._build_site_tables`'
+   * `sp_track_vid`. */
+  trackVid: Int32Array;
 }
 
 /** Index of the primary unique track (the item track), or -1 if the model has
@@ -36,7 +44,7 @@ export interface SiteTables {
  * (Multi-unique-track exclusion in the conditional is a future extension.) */
 function primaryUniqueTrack(model: IsingModel): number {
   for (let t = 0; t < model.tracks.length; t++) {
-    if (model.tracks[t].unique) return t;
+    if (model.tracks[t].crossSlotUnique) return t;
   }
   return -1;
 }
@@ -45,7 +53,7 @@ function primaryUniqueTrack(model: IsingModel): number {
  * `siteConditional`. Deterministic; parity-gated against
  * `sampling.build_site_tables`. */
 export function buildSiteTables(model: IsingModel): SiteTables {
-  const { V, siteOf, sites, trackValues } = model;
+  const { V, siteOf, sites, trackValues, tracks } = model;
   const nSites = sites.length;
   const siteFeatures: number[][] = sites.map(() => []);
   for (let f = 0; f < V; f++) siteFeatures[siteOf[f]].push(f);
@@ -70,7 +78,24 @@ export function buildSiteTables(model: IsingModel): SiteTables {
       itemId[f] = id;
     }
   }
-  return { nSites, siteFeatures, itemId };
+
+  // Dense per-track value ids (first-appearance order in feature order, per
+  // track). null is a real value here so a track can be pinned to "no item".
+  const nTracks = tracks.length;
+  const trackVid = new Int32Array(V * nTracks);
+  for (let tr = 0; tr < nTracks; tr++) {
+    const idOf = new Map<string | null, number>();
+    for (let f = 0; f < V; f++) {
+      const v = trackValues[f][tr];
+      let id = idOf.get(v);
+      if (id === undefined) {
+        id = idOf.size;
+        idOf.set(v, id);
+      }
+      trackVid[f * nTracks + tr] = id;
+    }
+  }
+  return { nSites, siteFeatures, itemId, nTracks, trackVid };
 }
 
 export interface SiteConditional {
@@ -88,7 +113,10 @@ export interface SiteConditional {
  * `rFeat` (with item ids `rItemId`). `avail[f]` gates feature-level
  * availability (excluded features are unavailable). `rWeights` (optional,
  * default all-1) scales each retained member's coupling — the anchor-field
- * tilt puts weight alpha on pin↔free couplings. Deterministic; parity-gated
+ * tilt puts weight alpha on pin↔free couplings. `pinValues` (optional, length
+ * nTracks, -1 = free) restricts candidates to states matching every pinned
+ * track — a joint species-swap draw passes all-free (or undefined); a per-track
+ * reroll of track `t` pins every other track. Deterministic; parity-gated
  * against `sampling.site_conditional`. */
 export function siteConditional(
   site: number,
@@ -100,8 +128,10 @@ export function siteConditional(
   tables: SiteTables,
   avail: Uint8Array,
   rWeights?: ArrayLike<number>,
+  pinValues?: ArrayLike<number>,
 ): SiteConditional {
   const { V, J } = model;
+  const { nTracks, trackVid } = tables;
   const feats = tables.siteFeatures[site];
   const M = feats.length;
   const negE = new Float64Array(M);
@@ -129,6 +159,15 @@ export function siteConditional(
             ok = false;
             break;
           }
+        }
+      }
+    }
+    // Pin restriction: drop candidates whose value on any pinned track differs.
+    if (ok && pinValues !== undefined) {
+      for (let t = 0; t < nTracks; t++) {
+        if (pinValues[t] >= 0 && trackVid[f * nTracks + t] !== pinValues[t]) {
+          ok = false;
+          break;
         }
       }
     }
@@ -160,6 +199,11 @@ export interface PottsContext {
    * and slot energy, targeting H_alpha = H - (alpha-1)·Σ_{p,j free} J[p,j]s_j.
    * Pin↔pin and free↔free couplings are untouched. Default 1 (no tilt). */
   anchorStrength?: number;
+  /** Per-track relative weight for which track a reroll targets (length
+   * nTracks, from POTTS_TRACK_REROLL_WEIGHTS by track name). A zero weight
+   * disables rerolling that track (e.g. an excluded attribute). Undefined ⇒
+   * every track weighted equally. */
+  trackRerollWeights?: Float64Array;
 }
 
 /** The retained team (all on-team features except the slot at `onNfPos` of the
@@ -308,10 +352,27 @@ export function pottsSpeciesSwap(
   return { proposed: true, accepted: true };
 }
 
-/** One Gibbs item-reroll on a random free slot: resample its item from the
- * exact conditional given the rest of the team (species unchanged; always
- * accepted). Mutates `chain` in place (offNf not maintained). No-op when the
- * model has no tracks. */
+/** Pick a track to reroll ∝ `weights` (length nTracks). Returns -1 when every
+ * weight is zero (nothing rerollable). Undefined weights ⇒ uniform. */
+function pickTrack(nTracks: number, weights: Float64Array | undefined, rng: Rng): number {
+  if (nTracks === 0) return -1;
+  let total = 0;
+  for (let t = 0; t < nTracks; t++) total += weights ? weights[t] : 1;
+  if (total <= 0) return -1;
+  let target = rng.random() * total;
+  for (let t = 0; t < nTracks; t++) {
+    target -= weights ? weights[t] : 1;
+    if (target <= 0) return t;
+  }
+  return nTracks - 1;
+}
+
+/** One Gibbs per-track reroll on a random free slot: pick a track (∝
+ * `ctx.trackRerollWeights`), pin every other track to the slot's current
+ * value, and resample that one track from the exact conditional given the rest
+ * of the team (species and the untouched tracks unchanged; always accepted).
+ * Mutates `chain` in place (offNf not maintained). No-op when the model has no
+ * tracks or no track is rerollable. */
 export function pottsTrackReroll(
   chain: ChainState,
   model: IsingModel,
@@ -321,7 +382,10 @@ export function pottsTrackReroll(
   ctx: PottsContext,
   rng: Rng,
 ): void {
-  if (chain.onNf.length === 0 || model.tracks.length === 0) return;
+  const { nTracks, trackVid } = tables;
+  if (chain.onNf.length === 0 || nTracks === 0) return;
+  const track = pickTrack(nTracks, ctx.trackRerollWeights, rng);
+  if (track < 0) return;
   const invTemp = 1 / T;
   const outK = rng.integers(chain.onNf.length);
   const outFeat = chain.onNf[outK];
@@ -332,8 +396,15 @@ export function pottsTrackReroll(
   const moverPinned = ctx.lockedSlots?.has(outK) ?? false;
   const rWeights = anchorWeights(rPin, moverPinned, ctx.anchorStrength ?? 1);
 
-  const cond = siteConditional(site, rFeat, rItemId, model, hEff, invTemp, tables, ctx.avail, rWeights);
-  if (!Number.isFinite(cond.logZ)) return; // no valid item (shouldn't happen: current item is valid)
+  // Pin every track except the rerolled one to the slot's current values, so
+  // the conditional ranges only over states that differ in track `track`.
+  const pinValues = new Int32Array(nTracks);
+  for (let t = 0; t < nTracks; t++) pinValues[t] = trackVid[outFeat * nTracks + t];
+  pinValues[track] = -1;
+
+  const cond = siteConditional(
+    site, rFeat, rItemId, model, hEff, invTemp, tables, ctx.avail, rWeights, pinValues);
+  if (!Number.isFinite(cond.logZ)) return; // no valid state (shouldn't happen: current is valid)
   const choice = sampleCategorical(cond.negE, cond.valid, rng);
   const newFeat = cond.feats[choice];
   if (newFeat === outFeat) return;

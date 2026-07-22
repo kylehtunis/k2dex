@@ -77,7 +77,7 @@ export function meanfieldMarginals(
       continue;
     }
     for (let t = 0; t < model.tracks.length; t++) {
-      if (!model.tracks[t].unique) continue;
+      if (!model.tracks[t].crossSlotUnique) continue;
       const v = model.trackValues[i][t];
       if (v !== null && constraints.usedTrackValues[t].has(v)) {
         uniqInvalid[i] = 1;

@@ -15,8 +15,8 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { IsingModel, TeamCounts } from "../src/sampler/types";
-import { factoredFromSpeciesItem } from "../src/sampler/model";
+import type { IsingModel, TeamCounts, TrackDef } from "../src/sampler/types";
+import { factoredFromSpeciesItem, deriveFactored } from "../src/sampler/model";
 import { buildSiteTables, siteConditional } from "../src/sampler/potts";
 import { meanfieldMarginals } from "../src/sampler/meanfield";
 import { greedyOptimize } from "../src/sampler/greedy";
@@ -28,6 +28,7 @@ import {
   cooccurrenceGreedy,
 } from "../src/sampler/cooccurrence";
 import { speciesToSlug } from "../src/render/sprite-url";
+import { formatTriple } from "../src/render/format";
 import { intraTeamSumJ, pairwiseJRows } from "../src/render/observables";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -112,7 +113,6 @@ const model: IsingModel = {
   id: "synthetic",
   displayName: "Synthetic",
   regulation: "test",
-  featureDimensions: 2,
   latestTournamentDate: "",
   V,
   teamSize: TEAM_SIZE,
@@ -369,6 +369,8 @@ const siteTablesExpected = {
   nSites: siteTablesTS.nSites,
   siteFeatures: siteTablesTS.siteFeatures,
   itemId: Array.from(siteTablesTS.itemId),
+  nTracks: siteTablesTS.nTracks,
+  trackVid: Array.from(siteTablesTS.trackVid),
 };
 
 const availAll = new Uint8Array(V).fill(1);
@@ -400,6 +402,118 @@ for (const c of [
   siteCondCases.push({
     name: c.name,
     input: { site: c.site, rFeat: c.rFeat, invTemp: c.invTemp, rWeights: c.rWeights ?? null },
+    expected: {
+      feats: r.feats,
+      negE: Array.from(r.negE),
+      valid: r.valid.map((v) => (v ? 1 : 0)),
+      logZ: Number.isFinite(r.logZ) ? r.logZ : null,
+    },
+  });
+}
+
+// --- Two-track model (item + ability) for multi-track parity ----------
+//
+// The single-track model above can't exercise per-track pins. Build a small
+// item×ability model so build_site_tables' trackVid and site_conditional's
+// pin_values restriction get 2-track coverage.
+//   site P (0): feats 0,1,2   items x,x,y   abilities a,b,a
+//   site Q (1): feats 3,4     items x,z     abilities a,b
+const V2 = 5;
+const TEAM_SIZE_2 = 2;
+const SITES_2 = ["P", "Q"];
+const SITE_OF_2 = [0, 0, 0, 1, 1];
+const ITEM_2 = ["x", "x", "y", "x", "z"];
+const ABIL_2 = ["a", "b", "a", "a", "b"];
+const TRACK_VALUES_2: (string | null)[][] = ITEM_2.map((it, i) => [it, ABIL_2[i]]);
+const TRACKS_2: TrackDef[] = [
+  { name: "item", cardinality: 1, crossSlotUnique: true, withinSlotUnique: false },
+  { name: "ability", cardinality: 1, crossSlotUnique: false, withinSlotUnique: false },
+];
+
+function buildJ2(): Float64Array {
+  const J = new Float64Array(V2 * V2);
+  for (let i = 0; i < V2; i++) {
+    for (let j = 0; j < i; j++) {
+      const v = 0.4 * Math.sin(0.9 * (i + 1)) * Math.cos(0.5 * (j + 1));
+      J[i * V2 + j] = v;
+      J[j * V2 + i] = v;
+    }
+  }
+  return J;
+}
+const J2 = buildJ2();
+const h2 = new Float64Array(V2);
+for (let i = 0; i < V2; i++) h2[i] = -0.4 + 0.2 * i;
+const m2 = new Float64Array(V2).fill(0.2);
+
+const derived2 = deriveFactored(SITES_2, SITE_OF_2, TRACK_VALUES_2);
+const vocab2 = TRACK_VALUES_2.map(
+  (tv, i) => `${SITES_2[SITE_OF_2[i]]} @ ${tv[0]} (${tv[1]})`,
+);
+const indexOf2 = new Map<string, number>();
+for (let i = 0; i < vocab2.length; i++) indexOf2.set(vocab2[i], i);
+const model2: IsingModel = {
+  id: "synthetic2",
+  displayName: "Synthetic2",
+  regulation: "test",
+  latestTournamentDate: "",
+  V: V2,
+  teamSize: TEAM_SIZE_2,
+  vocab: vocab2,
+  sites: SITES_2,
+  siteOf: SITE_OF_2,
+  tracks: TRACKS_2,
+  trackValues: TRACK_VALUES_2,
+  ...derived2,
+  m: m2,
+  J: J2,
+  h: h2,
+  indexOf: indexOf2,
+  nCorpusTeams: 0,
+  name: "synthetic2",
+};
+
+const siteTables2TS = buildSiteTables(model2);
+const siteTables2Expected = {
+  nSites: siteTables2TS.nSites,
+  siteFeatures: siteTables2TS.siteFeatures,
+  itemId: Array.from(siteTables2TS.itemId),
+  nTracks: siteTables2TS.nTracks,
+  trackVid: Array.from(siteTables2TS.trackVid),
+};
+
+const avail2 = new Uint8Array(V2).fill(1);
+
+interface SiteCond2Case {
+  name: string;
+  input: {
+    site: number;
+    rFeat: number[];
+    invTemp: number;
+    pinValues: number[] | null;
+  };
+  expected: { feats: number[]; negE: number[]; valid: number[]; logZ: number | null };
+}
+const siteCond2Cases: SiteCond2Case[] = [];
+for (const c of [
+  { name: "m2_site0_no_pin", site: 0, rFeat: [] as number[], invTemp: 1.0, pinValues: null },
+  // ability pinned to a (vid 0), item free: P feats a-ability only (0, 2).
+  { name: "m2_site0_pin_ability_a", site: 0, rFeat: [], invTemp: 1.0, pinValues: [-1, 0] },
+  // item pinned to x (vid 0), ability free: P feats item-x only (0, 1).
+  { name: "m2_site0_pin_item_x", site: 0, rFeat: [], invTemp: 1.5, pinValues: [0, -1] },
+  // both pinned: item y (vid 1) + ability a (vid 0): only feat 2.
+  { name: "m2_site0_pin_both", site: 0, rFeat: [], invTemp: 1.0, pinValues: [1, 0] },
+  // item-exclusion: retained feat 0 holds item x, so Q's item-x feat 3 is out.
+  { name: "m2_site1_item_excl", site: 1, rFeat: [0], invTemp: 1.0, pinValues: null },
+] as Array<{ name: string; site: number; rFeat: number[]; invTemp: number; pinValues: number[] | null }>) {
+  const rItemId = c.rFeat.map((f) => siteTables2TS.itemId[f]);
+  const r = siteConditional(
+    c.site, c.rFeat, rItemId, model2, h2, c.invTemp, siteTables2TS, avail2,
+    undefined, c.pinValues === null ? undefined : Int32Array.from(c.pinValues),
+  );
+  siteCond2Cases.push({
+    name: c.name,
+    input: { site: c.site, rFeat: c.rFeat, invTemp: c.invTemp, pinValues: c.pinValues },
     expected: {
       feats: r.feats,
       negE: Array.from(r.negE),
@@ -477,6 +591,22 @@ const coocExpected = {
   greedyCases: coocGreedyCases,
 };
 
+// --- formatTriple cases (vocab-string reconstruction) ----------------
+
+interface FormatTripleCase {
+  input: { species: string; item: string | null; ability: string };
+  expected: string;
+}
+const formatTripleCases: FormatTripleCase[] = [
+  { species: "Incineroar", item: "Sitrus Berry", ability: "Intimidate" },
+  { species: "Talonflame", item: "None", ability: "Gale Wings" }, // itemless -> bare
+  { species: "Talonflame", item: null, ability: "Gale Wings" }, // null item -> bare
+  { species: "Farigiraf", item: "Leftovers", ability: "Armor Tail" },
+].map((c) => ({
+  input: c,
+  expected: formatTriple(c.species, c.item, c.ability),
+}));
+
 // --- Write baseline ---------------------------------------------------
 
 const baseline = {
@@ -505,10 +635,20 @@ const baseline = {
   obs: obsCases,
   siteTables: siteTablesExpected,
   siteConditional: siteCondCases,
+  model2: {
+    V: V2,
+    speciesOf: derived2.speciesOf,
+    trackValuesOf: TRACK_VALUES_2,
+    J: Array.from(J2),
+    h: Array.from(h2),
+  },
+  siteTables2: siteTables2Expected,
+  siteConditional2: siteCond2Cases,
   cooccurrence: coocExpected,
+  formatTriple: formatTripleCases,
 };
 
 mkdirSync(dirname(OUT_PATH), { recursive: true });
 writeFileSync(OUT_PATH, JSON.stringify(baseline, null, 2));
 console.log(`Wrote ${OUT_PATH}`);
-console.log(`  ${mfCases.length} MF cases, ${greedyCases.length} greedy cases, ${rankCases.length} rank cases, ${corpusCases.length} corpus cases, ${slugCases.length} slug cases, ${obsCases.length} obs cases, ${siteCondCases.length} site-conditional cases, ${coocScoreCases.length} cooc-score + ${coocGreedyCases.length} cooc-greedy cases`);
+console.log(`  ${mfCases.length} MF cases, ${greedyCases.length} greedy cases, ${rankCases.length} rank cases, ${corpusCases.length} corpus cases, ${slugCases.length} slug cases, ${obsCases.length} obs cases, ${siteCondCases.length} site-conditional cases, ${siteCond2Cases.length} 2-track site-conditional cases, ${coocScoreCases.length} cooc-score + ${coocGreedyCases.length} cooc-greedy cases`);

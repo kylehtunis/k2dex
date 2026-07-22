@@ -52,7 +52,7 @@ function buildSyntheticModel(): IsingModel {
   const factored = factoredFromSpeciesItem(speciesOf, itemOf);
   return {
     id: "synthetic", displayName: "Synthetic", regulation: "test",
-    featureDimensions: 2, latestTournamentDate: "",
+    latestTournamentDate: "",
     V, teamSize: TEAM_SIZE, vocab, speciesOf, itemOf, ...factored, m, J, h, indexOf,
     nCorpusTeams: 0, name: "synthetic",
   };

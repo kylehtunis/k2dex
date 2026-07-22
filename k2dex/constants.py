@@ -52,6 +52,26 @@ BOLTZMANN_SUPPORT_MIN_COUNT = 10        # species+item: only fit couplings for f
                                         # pairs co-occurring >= N times (freeze the rest
                                         # at the PL warm-start). Part of the standard recipe.
 
+# --- Potts move kernel (per-track reroll allocation) ---
+# The per-chain / batched Potts samplers alternate two move types each sweep: a
+# species swap and, with probability POTTS_REROLL_PROB, a track (attribute)
+# reroll. This is the single source of truth for that split; the kernels
+# (models.py batched training + sampling.py per-chain) read it instead of
+# hardcoding 0.5. Tunable.
+POTTS_REROLL_PROB = 0.5
+# When a reroll happens, which track is rerolled is chosen at random weighted by
+# this map (track name -> relative weight; not required to sum to 1). Item is
+# weighted far above ability because item choice carries most of the modelled
+# signal and ability is near-degenerate for most species. Tunable.
+POTTS_TRACK_REROLL_WEIGHTS: dict[str, float] = {"item": 0.8, "ability": 0.2}
+
+# --- /meta drill-down support gate ---
+# Minimum corpus appearances for a species / item / attribute cell to be shown
+# in the /meta hierarchical drill-down (below this the residual is too thin to
+# report). Distinct from BOLTZMANN_SUPPORT_MIN_COUNT, which is a fit-time
+# co-occurrence mask on coupling pairs; this is a display-time support floor.
+META_SUPPORT_MIN_COUNT = 5
+
 # --- Sample weighting (weighted base model) ---
 # Per-team fit weight: w = exp(-age_days / RECENCY_TAU_DAYS) * IN_PERSON_WEIGHT^[in-person],
 # normalized so the weights average to 1. Tuned by notebooks/weighting_sweep.ipynb.

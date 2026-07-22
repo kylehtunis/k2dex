@@ -21,7 +21,7 @@ from k2dex.tournament_ingest import (
 
 def _obs(date: str, tournament_type: str = "limitless") -> TeamObservation:
     return TeamObservation(
-        members=frozenset({("Incineroar", "Sitrus Berry")}),
+        members=frozenset({("Incineroar", "Sitrus Berry", "Intimidate")}),
         date=date,
         tournament_type=tournament_type,
     )
@@ -83,12 +83,12 @@ class TestWeightedVocabCutoff(unittest.TestCase):
     feature into the vocab, and a feature whose support is entirely decayed
     away must drop out."""
 
-    BASE = [(f"Mon{k}", f"Item{k}") for k in range(12)]
+    BASE = [(f"Mon{k}", f"Item{k}", f"Ability{k}") for k in range(12)]
 
     def _team(self, members) -> Team:
         return Team(members=frozenset(members), placing=None, wins=0, losses=0, ties=0)
 
-    def _rotating(self, t: int, n: int) -> list[tuple[str, str]]:
+    def _rotating(self, t: int, n: int) -> list[tuple[str, str, str]]:
         # n distinct members per team, rotating through BASE so no column is
         # all-on / all-off (which would trip the degenerate-spin skip).
         return [self.BASE[(t + j) % len(self.BASE)] for j in range(n)]
@@ -104,10 +104,10 @@ class TestWeightedVocabCutoff(unittest.TestCase):
         # cutoff of 2. One recent team carries a unique (ghost) pair; two old
         # teams carry a (stale) pair whose weighted mass decays below 2.
         old_teams = [self._team(self._rotating(t, 6)) for t in range(62)]
-        old_teams += [self._team(self._rotating(t, 5) + [("StaleMon", "Stale Item")])
+        old_teams += [self._team(self._rotating(t, 5) + [("StaleMon", "Stale Item", "Stale Ability")])
                       for t in range(2)]
         new_teams = [self._team(self._rotating(t, 6)) for t in range(31)]
-        new_teams += [self._team(self._rotating(7, 5) + [("GhostMon", "Ghost Item")])]
+        new_teams += [self._team(self._rotating(7, 5) + [("GhostMon", "Ghost Item", "Ghost Ability")])]
 
         cwd = os.getcwd()
         with tempfile.TemporaryDirectory() as td:
@@ -126,9 +126,9 @@ class TestWeightedVocabCutoff(unittest.TestCase):
             finally:
                 os.chdir(cwd)
 
-        self.assertNotIn("GhostMon @ Ghost Item", vocab)   # raw=1, weighted ~2.9
-        self.assertNotIn("StaleMon @ Stale Item", vocab)   # raw=2, weighted ~0.1
-        self.assertIn("Mon0 @ Item0", vocab)               # staple: both counts high
+        self.assertNotIn("GhostMon @ Ghost Item (Ghost Ability)", vocab)  # raw=1, weighted ~2.9
+        self.assertNotIn("StaleMon @ Stale Item (Stale Ability)", vocab)  # raw=2, weighted ~0.1
+        self.assertIn("Mon0 @ Item0 (Ability0)", vocab)                   # staple: both counts high
         # No degenerate-skip artifacts: every vocab feature has a fitted h.
         self.assertTrue(np.all(h != 0.0))
 

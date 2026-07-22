@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date
+from typing import NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -36,6 +38,8 @@ def _fit_jh(
     w: NDArray[np.float64],
     species_of: list[str] | None,
     item_of: list[str | None] | None,
+    track_values: list[list[str | None]] | None,
+    track_names: list[str] | None,
     prior_J: NDArray[np.float64] | None,
     prior_h: NDArray[np.float64] | None,
     intercept_prior_weight: float,
@@ -48,6 +52,9 @@ def _fit_jh(
     MaxEnt moment matching (`fit_boltzmann_ising`). `species_of`/`item_of` define
     the uniqueness constraints of the ensemble the model is sampled from (pass
     `None`/`None` for the species model, the real lookups for species+item).
+    `track_values`/`track_names` carry the full attribute-track structure (item,
+    ability, ...) the Boltzmann Potts kernel factors the bank over; `None`/`None`
+    for the species model (or a single item track when omitted).
     `boltzmann_opts` is forwarded to `fit_boltzmann_ising`; a `support_min_count`
     key (popped here) builds a co-occurrence support mask so only pairs seen
     together at least that many times in the corpus are fit.
@@ -77,21 +84,74 @@ def _fit_jh(
         X, team_size=TEAM_SIZE, sample_weight=w,
         init_J=init_J, init_h=init_h,
         species_of=species_of, item_of=item_of,
+        track_values=track_values, track_names=track_names,
         support_mask=support_mask, **opts,
     )
     return J, h
 
 
-SpeciesModel = tuple[
-    list[str],            # vocab
-    NDArray[np.float64],  # m
-    NDArray[np.float64],  # J
-    NDArray[np.float64],  # h
-    Counter,              # team_counts (frozenset[str] -> int)
-    list[str],            # species_of
-    list[str | None],     # item_of
-    str,                  # latest_tournament_date (ISO date string)
-]
+@dataclass(frozen=True)
+class TrackSpec:
+    """One attribute track carried by a model's features.
+
+    `cardinality` is how many values of this track a single team member holds
+    (1 for item/ability; a future moves track would be 4). `cross_slot_unique`
+    is the no-two-members-share-this-value team rule (item: True; ability:
+    False). `within_slot_unique` is the no-duplicate-within-one-member rule
+    (relevant only for cardinality > 1, e.g. distinct moves; both current
+    tracks: False). The schema is cardinality-general now; the sampler exercises
+    cardinality 1 only."""
+
+    name: str
+    cardinality: int
+    cross_slot_unique: bool
+    within_slot_unique: bool
+
+
+ITEM_TRACK = TrackSpec("item", cardinality=1, cross_slot_unique=True, within_slot_unique=False)
+ABILITY_TRACK = TrackSpec("ability", cardinality=1, cross_slot_unique=False, within_slot_unique=False)
+
+
+def _track_value_view(
+    track_specs: Sequence[TrackSpec],
+    track_values_of: Sequence[Sequence[str | None]],
+    name: str,
+    n_features: int,
+) -> list[str | None]:
+    """Per-feature values of the named track, or all-None when absent."""
+    idx = next((i for i, t in enumerate(track_specs) if t.name == name), None)
+    if idx is None:
+        return [None] * n_features
+    return [list(tv)[idx] for tv in track_values_of]
+
+
+class SpeciesModel(NamedTuple):
+    """A fitted model plus its vocab/corpus structures.
+
+    `track_specs` is the ordered attribute-track list ([] for species-only,
+    [item, ability] for the species+item+ability build); `track_values_of` is
+    the per-feature per-track value list (one entry per track, in `track_specs`
+    order). `item_of`/`ability_of` are derived convenience views onto those
+    tracks -- callers that only need the item (uniqueness, the current fit) keep
+    working unchanged."""
+
+    vocab: list[str]
+    m: NDArray[np.float64]
+    J: NDArray[np.float64]
+    h: NDArray[np.float64]
+    team_counts: Counter
+    species_of: list[str]
+    track_values_of: list[list[str | None]]
+    track_specs: list[TrackSpec]
+    latest_date: str
+
+    @property
+    def item_of(self) -> list[str | None]:
+        return _track_value_view(self.track_specs, self.track_values_of, "item", len(self.vocab))
+
+    @property
+    def ability_of(self) -> list[str | None]:
+        return _track_value_view(self.track_specs, self.track_values_of, "ability", len(self.vocab))
 
 
 def _parse_day(date_str: str) -> date:
@@ -164,11 +224,21 @@ def _align_prior(
 
 
 def format_pair(species: str, item: str | None) -> str:
-    """Display form for Phase 3 vocab strings: bare species when itemless,
-    'Species @ Item' otherwise."""
+    """Display form for a (species, item) vocab string: bare species when
+    itemless, 'Species @ Item' otherwise."""
     if item is None:
         return species
     return f"{species} @ {item}"
+
+
+def format_triple(species: str, item: str, ability: str) -> str:
+    """Display form for a (species, item, ability) vocab string:
+    'Species @ Item (Ability)', with the ability always appended (every member
+    has an ability). An itemless member -- item the string "None" (or Python
+    None) -- drops the '@ Item' part exactly as `format_pair` does, keeping only
+    the ability parenthetical: 'Species (Ability)'."""
+    base = species if item in (None, "None") else f"{species} @ {item}"
+    return f"{base} ({ability})"
 
 
 def build_species_model(
@@ -244,20 +314,26 @@ def build_species_model(
 
     prior_J = prior_h = None
     if prior is not None:
-        prior_J, prior_h = _align_prior(vocab, prior[0], prior[2], prior[3])
+        prior_J, prior_h = _align_prior(vocab, prior.vocab, prior.J, prior.h)
 
     # Species are distinct per vocab entry, so the species model's ensemble
-    # needs no uniqueness lookups (the Phase 2 case) -- pass None/None.
+    # needs no uniqueness lookups -- pass None/None.
     J, h = _fit_jh(
         X, method=method, lam=lam, w=w,
         species_of=None, item_of=None,
+        track_values=None, track_names=None,
         prior_J=prior_J, prior_h=prior_h,
         intercept_prior_weight=intercept_prior_weight,
         boltzmann_opts=boltzmann_opts,
     )
     species_of = list(vocab)
-    item_of: list[str | None] = [None] * len(vocab)
-    return vocab, m, J, h, team_counts, species_of, item_of, latest_date
+    # Species-only: no attribute tracks, so each feature has an empty value list.
+    track_values_of: list[list[str | None]] = [[] for _ in vocab]
+    return SpeciesModel(
+        vocab=vocab, m=m, J=J, h=h, team_counts=team_counts,
+        species_of=species_of, track_values_of=track_values_of,
+        track_specs=[], latest_date=latest_date,
+    )
 
 
 def build_species_item_model(
@@ -288,13 +364,18 @@ def build_species_item_model(
         recency_tau=recency_tau,
         in_person_multiplier=in_person_multiplier,
     )
-    # Normalize a missing item (Python None) to the string "None" so it becomes
-    # an ordinary Potts state (a real item name) rather than a bare-species
-    # feature. This merges the corpus's split duplicates -- e.g. a Talonflame
-    # observed with no recorded item and a Talonflame recorded with the literal
-    # item "None" collapse into one (Talonflame, "None") feature.
+    # Features are (species, item, ability) triples. Normalize a missing item
+    # (Python None) to the string "None" so it becomes an ordinary Potts state (a
+    # real item name) rather than a bare-species feature -- merging the corpus's
+    # split itemless duplicates. Ability is always a real string (ingest drops
+    # abilityless members). The full triple is the vocab-cutoff key, so a rare
+    # ability variant is cut while near-degenerate abilities keep most triples at
+    # pair-level counts.
     teams = [
-        [(species, "None" if item is None else item) for species, item in o.members]
+        [
+            (species, "None" if item is None else item, ability)
+            for species, item, ability in o.members
+        ]
         for o in observations
     ]
 
@@ -302,49 +383,72 @@ def build_species_item_model(
     if prior_regulation is not None:
         prior = build_species_item_model(regulation=prior_regulation)
 
-    raw_counts = Counter(pair for team in teams for pair in team)
-    weighted_counts: dict[tuple[str, str], float] = {}
+    raw_counts = Counter(triple for team in teams for triple in team)
+    weighted_counts: dict[tuple[str, str, str], float] = {}
     for ti, team in enumerate(teams):
-        for pair in team:
-            weighted_counts[pair] = weighted_counts.get(pair, 0.0) + w[ti]
-    pair_set = {
-        p for p, c in weighted_counts.items()
-        if c >= min_team_count and raw_counts[p] >= min_team_count
+        for triple in team:
+            weighted_counts[triple] = weighted_counts.get(triple, 0.0) + w[ti]
+    triple_set: set[tuple[str, str, str]] = {
+        t for t, c in weighted_counts.items()
+        if c >= min_team_count and raw_counts[t] >= min_team_count
     }
     if prior is not None:
-        pair_set |= set(zip(prior[5], prior[6]))  # prior (species, item) pairs
-    pair_list = sorted(pair_set, key=lambda p: format_pair(p[0], p[1]))
-    vocab = [format_pair(s, i) for s, i in pair_list]
-    pair_to_idx = {p: i for i, p in enumerate(pair_list)}
+        # prior (species, item, ability) triples, folded in unconditionally. The
+        # prior is a fitted species+item model, so its item view is a real string
+        # ("None" for itemless, never Python None) and its ability view is always
+        # a real string; coerce for the type checker.
+        triple_set |= {
+            (s, i if i is not None else "None", a)
+            for s, i, a in zip(prior.species_of, prior.item_of, prior.ability_of)
+            if a is not None
+        }
+    triple_list = sorted(triple_set, key=lambda t: format_triple(t[0], t[1], t[2]))
+    vocab = [format_triple(s, i, a) for s, i, a in triple_list]
+    triple_to_idx = {t: i for i, t in enumerate(triple_list)}
     V = len(vocab)
 
-    species_of = [s for s, _ in pair_list]
-    item_of: list[str | None] = [i for _, i in pair_list]
+    species_of = [s for s, _, _ in triple_list]
+    track_values_of: list[list[str | None]] = [[i, a] for _, i, a in triple_list]
+    track_specs = [ITEM_TRACK, ABILITY_TRACK]
+    # The item track is the uniqueness dimension the fit consumes; the Potts
+    # kernel factors the bank over all tracks (per-track value lists, in
+    # `track_specs` order).
+    item_of: list[str | None] = [i for _, i, _ in triple_list]
+    fit_track_values: list[list[str | None]] = [
+        [tv[t] for tv in track_values_of] for t in range(len(track_specs))]
+    fit_track_names = [t.name for t in track_specs]
 
     X = np.zeros((len(teams), V), dtype=np.int8)
     for ti, team in enumerate(teams):
-        for pair in team:
-            j = pair_to_idx.get(pair)
+        for triple in team:
+            j = triple_to_idx.get(triple)
             if j is not None:
                 X[ti, j] = 1
     m = (w @ X) / w.sum()
 
     team_counts: Counter[frozenset[str]] = Counter()
     for team in teams:
-        if all(pair in pair_to_idx for pair in team):
-            team_counts[frozenset(format_pair(s, i) for s, i in team)] += 1
+        if all(triple in triple_to_idx for triple in team):
+            team_counts[frozenset(format_triple(s, i, a) for s, i, a in team)] += 1
 
     prior_J = prior_h = None
     if prior is not None:
-        prior_J, prior_h = _align_prior(vocab, prior[0], prior[2], prior[3])
+        prior_J, prior_h = _align_prior(vocab, prior.vocab, prior.J, prior.h)
 
-    # species+item has features sharing a species or item, so the ensemble
-    # enforces no-duplicate-species and no-duplicate-item -- pass the lookups.
+    # Features sharing a species or item mean the ensemble enforces
+    # no-duplicate-species and no-duplicate-item. Ability is not a uniqueness
+    # dimension (two members may share an ability), so the fit takes only the
+    # item lookup; abilities just make more distinct features.
     J, h = _fit_jh(
         X, method=method, lam=lam, w=w,
         species_of=species_of, item_of=item_of,
+        track_values=fit_track_values, track_names=fit_track_names,
         prior_J=prior_J, prior_h=prior_h,
         intercept_prior_weight=intercept_prior_weight,
         boltzmann_opts=boltzmann_opts,
     )
-    return vocab, m, J, h, team_counts, species_of, item_of, latest_date
+    return SpeciesModel(
+        vocab=vocab, m=m, J=J, h=h, team_counts=team_counts,
+        species_of=species_of, track_values_of=track_values_of,
+        track_specs=track_specs, latest_date=latest_date,
+    )

@@ -49,7 +49,6 @@ function buildModel(): IsingModel {
     id: "test-species-item",
     displayName: "Test Species @ Item",
     regulation: "test",
-    featureDimensions: 2 as const,
     latestTournamentDate: "",
     V,
     teamSize: 6,
@@ -236,6 +235,96 @@ describe("shareLink core token", () => {
     expect(decodeCore("")).toBeNull();
     expect(decodeCore("garbage")).toBeNull();
     expect(decodeCore("X!Y.3.incineroar")).toBeNull();
+  });
+});
+
+// Species-with-item-and-ability model (schema v4 with a real ability track;
+// current committed artifacts don't have one yet, but the codec must already
+// support it). Mirrors buildModel()'s Incineroar/Calyrex-Shadow/Amoonguss
+// entries with an ability appended to each.
+function buildAbilityModel(): IsingModel {
+  const species = ["Incineroar", "Calyrex-Shadow", "Amoonguss"];
+  const items: (string | null)[] = ["Sitrus Berry", "Life Orb", null];
+  const abilities = ["Intimidate", "As One", "Regenerator"];
+  const V = species.length;
+  const vocab = species.map(
+    (s, i) => (items[i] === null ? `${s} (${abilities[i]})` : `${s} @ ${items[i]} (${abilities[i]})`),
+  );
+  const indexOf = new Map<string, number>();
+  vocab.forEach((v, i) => indexOf.set(v, i));
+  const tracks = [
+    { name: "item", cardinality: 1, crossSlotUnique: true, withinSlotUnique: false },
+    { name: "ability", cardinality: 1, crossSlotUnique: false, withinSlotUnique: false },
+  ];
+  const trackValues = items.map((it, i) => [it, abilities[i]]);
+  const siteFeatures = species.map((_, i) => [i]);
+  return {
+    id: "test-ability",
+    displayName: "Test Species @ Item (Ability)",
+    regulation: "test",
+    latestTournamentDate: "",
+    V,
+    teamSize: 6,
+    vocab,
+    speciesOf: species,
+    itemOf: items,
+    sites: species,
+    siteOf: species.map((_, i) => i),
+    tracks,
+    trackValues,
+    siteFeatures,
+    m: Float64Array.from([0.5, 0.4, 0.35]),
+    J: new Float64Array(V * V),
+    h: new Float64Array(V),
+    indexOf,
+    nCorpusTeams: 1000,
+    name: "test-ability",
+  };
+}
+
+describe("shareLink core token — ability track", () => {
+  const model = buildAbilityModel();
+
+  it("encodes species~item~ability for a feature pin with an ability locked", () => {
+    const token = encodeCore("test-ability", [0], model);
+    expect(token).toBe("test-ability.incineroar~sitrus-berry~intimidate");
+    const decoded = decodeCore(token)!;
+    expect(decoded.features[0]).toEqual({
+      speciesSlug: "incineroar",
+      itemSlug: "sitrus-berry",
+      abilitySlug: "intimidate",
+    });
+  });
+
+  it("keeps the item segment as 'none' for an itemless ability pin", () => {
+    const token = encodeCore("test-ability", [2], model);
+    expect(token).toBe("test-ability.amoonguss~none~regenerator");
+    const decoded = decodeCore(token)!;
+    expect(decoded.features[0].itemSlug).toBe("none");
+    expect(decoded.features[0].abilitySlug).toBe("regenerator");
+  });
+
+  it("multi-word abilities slugify like items (spaces to hyphens)", () => {
+    const token = encodeCore("test-ability", [1], model);
+    expect(token).toBe("test-ability.calyrex-shadow~life-orb~as-one");
+  });
+
+  it("a legacy 2-segment (species~item) token decodes as ability-free", () => {
+    const decoded = decodeCore("test-ability.incineroar~sitrus-berry")!;
+    expect(decoded.features[0]).toEqual({
+      speciesSlug: "incineroar",
+      itemSlug: "sitrus-berry",
+      abilitySlug: null,
+    });
+  });
+
+  it("a bare species (site pin) token still decodes with a null item and ability", () => {
+    const decoded = decodeCore("test-ability.amoonguss")!;
+    expect(decoded.features[0]).toEqual({
+      speciesSlug: "amoonguss",
+      itemSlug: null,
+      abilitySlug: null,
+    });
   });
 });
 

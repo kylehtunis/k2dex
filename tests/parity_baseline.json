@@ -1225,6 +1225,21 @@
       2,
       -1,
       3
+    ],
+    "nTracks": 1,
+    "trackVid": [
+      0,
+      1,
+      0,
+      2,
+      0,
+      1,
+      0,
+      2,
+      0,
+      3,
+      0,
+      4
     ]
   },
   "siteConditional": [
@@ -1361,6 +1376,251 @@
           1
         ],
         "logZ": 0.37653067408836893
+      }
+    }
+  ],
+  "model2": {
+    "V": 5,
+    "speciesOf": [
+      "P",
+      "P",
+      "P",
+      "Q",
+      "Q"
+    ],
+    "trackValuesOf": [
+      [
+        "x",
+        "a"
+      ],
+      [
+        "x",
+        "b"
+      ],
+      [
+        "y",
+        "a"
+      ],
+      [
+        "x",
+        "a"
+      ],
+      [
+        "z",
+        "b"
+      ]
+    ],
+    "J": [
+      0,
+      0.3418526795187826,
+      0.150024452078402,
+      -0.15533928972622402,
+      -0.34314535399421336,
+      0.3418526795187826,
+      0,
+      0.09236573390879506,
+      -0.09563792636240008,
+      -0.21126471065200236,
+      0.150024452078402,
+      0.09236573390879506,
+      0,
+      -0.012521063135771707,
+      -0.02765909802781173,
+      -0.15533928972622402,
+      -0.09563792636240008,
+      -0.012521063135771707,
+      0,
+      0.1627184264383544,
+      -0.34314535399421336,
+      -0.21126471065200236,
+      -0.02765909802781173,
+      0.1627184264383544,
+      0
+    ],
+    "h": [
+      -0.4,
+      -0.2,
+      0,
+      0.20000000000000007,
+      0.4
+    ]
+  },
+  "siteTables2": {
+    "nSites": 2,
+    "siteFeatures": [
+      [
+        0,
+        1,
+        2
+      ],
+      [
+        3,
+        4
+      ]
+    ],
+    "itemId": [
+      0,
+      0,
+      1,
+      0,
+      2
+    ],
+    "nTracks": 2,
+    "trackVid": [
+      0,
+      0,
+      0,
+      1,
+      1,
+      0,
+      0,
+      0,
+      2,
+      1
+    ]
+  },
+  "siteConditional2": [
+    {
+      "name": "m2_site0_no_pin",
+      "input": {
+        "site": 0,
+        "rFeat": [],
+        "invTemp": 1,
+        "pinValues": null
+      },
+      "expected": {
+        "feats": [
+          0,
+          1,
+          2
+        ],
+        "negE": [
+          -0.4,
+          -0.2,
+          0
+        ],
+        "valid": [
+          1,
+          1,
+          1
+        ],
+        "logZ": 0.9119014326242004
+      }
+    },
+    {
+      "name": "m2_site0_pin_ability_a",
+      "input": {
+        "site": 0,
+        "rFeat": [],
+        "invTemp": 1,
+        "pinValues": [
+          -1,
+          0
+        ]
+      },
+      "expected": {
+        "feats": [
+          0,
+          1,
+          2
+        ],
+        "negE": [
+          -0.4,
+          -0.2,
+          0
+        ],
+        "valid": [
+          1,
+          0,
+          1
+        ],
+        "logZ": 0.5130152523999526
+      }
+    },
+    {
+      "name": "m2_site0_pin_item_x",
+      "input": {
+        "site": 0,
+        "rFeat": [],
+        "invTemp": 1.5,
+        "pinValues": [
+          0,
+          -1
+        ]
+      },
+      "expected": {
+        "feats": [
+          0,
+          1,
+          2
+        ],
+        "negE": [
+          -0.6000000000000001,
+          -0.30000000000000004,
+          0
+        ],
+        "valid": [
+          1,
+          1,
+          0
+        ],
+        "logZ": 0.2543552444685271
+      }
+    },
+    {
+      "name": "m2_site0_pin_both",
+      "input": {
+        "site": 0,
+        "rFeat": [],
+        "invTemp": 1,
+        "pinValues": [
+          1,
+          0
+        ]
+      },
+      "expected": {
+        "feats": [
+          0,
+          1,
+          2
+        ],
+        "negE": [
+          -0.4,
+          -0.2,
+          0
+        ],
+        "valid": [
+          0,
+          0,
+          1
+        ],
+        "logZ": 0
+      }
+    },
+    {
+      "name": "m2_site1_item_excl",
+      "input": {
+        "site": 1,
+        "rFeat": [
+          0
+        ],
+        "invTemp": 1,
+        "pinValues": null
+      },
+      "expected": {
+        "feats": [
+          3,
+          4
+        ],
+        "negE": [
+          0.04466071027377605,
+          0.05685464600578666
+        ],
+        "valid": [
+          0,
+          1
+        ],
+        "logZ": 0.05685464600578666
       }
     }
   ],
@@ -1681,5 +1941,39 @@
         ]
       }
     ]
-  }
+  },
+  "formatTriple": [
+    {
+      "input": {
+        "species": "Incineroar",
+        "item": "Sitrus Berry",
+        "ability": "Intimidate"
+      },
+      "expected": "Incineroar @ Sitrus Berry (Intimidate)"
+    },
+    {
+      "input": {
+        "species": "Talonflame",
+        "item": "None",
+        "ability": "Gale Wings"
+      },
+      "expected": "Talonflame (Gale Wings)"
+    },
+    {
+      "input": {
+        "species": "Talonflame",
+        "item": null,
+        "ability": "Gale Wings"
+      },
+      "expected": "Talonflame (Gale Wings)"
+    },
+    {
+      "input": {
+        "species": "Farigiraf",
+        "item": "Leftovers",
+        "ability": "Armor Tail"
+      },
+      "expected": "Farigiraf @ Leftovers (Armor Tail)"
+    }
+  ]
 }

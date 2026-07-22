@@ -25,11 +25,16 @@ Singles filter (Limitless API path only, two-stage, cheap-first):
    in singles (0-1 per team), so the per-player rate cleanly separates them
    without depending on the tournament name convention.
 
-Cache strategy: per-tournament parsed team list only -- abilities, moves,
-tera, player names, and drops are discarded at parse time. Each team's
-final ``placing`` and swiss/bracket ``record`` (wins/losses/ties) ARE kept,
-to support outcome validation. Each team member is preserved as a
-``(species, item)`` tuple. Tournaments are immutable once finished, so the
+Cache strategy: per-tournament parsed team list only -- tera, player names,
+and drops are discarded at parse time. Each team's final ``placing`` and
+swiss/bracket ``record`` (wins/losses/ties) ARE kept, to support outcome
+validation. Each team member is preserved as a ``(species, item, ability)``
+tuple -- the model-feature view. A member's ``nature`` and ``moves`` are kept
+in the cache record alongside (as richer per-member JSON entries) but are NOT
+part of the in-memory member tuple, so future attribute tracks can be added
+without another data re-fetch; nothing consumes them yet. A member missing an
+ability is malformed (no-ability is not a valid game state), so its whole team
+is dropped at parse time. Tournaments are immutable once finished, so the
 cache is write-once / read-many. Each cache entry carries a ``type`` field
 (``"limitless"`` or ``"in-person"``) for provenance tracking; old cache
 files without this field default to ``"limitless"`` on read.
@@ -81,15 +86,17 @@ DEFAULT_GAME = "VGC"
 DEFAULT_CACHE_DIR = Path("tournaments_cache")
 MIN_PROTECT_PER_PLAYER = 1.0
 POLITE_SLEEP_SEC = 2.0
-CACHE_VERSION = 3  # bumped when payload schema changes; see module docstring
+CACHE_VERSION = 4  # bumped when payload schema changes; see module docstring
                    # v2: each team carries placing + win/loss/tie record
                    # v3: in-person entries carry per-round match results
+                   # v4: members are (species, item, ability) triples; each
+                   #     member record also stores nature + moves
 
-# Minimum acceptable cached version per entry type. v3 only added match
-# lists, which the Limitless API cannot provide -- a v2 limitless entry is
-# byte-equivalent to what a v3 re-fetch would write, so v2 stays valid
-# there. In-person entries must be re-imported to pick up their matches.
-_MIN_CACHE_VERSION: dict[str, int] = {"limitless": 2, "in-person": 3}
+# Minimum acceptable cached version per entry type. v4 widened the member
+# schema for BOTH sources (the ability track), so every cached entry regardless
+# of type must be re-fetched / re-imported -- no version is byte-equivalent to a
+# v4 write. Kept as a per-type dict for the versioning machinery's shape.
+_MIN_CACHE_VERSION: dict[str, int] = {"limitless": 4, "in-person": 4}
 
 
 @dataclass(frozen=True)
@@ -104,13 +111,35 @@ class TournamentMeta:
 
 
 @dataclass(frozen=True)
+class MemberDetail:
+    """The full parsed record for one team member, kept for cache storage.
+
+    `species`/`item`/`ability` are the model-feature triple (also surfaced,
+    de-duplicated, in `Team.members`). `nature` (Limitless only; None for
+    in-person) and `moves` are stored-only: they ride in the cache so a future
+    attribute track can use them without another data re-fetch, but nothing
+    consumes them yet."""
+
+    species: str
+    item: str | None
+    ability: str
+    nature: str | None
+    moves: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Team:
     """A single player's roster plus tournament outcome.
 
-    `members` is the model feature: a frozenset of `(species, item)` tuples
-    (`item` is None for itemless mons). The frozenset enforces that no two
-    members share the exact same (species, item) pair -- which the upstream
-    data should never produce anyway, since such a team would be illegal.
+    `members` is the model feature: a frozenset of `(species, item, ability)`
+    tuples (`item` is None for itemless mons; `ability` is always a real
+    string). The frozenset enforces that no two members share the exact same
+    triple -- which the upstream data should never produce anyway, since such a
+    team would be illegal.
+
+    `details` is the ordered per-member record (species/item/ability plus the
+    stored-only nature/moves) used when writing the cache. It is empty for
+    teams built without that provenance (e.g. tests, or the match-index path).
 
     `placing` is the final standing (1 = winner) when the API reports it,
     else None -- some events report it for top cut only, or not at all.
@@ -118,11 +147,12 @@ class Team:
     standings entry observed, so they are the robust outcome signal to fall
     back on when `placing` is missing."""
 
-    members: frozenset[tuple[str, str | None]]
+    members: frozenset[tuple[str, str | None, str]]
     placing: int | None
     wins: int
     losses: int
     ties: int
+    details: tuple[MemberDetail, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -166,7 +196,7 @@ class TeamObservation:
     `loaders.team_weights` to compute recency / in-person fit weights.
     """
 
-    members: frozenset[tuple[str, str | None]]
+    members: frozenset[tuple[str, str | None, str]]
     date: str             # parent tournament date, ISO YYYY-MM-DD
     tournament_type: str  # "limitless" or "in-person"
 
@@ -180,8 +210,8 @@ class MatchObservation:
     are kept. The input for Bradley-Terry fitting and match-level outcome
     analysis."""
 
-    winner: frozenset[tuple[str, str | None]]
-    loser: frozenset[tuple[str, str | None]]
+    winner: frozenset[tuple[str, str | None, str]]
+    loser: frozenset[tuple[str, str | None, str]]
     round: int
     date: str
     tournament_id: str
@@ -201,6 +231,13 @@ _ITEM_ALIASES: dict[str, str] = {
     "Dread Plate": "Black Glasses",
     "Glimmorite": "Glimmoranite",
 }
+
+# Ability strings that must be collapsed to a single canonical form before
+# entering the corpus vocab, modeled on _ITEM_ALIASES. Abilities are run through
+# normalize_name first (case/whitespace collapse), so this only needs to cover
+# genuine spelling variants the API is inconsistent about. Empty until one is
+# observed.
+_ABILITY_ALIASES: dict[str, str] = {}
 
 # Item strings that mean "no held item". The raw API uses several spellings
 # (plus a genuinely absent field); all collapse to Python ``None`` so a single
@@ -279,7 +316,7 @@ def _roster_has_marker(teams: list[Team], rule: RegulationRelabel) -> bool:
         species in rule.marker_species
         or (item is not None and item in rule.marker_items)
         for team in teams
-        for species, item in team.members
+        for species, item, _ in team.members
     )
 
 
@@ -519,16 +556,23 @@ def passes_doubles_protect_check(
 def _parse_members(
     decklist: list[dict],
     illegal_items: frozenset[str],
-) -> frozenset[tuple[str, str | None]] | None:
-    """Parse one standings entry's decklist into a roster frozenset.
+) -> tuple[frozenset[tuple[str, str | None, str]], tuple[MemberDetail, ...]] | None:
+    """Parse one standings entry's decklist into a roster.
 
-    Returns None when the decklist isn't exactly TEAM_SIZE entries with
-    distinct species (incomplete submissions, drops before lock-in, or the
-    game's no-duplicate-species rule violated by malformed data). Shared by
-    `extract_teams` and `extract_matches` so both produce the same valid-entry
-    filtering -- match winner/loser indices stay aligned with the team list.
+    Returns ``(members, details)`` where ``members`` is the de-duplicated
+    ``(species, item, ability)`` model-feature frozenset and ``details`` is the
+    ordered per-member record (adds stored-only nature + moves). The match-index
+    path uses only ``members``.
+
+    Returns None when the decklist isn't exactly TEAM_SIZE entries with distinct
+    species (incomplete submissions, drops before lock-in, or the game's
+    no-duplicate-species rule violated by malformed data), when any member is
+    missing an ability (no-ability is not a valid game state, so the team is
+    malformed), or when no member reports an item. Shared by `extract_teams` and
+    `extract_matches` so both produce the same valid-entry filtering -- match
+    winner/loser indices stay aligned with the team list.
     """
-    members: list[tuple[str, str | None]] = []
+    details: list[MemberDetail] = []
     for mon in decklist:
         raw_name = mon.get("name") or ""
         name = normalize_name(normalize_bracket_forme(raw_name))
@@ -543,19 +587,39 @@ def _parse_members(
             item = _ITEM_ALIASES.get(item, item)
             if item in illegal_items:
                 item = None
-        members.append((name, item))
-    if len(members) != TEAM_SIZE:
+        ability = normalize_name(mon.get("ability"))
+        if not ability:
+            # No-ability is not a valid game state: a member without one is
+            # malformed data, so the whole team is dropped (counted warning).
+            logger.warning(
+                "dropping team: member %r has no ability", raw_name or name,
+            )
+            return None
+        ability = _ABILITY_ALIASES.get(ability, ability)
+        nature = normalize_name(mon.get("nature"))
+        # Moves come from `attacks` on Limitless standings, `badges` on the
+        # in-person export format. Stored-only; normalized for future-track
+        # consistency, empties dropped.
+        raw_moves = mon.get("attacks") or mon.get("badges") or []
+        moves = tuple(
+            m for m in (normalize_name(mv) for mv in raw_moves) if m
+        )
+        details.append(MemberDetail(
+            species=name, item=item, ability=ability, nature=nature, moves=moves,
+        ))
+    if len(details) != TEAM_SIZE:
         return None
     # Reject teams with duplicate species (game rule)
-    if len({species for species, _ in members}) != TEAM_SIZE:
+    if len({d.species for d in details}) != TEAM_SIZE:
         return None
     # Reject teams with no item reported on any member: a complete VGC teamsheet
     # always lists items, so an all-itemless roster is a species-only submission
     # (items simply weren't captured), not six mons genuinely holding nothing.
     # Kept out of the corpus so unreported items don't masquerade as itemless.
-    if all(item is None for _, item in members):
+    if all(d.item is None for d in details):
         return None
-    return frozenset(members)
+    members = frozenset((d.species, d.item, d.ability) for d in details)
+    return members, tuple(details)
 
 
 def extract_teams(
@@ -583,9 +647,10 @@ def extract_teams(
     illegal_items = _ILLEGAL_ITEMS_BY_REGULATION.get(regulation or "", frozenset())
     teams: list[Team] = []
     for entry in standings:
-        members = _parse_members(entry.get("decklist") or [], illegal_items)
-        if members is None:
+        parsed = _parse_members(entry.get("decklist") or [], illegal_items)
+        if parsed is None:
             continue
+        members, details = parsed
         placing = entry.get("placing")
         record = entry.get("record") or {}
         teams.append(Team(
@@ -594,6 +659,7 @@ def extract_teams(
             wins=int(record.get("wins", 0)),
             losses=int(record.get("losses", 0)),
             ties=int(record.get("ties", 0)),
+            details=details,
         ))
     return teams
 
@@ -630,8 +696,8 @@ def extract_matches(
     team_index: list[int | None] = []
     n_valid = 0
     for entry in standings:
-        members = _parse_members(entry.get("decklist") or [], illegal_items)
-        if members is None:
+        parsed = _parse_members(entry.get("decklist") or [], illegal_items)
+        if parsed is None:
             team_index.append(None)
         else:
             team_index.append(n_valid)
@@ -687,6 +753,47 @@ def _cache_path(cache_dir: Path, tournament_id: str) -> Path:
     return cache_dir / f"{tournament_id}.json"
 
 
+def _member_records(team: Team) -> list[list]:
+    """Serializable member records for a team, sorted by species.
+
+    Uses `team.details` (the full [species, item, ability, nature, moves]
+    record) when present; otherwise falls back to the bare feature triple from
+    `team.members` (details-less teams from tests / the match path)."""
+    if team.details:
+        ordered = sorted(team.details, key=lambda d: d.species)
+        return [
+            [d.species, d.item, d.ability, d.nature, list(d.moves)]
+            for d in ordered
+        ]
+    return [
+        [species, item, ability]
+        for species, item, ability in sorted(team.members, key=lambda m: m[0])
+    ]
+
+
+def _team_from_payload(team: dict) -> Team:
+    """Reconstruct a `Team` from a cached team record. Member entries carry the
+    feature triple (species, item, ability) at positions 0-2, plus optional
+    stored-only nature (3) and moves (4)."""
+    members = frozenset((m[0], m[1], m[2]) for m in team["members"])
+    details = tuple(
+        MemberDetail(
+            species=m[0], item=m[1], ability=m[2],
+            nature=m[3] if len(m) > 3 else None,
+            moves=tuple(m[4]) if len(m) > 4 and m[4] else (),
+        )
+        for m in team["members"]
+    )
+    return Team(
+        members=members,
+        placing=team["placing"],
+        wins=team["record"][0],
+        losses=team["record"][1],
+        ties=team["record"][2],
+        details=details,
+    )
+
+
 def _save_tournament(cache_dir: Path, t: TournamentTeams) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -699,14 +806,13 @@ def _save_tournament(cache_dir: Path, t: TournamentTeams) -> None:
             "regulation": t.meta.regulation,
             "players": t.meta.players,
         },
-        # Each team: members (list of [species, item_or_null], sorted by
-        # species for reproducible diffs across re-saves) plus outcome.
+        # Each team: members plus outcome. A member is written as the richer
+        # record [species, item_or_null, ability, nature_or_null, moves] when
+        # `details` is present, else the bare [species, item_or_null, ability]
+        # feature triple. Both are sorted by species for reproducible diffs.
         "teams": [
             {
-                "members": [
-                    list(member)
-                    for member in sorted(team.members, key=lambda m: m[0])
-                ],
+                "members": _member_records(team),
                 "placing": team.placing,
                 "record": [team.wins, team.losses, team.ties],
             }
@@ -750,16 +856,7 @@ def _load_tournament(cache_dir: Path, tournament_id: str) -> TournamentTeams | N
     if not _payload_version_ok(payload):
         return None  # outdated schema; force re-fetch
     meta = TournamentMeta(**payload["meta"])
-    teams = [
-        Team(
-            members=frozenset((m[0], m[1]) for m in team["members"]),
-            placing=team["placing"],
-            wins=team["record"][0],
-            losses=team["record"][1],
-            ties=team["record"][2],
-        )
-        for team in payload["teams"]
-    ]
+    teams = [_team_from_payload(team) for team in payload["teams"]]
     return TournamentTeams(
         meta=meta, teams=teams, tournament_type=payload.get("type", "limitless"),
         matches=_matches_from_payload(payload),
@@ -892,7 +989,7 @@ def fetch_limitless_tournaments(
     return out
 
 
-def all_teams(tournaments: list[TournamentTeams]) -> list[frozenset[tuple[str, str | None]]]:
+def all_teams(tournaments: list[TournamentTeams]) -> list[frozenset[tuple[str, str | None, str]]]:
     """Flatten ingested tournaments into a single list of roster frozensets.
 
     Projects away the outcome (placing/record); this is the model-feature view
@@ -978,14 +1075,14 @@ def chronological_split(
 
 
 def species_only_teams(
-    teams: list[frozenset[tuple[str, str | None]]],
+    teams: list[frozenset[tuple[str, str | None, str]]],
 ) -> list[frozenset[str]]:
-    """Project (species, item) teams down to species-only frozensets.
+    """Project (species, item, ability) teams down to species-only frozensets.
 
-    Used by `app.py:load_model_phase2` and the validation harness to consume
-    the Phase 2 species-only namespace from the new v2 cache format.
+    Used by the species-only model builder and the validation harness to
+    consume the species-only namespace from the cache.
     """
-    return [frozenset(species for species, _ in team) for team in teams]
+    return [frozenset(species for species, *_ in team) for team in teams]
 
 
 def load_cached_tournaments(
@@ -1028,16 +1125,7 @@ def load_cached_tournaments(
         if is_likely_singles_by_name(meta.name):
             continue
 
-        teams = [
-            Team(
-                members=frozenset((m[0], m[1]) for m in team["members"]),
-                placing=team["placing"],
-                wins=team["record"][0],
-                losses=team["record"][1],
-                ties=team["record"][2],
-            )
-            for team in payload["teams"]
-        ]
+        teams = [_team_from_payload(team) for team in payload["teams"]]
 
         if len(teams) < min_teams_per_tournament:
             continue
@@ -1214,8 +1302,8 @@ def main() -> None:
     if teams:
         sample = next(iter(teams))
         print(f"Sample team:")
-        for species, item in sorted(sample, key=lambda m: m[0]):
-            print(f"  {species:<25} item: {item}")
+        for species, item, ability in sorted(sample, key=lambda m: m[0]):
+            print(f"  {species:<25} item: {item!s:<20} ability: {ability}")
 
 
 if __name__ == "__main__":

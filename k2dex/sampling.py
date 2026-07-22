@@ -256,25 +256,37 @@ def _init_chain(
 
 @dataclass
 class SiteTables:
-    """Per-site feature grouping + per-feature item id for the Potts kernel.
+    """Per-site feature grouping + per-feature track ids for the Potts kernel.
 
-    ``site_features[s]`` is species ``s``'s item-state flat indices (ascending);
-    ``item_id[f]`` is a contiguous integer per distinct item string
-    (first-appearance order), ``-1`` for itemless features. ``site_of[f]`` is the
-    inverse of ``site_features`` (feature -> site index), used by the swap step.
+    ``site_features[s]`` is species ``s``'s state flat indices (ascending);
+    ``item_id[f]`` is a contiguous integer per distinct value on the unique
+    (item) track (first-appearance order), ``-1`` for itemless / no unique
+    track. ``site_of[f]`` is the inverse of ``site_features`` (feature -> site
+    index), used by the swap step. ``track_vid`` (V, n_tracks) is the dense
+    per-track value id (unlike ``item_id`` this gives itemless / null a real id,
+    so a track can be pinned to an exact value); mirrors ``models._build_site_
+    tables``' ``sp_track_vid``.
     """
     n_sites: int
     site_features: list[list[int]]
     item_id: list[int]
     site_of: list[int]
+    n_tracks: int
+    track_vid: np.ndarray  # (V, n_tracks) int64
 
 
 def build_site_tables(
     species_of: list[str],
-    item_of: list[str | None],
+    track_values_of: list[list[str | None]],
     V: int,
+    unique_track: int = 0,
 ) -> SiteTables:
-    """Group features by species (first-appearance order) and assign item ids.
+    """Group features by species (first-appearance order) and assign track ids.
+
+    ``track_values_of[f]`` is feature ``f``'s per-track value list (item is
+    track 0 by convention; ``[]`` for a species-only model). ``item_id`` is
+    derived from track ``unique_track`` (the cross-slot-unique item track),
+    ``-1`` when there is no such track. ``track_vid`` is the dense per-track id.
     Deterministic; parity-gated against ``potts.ts:buildSiteTables``."""
     site_index: dict[str, int] = {}
     site_features: list[list[int]] = []
@@ -288,17 +300,37 @@ def build_site_tables(
             site_features.append([])
         site_features[s].append(f)
         site_of[f] = s
-    item_uniq: dict[str, int] = {}
+
+    n_tracks = len(track_values_of[0]) if V > 0 else 0
+
+    # item_id: unique-track values, null -> -1 (itemless never excludes).
     item_id: list[int] = []
-    for f in range(V):
-        it = item_of[f] if item_of is not None else None
-        if it is None:
-            item_id.append(-1)
-            continue
-        if it not in item_uniq:
-            item_uniq[it] = len(item_uniq)
-        item_id.append(item_uniq[it])
-    return SiteTables(len(site_features), site_features, item_id, site_of)
+    if 0 <= unique_track < n_tracks:
+        item_uniq: dict[str, int] = {}
+        for f in range(V):
+            it = track_values_of[f][unique_track]
+            if it is None:
+                item_id.append(-1)
+                continue
+            if it not in item_uniq:
+                item_uniq[it] = len(item_uniq)
+            item_id.append(item_uniq[it])
+    else:
+        item_id = [-1] * V
+
+    # track_vid: dense per-track ids (null is a real value here).
+    track_vid = np.zeros((V, n_tracks), dtype=np.int64)
+    for t in range(n_tracks):
+        vid_of: dict[str | None, int] = {}
+        for f in range(V):
+            v = track_values_of[f][t]
+            if v not in vid_of:
+                vid_of[v] = len(vid_of)
+            track_vid[f, t] = vid_of[v]
+
+    return SiteTables(
+        len(site_features), site_features, item_id, site_of, n_tracks, track_vid,
+    )
 
 
 def site_conditional(
@@ -311,6 +343,7 @@ def site_conditional(
     tables: SiteTables,
     avail: np.ndarray,
     r_weights: np.ndarray | None = None,
+    pin_values: np.ndarray | None = None,
 ) -> tuple[float, np.ndarray, np.ndarray, list[int]]:
     """Per-chain item conditional for placing ``site`` alongside retained members
     ``r_feat`` (item ids ``r_item_id``). Returns ``(log_z, neg_e, valid, feats)``:
@@ -318,7 +351,10 @@ def site_conditional(
     ``valid`` gates availability + item-exclusion, ``log_z`` is the tempered log
     item-partition. ``r_weights`` (optional, default all-1) scales each retained
     member's coupling -- the anchor-field tilt puts weight alpha on pin↔free
-    couplings. Parity-gated against ``potts.ts:siteConditional``."""
+    couplings. ``pin_values`` (optional, length n_tracks, -1 = free) restricts
+    candidates to states matching every pinned track -- a joint species-swap
+    draw passes all-free (or ``None``); a per-track reroll pins every other
+    track. Parity-gated against ``potts.ts:siteConditional``."""
     feats = tables.site_features[site]
     feats_arr = np.asarray(feats, dtype=np.int64)
     if r_feat:
@@ -334,6 +370,11 @@ def site_conditional(
     iid = np.array([tables.item_id[f] for f in feats], dtype=np.int64)
     conflict = np.array([(i >= 0 and i in r_set) for i in iid], dtype=bool)
     valid = (avail[feats_arr] != 0) & ~conflict
+    if pin_values is not None:
+        vids = tables.track_vid[feats_arr]  # (M, n_tracks)
+        for t in range(len(pin_values)):
+            if pin_values[t] >= 0:
+                valid &= vids[:, t] == pin_values[t]
     if valid.any():
         masked = np.where(valid, neg_e, -np.inf)
         mx = float(masked.max())
@@ -454,6 +495,25 @@ def _potts_species_swap_step(
     return True, True
 
 
+def _pick_track(
+    n_tracks: int, track_weights: np.ndarray | None, rng: np.random.Generator,
+) -> int:
+    """Pick a track to reroll ∝ ``track_weights`` (length n_tracks). Returns -1
+    when every weight is zero (nothing rerollable); uniform when weights None."""
+    if n_tracks == 0:
+        return -1
+    w = np.ones(n_tracks) if track_weights is None else np.asarray(track_weights)
+    total = float(w.sum())
+    if total <= 0:
+        return -1
+    target = rng.random() * total
+    for t in range(n_tracks):
+        target -= w[t]
+        if target <= 0:
+            return t
+    return n_tracks - 1
+
+
 def _potts_track_reroll_step(
     chain: _SwapChainState,
     *,
@@ -465,10 +525,17 @@ def _potts_track_reroll_step(
     fixed: list[int],
     rng: np.random.Generator,
     anchor_strength: float = 1.0,
+    track_weights: np.ndarray | None = None,
 ) -> None:
-    """One Gibbs item-reroll on a random free slot (species unchanged; always
-    accepted). Mutates ``chain`` in place (off_nf not maintained)."""
-    if not chain.on_nf:
+    """One Gibbs per-track reroll on a random free slot: pick a track (∝
+    ``track_weights``), pin every other track to the slot's current values, and
+    resample that one track from the exact conditional (species and untouched
+    tracks unchanged; always accepted). Mutates ``chain`` in place (off_nf not
+    maintained)."""
+    if not chain.on_nf or tables.n_tracks == 0:
+        return
+    track = _pick_track(tables.n_tracks, track_weights, rng)
+    if track < 0:
         return
     inv_temp = 1.0 / T
     out_k = int(rng.integers(len(chain.on_nf)))
@@ -477,8 +544,12 @@ def _potts_track_reroll_step(
     r_feat = _retained(chain, out_k, fixed)
     r_item_id = [tables.item_id[f] for f in r_feat]
     r_weights = _anchor_weights(len(fixed), len(r_feat), anchor_strength)
+    # Pin every track except the rerolled one to the slot's current values.
+    pin_values = tables.track_vid[out_feat].copy()
+    pin_values[track] = -1
     log_z, neg_e, valid, feats = site_conditional(
-        site, r_feat, r_item_id, J, h_eff, inv_temp, tables, avail, r_weights)
+        site, r_feat, r_item_id, J, h_eff, inv_temp, tables, avail, r_weights,
+        pin_values)
     if not np.isfinite(log_z):
         return
     choice = _sample_categorical(neg_e, valid, rng)
@@ -684,10 +755,14 @@ def parallel_tempered_mcmc(
     sp_labels: list[str] = (
         species_of if species_of is not None else [str(i) for i in range(n)]
     )
-    it_labels: list[str | None] = (
-        item_of if item_of is not None else [None] * n
+    # Python PT tracks a single (item) attribute; a species-only model (item_of
+    # falsy) has zero tracks. Genuine multi-track sampling lives in the TS
+    # kernel (the webapp path); this mirror is item-only.
+    has_item = item_of is not None
+    track_values_of: list[list[str | None]] = (
+        [[it] for it in item_of] if has_item else [[] for _ in range(n)]
     )
-    tables = build_site_tables(sp_labels, it_labels, n)
+    tables = build_site_tables(sp_labels, track_values_of, n)
     avail = np.ones(n, dtype=bool)
     avail[list(excluded_set)] = False
     avail[list(fixed_set)] = False
@@ -715,9 +790,9 @@ def parallel_tempered_mcmc(
 
     for step in range(n_steps):
         # One Potts move in each chain at its own temperature: a species-swap,
-        # or an item-reroll (chosen with probability p_reroll when tracks exist).
-        # Reroll is a Gibbs step (always accepted), not counted toward the
-        # species-swap MH acceptance statistic.
+        # or a per-track reroll (chosen with probability p_reroll when tracks
+        # exist). Reroll is a Gibbs step (always accepted), not counted toward
+        # the species-swap MH acceptance statistic.
         for k in range(K):
             if has_tracks and rng.random() < p_reroll:
                 _potts_track_reroll_step(

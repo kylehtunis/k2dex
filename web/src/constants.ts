@@ -39,3 +39,19 @@ export const PT_SWAP_INTERVAL = 10;
 
 export const MF_MAX_ITERS = 200;
 export const MF_TOL = 1e-5;
+
+// Potts move kernel (per-track reroll allocation). Mirror of the Python
+// POTTS_* constants in k2dex/constants.py. Each per-chain sweep is a species
+// swap, or with probability POTTS_REROLL_PROB a track (attribute) reroll; the
+// track to reroll is picked weighted by POTTS_TRACK_REROLL_WEIGHTS (relative
+// weights by track name, need not sum to 1). Item outweighs ability because it
+// carries most of the modelled signal. Tunable.
+export const POTTS_REROLL_PROB = 0.5;
+export const POTTS_TRACK_REROLL_WEIGHTS: Record<string, number> = {
+  item: 0.8,
+  ability: 0.2,
+};
+
+// /meta drill-down support gate: minimum corpus appearances for a cell to be
+// shown in the hierarchical drill-down. Mirror of META_SUPPORT_MIN_COUNT.
+export const META_SUPPORT_MIN_COUNT = 5;

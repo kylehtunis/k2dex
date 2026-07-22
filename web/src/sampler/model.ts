@@ -9,14 +9,13 @@
 //   m.bin             float32, V entries
 //   team_counts.json  { "0-1-2-3-4-5": count, ... } (loaded separately)
 
-import type { IsingModel, SpeciesGraph, TeamCounts } from "./types";
+import type { IsingModel, SpeciesGraph, TeamCounts, TrackDef } from "./types";
 
 interface MetaJson {
   id?: string;
   name?: string;
   display_name?: string;
   regulation?: string;
-  feature_dimensions?: number;
   latest_tournament_date?: string;
   V: number;
   team_size: number;
@@ -24,13 +23,13 @@ interface MetaJson {
   vocab: string[];
   sites: string[];
   site_of: number[];
-  tracks: { name: string; unique: boolean }[];
+  tracks: TrackDef[];
   track_values: (string | null)[][];
   fit: { method: string; C?: number; lambda?: number; min_team_count: number };
   schema_version: number;
 }
 
-const SUPPORTED_SCHEMA_VERSIONS = [3];
+const SUPPORTED_SCHEMA_VERSIONS = [4];
 
 /** Fetch a binary file as a Float32Array (assumes little-endian, native
  * to all platforms we care about). */
@@ -89,7 +88,7 @@ export interface DerivedFactored {
 export interface FactoredFields {
   sites: string[];
   siteOf: number[];
-  tracks: { name: string; unique: boolean }[];
+  tracks: TrackDef[];
   trackValues: (string | null)[][];
   siteFeatures: number[][];
 }
@@ -120,7 +119,9 @@ export function factoredFromSpeciesItem(
     siteFeatures[s].push(i);
   }
   const hasItems = itemOf.some((x) => x !== null);
-  const tracks = hasItems ? [{ name: "item", unique: true }] : [];
+  const tracks: TrackDef[] = hasItems
+    ? [{ name: "item", cardinality: 1, crossSlotUnique: true, withinSlotUnique: false }]
+    : [];
   const trackValues: (string | null)[][] = hasItems
     ? itemOf.map((it) => [it])
     : itemOf.map(() => []);
@@ -145,8 +146,8 @@ export function deriveFactored(
 }
 
 /** A sampling view of `model` with the given tracks made degenerate (their
- * `unique` flag cleared). The attribute toggle uses this: a deactivated track
- * carries no uniqueness constraint and the sampler doesn't reroll it (the
+ * `crossSlotUnique` flag cleared). The attribute toggle uses this: a deactivated
+ * track carries no uniqueness constraint and the sampler doesn't reroll it (the
  * caller also sets pReroll=0), so the species-swap conditional sums over its
  * values freely — the exact marginal over that attribute. Only `tracks` is
  * changed; every other field (J/h/siteFeatures/…) is shared. Returns `model`
@@ -159,7 +160,9 @@ export function withInactiveTracks(
   const set = new Set(inactive);
   return {
     ...model,
-    tracks: model.tracks.map((t, i) => (set.has(i) ? { ...t, unique: false } : t)),
+    tracks: model.tracks.map((t, i) =>
+      set.has(i) ? { ...t, crossSlotUnique: false } : t,
+    ),
   };
 }
 
@@ -209,7 +212,6 @@ export async function loadModel(
     id,
     displayName: meta.display_name ?? id,
     regulation: meta.regulation ?? "",
-    featureDimensions: meta.feature_dimensions ?? (meta.tracks.length + 1),
     latestTournamentDate: meta.latest_tournament_date ?? "",
     V: meta.V,
     teamSize: meta.team_size,

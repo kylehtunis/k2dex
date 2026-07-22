@@ -515,6 +515,14 @@ button.lab-comp-tile {
   text-align: center;
   color: var(--lab-ink-muted);
 }
+.lab-comp-tile-ability {
+  font-family: var(--lab-font-sans);
+  font-size: 10px;
+  font-style: italic;
+  text-align: center;
+  color: var(--lab-ink-muted);
+  opacity: 0.8;
+}
 .lab-comp-tile-pin {
   font-family: var(--lab-font-sans);
   font-size: 8px;

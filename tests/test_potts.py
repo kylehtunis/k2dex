@@ -28,6 +28,32 @@ def _toy_model(J: np.ndarray) -> potts.FittedModel:
     )
 
 
+def _toy_model_ability(J: np.ndarray) -> potts.FittedModel:
+    """A 3-site model carrying an ability track. Species A's item i1 is split
+    across two abilities (item-modulated AND ability-modulated); B has two items
+    each with one ability (item-modulated, ability-degenerate); C is a single
+    state. Layout (V=6): A -> [i1/p, i1/q, i2/p], B -> [j1/p, j2/p], C -> [k1/p].
+    """
+    vocab = [
+        "A @ i1 (p)", "A @ i1 (q)", "A @ i2 (p)",
+        "B @ j1 (p)", "B @ j2 (p)", "C @ k1 (p)",
+    ]
+    species_of = ["A", "A", "A", "B", "B", "C"]
+    item_of: list[str | None] = ["i1", "i1", "i2", "j1", "j2", "k1"]
+    track_values_of: list[list[str | None]] = [
+        ["i1", "p"], ["i1", "q"], ["i2", "p"],
+        ["j1", "p"], ["j2", "p"], ["k1", "p"],
+    ]
+    V = len(vocab)
+    m = np.full(V, 0.1)
+    h = np.zeros(V)
+    return potts.FittedModel(
+        vocab=vocab, species_of=species_of, item_of=item_of,
+        J=J, h=h, m=m, team_size=4, n_corpus_teams=1000,
+        track_values_of=track_values_of,
+    )
+
+
 def _random_symmetric(V: int, seed: int = 0) -> np.ndarray:
     rng = np.random.default_rng(seed)
     A = rng.standard_normal((V, V))
@@ -62,6 +88,92 @@ class TestDecomposeBlock(unittest.TestCase):
         # row_modulation == row_effects + interaction.
         d = potts.decompose_block(B)
         np.testing.assert_allclose(mod, d.row_effects[:, None] + d.interaction, atol=1e-12)
+
+
+class TestHierarchicalDecomposition(unittest.TestCase):
+    def test_reconstructs_full_block(self) -> None:
+        model = _toy_model_ability(_random_symmetric(6, seed=10))
+        for P in model.sites:
+            for Q in model.sites:
+                if P == Q:
+                    continue
+                hd = potts.decompose_block_hierarchical(model, P, Q)
+                np.testing.assert_allclose(
+                    hd.reconstruct(), potts.species_block(model, P, Q), atol=1e-12,
+                    err_msg=f"reconstruction mismatch for {P}->{Q}",
+                )
+
+    def test_item_level_zero_sum(self) -> None:
+        # The item-level ANOVA is the zero-sum gauge of the item block.
+        model = _toy_model_ability(_random_symmetric(6, seed=11))
+        hd = potts.decompose_block_hierarchical(model, "A", "B")
+        self.assertAlmostEqual(float(hd.item_row.sum()), 0.0, places=12)
+        self.assertAlmostEqual(float(hd.item_col.sum()), 0.0, places=12)
+        np.testing.assert_allclose(hd.item_interaction.sum(axis=0), 0.0, atol=1e-12)
+        np.testing.assert_allclose(hd.item_interaction.sum(axis=1), 0.0, atol=1e-12)
+
+    def test_ability_residual_usage_weighted_zero(self) -> None:
+        # Within each (item_P, item_Q) cell the residual's usage-weighted mean
+        # over abilities is zero: collapsing it with both weight matrices -> 0.
+        model = _toy_model_ability(_random_symmetric(6, seed=12))
+        hd = potts.decompose_block_hierarchical(model, "A", "B")
+        _, _, cA = potts._item_groups(model, "A")
+        _, _, cB = potts._item_groups(model, "B")
+        collapsed = cA @ hd.ability_residual @ cB.T
+        np.testing.assert_allclose(collapsed, 0.0, atol=1e-12)
+
+    def test_synergy_is_usage_weighted_full_alphabet_mean(self) -> None:
+        model = _toy_model_ability(_random_symmetric(6, seed=13))
+        model.m[0], model.m[1] = 0.25, 0.05  # skew A's i1 abilities
+        hd = potts.decompose_block_hierarchical(model, "A", "B")
+        wA = model.item_weights("A")
+        wB = model.item_weights("B")
+        B = potts.species_block(model, "A", "B")
+        self.assertAlmostEqual(hd.synergy, float(wA @ B @ wB), places=12)
+
+    def test_degenerate_reduces_to_flat_decompose(self) -> None:
+        # A model with no ability track (each item one state) must give an
+        # identically-zero ability residual and an item ANOVA equal to the flat
+        # decompose_block of the full block.
+        model = _toy_model(_random_symmetric(5, seed=14))
+        B = potts.species_block(model, "A", "B")
+        flat = potts.decompose_block(B)
+        hd = potts.decompose_block_hierarchical(model, "A", "B")
+        np.testing.assert_allclose(hd.ability_residual, 0.0, atol=1e-12)
+        self.assertAlmostEqual(hd.item_synergy, flat.synergy, places=12)
+        np.testing.assert_allclose(hd.item_row, flat.row_effects, atol=1e-12)
+        np.testing.assert_allclose(hd.item_col, flat.col_effects, atol=1e-12)
+        np.testing.assert_allclose(hd.item_interaction, flat.interaction, atol=1e-12)
+
+
+class TestAbilityModulation(unittest.TestCase):
+    def test_ability_degenerate_species_score_zero(self) -> None:
+        model = _toy_model_ability(_random_symmetric(6, seed=15))
+        rows = {r.species: r for r in potts.modulation_scores(model)}
+        # B: two items, each a single ability -> ability-degenerate.
+        self.assertEqual(rows["B"].n_states, rows["B"].n_items)
+        self.assertAlmostEqual(rows["B"].ability_mod_frob, 0.0, places=12)
+        self.assertAlmostEqual(rows["B"].ability_mod_frac, 0.0, places=12)
+        # C: single state -> both item and ability modulation zero.
+        self.assertAlmostEqual(rows["C"].mod_frob, 0.0, places=12)
+        self.assertAlmostEqual(rows["C"].ability_mod_frob, 0.0, places=12)
+
+    def test_ability_split_species_scores_nonzero(self) -> None:
+        # Give A's i1/p a coupling to B that i1/q lacks, so A's ability genuinely
+        # modulates its coupling. A (item i1 split p/q) must score > 0.
+        J = np.zeros((6, 6))
+        J[0, 3] = J[3, 0] = 2.0  # A@i1(p) <-> B@j1(p)
+        model = _toy_model_ability(J)
+        rows = {r.species: r for r in potts.modulation_scores(model)}
+        self.assertGreater(rows["A"].n_states, rows["A"].n_items)
+        self.assertGreater(rows["A"].ability_mod_frob, 0.0)
+
+    def test_flat_model_ability_mod_is_zero(self) -> None:
+        # The pre-ability (single-track) model has no residual: item mod matches
+        # the old flat behaviour and ability mod is identically zero.
+        model = _toy_model(_random_symmetric(5, seed=16))
+        for r in potts.modulation_scores(model):
+            self.assertAlmostEqual(r.ability_mod_frob, 0.0, places=12)
 
 
 class TestSingleItemDegeneracy(unittest.TestCase):

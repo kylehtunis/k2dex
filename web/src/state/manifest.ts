@@ -1,3 +1,5 @@
+import type { TrackDef } from "../sampler/types";
+
 export interface ModelSummary {
   id: string;
   displayName: string;
@@ -7,10 +9,9 @@ export interface ModelSummary {
   regulation: string;
   /** Product-tier type (e.g. "standard"). One artifact per (regulation, type). */
   type: string;
-  featureDimensions: 1 | 2;
   /** Track (attribute) definitions the model carries, for the UI toggle.
    * Empty for species-only models. */
-  tracks: { name: string; unique: boolean }[];
+  tracks: TrackDef[];
   V: number;
   nCorpusTeams: number;
   latestTournamentDate: string;
@@ -36,8 +37,7 @@ interface ManifestJson {
     display_name: string;
     regulation: string;
     type?: string;
-    feature_dimensions: 1 | 2;
-    tracks?: { name: string; unique: boolean }[];
+    tracks?: TrackDef[];
     V: number;
     n_corpus_teams: number;
     latest_tournament_date: string;
@@ -68,7 +68,6 @@ export async function loadManifest(): Promise<Manifest> {
         ...(description !== undefined && { description }),
         regulation: m.regulation,
         type,
-        featureDimensions: m.feature_dimensions,
         tracks: m.tracks ?? [],
         V: m.V,
         nCorpusTeams: m.n_corpus_teams,

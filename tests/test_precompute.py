@@ -18,6 +18,7 @@ from unittest import mock
 
 import numpy as np
 
+from k2dex.loaders import ABILITY_TRACK, ITEM_TRACK, SpeciesModel
 from scripts import precompute
 
 
@@ -96,11 +97,12 @@ class TestWriteModelRoundTrip(unittest.TestCase):
             frozenset([vocab[6], vocab[7], vocab[8], vocab[9], vocab[10], vocab[11]]): 4,
         })
         species_of = list(vocab)
-        item_of = [None] * V
         latest_date = "2026-01-15T00:00:00.000Z"
 
-        fake_builder = mock.Mock(return_value=(
-            vocab, m, J, h, team_counts, species_of, item_of, latest_date,
+        fake_builder = mock.Mock(return_value=SpeciesModel(
+            vocab=vocab, m=m, J=J, h=h, team_counts=team_counts,
+            species_of=species_of, track_values_of=[[] for _ in vocab],
+            track_specs=[], latest_date=latest_date,
         ))
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -129,10 +131,10 @@ class TestWriteModelRoundTrip(unittest.TestCase):
             self.assertEqual(meta["id"], "synthetic")
             self.assertEqual(meta["display_name"], "Synthetic Test")
             self.assertEqual(meta["regulation"], "test")
-            self.assertEqual(meta["feature_dimensions"], 1)
+            self.assertNotIn("feature_dimensions", meta)
             self.assertEqual(meta["latest_tournament_date"], latest_date)
             self.assertEqual(meta["vocab"], vocab)
-            # v3 factored schema: species-only model has one site per feature,
+            # v4 factored schema: species-only model has one site per feature,
             # no tracks, and empty per-feature track_values.
             self.assertNotIn("species_of", meta)
             self.assertNotIn("item_of", meta)
@@ -141,7 +143,7 @@ class TestWriteModelRoundTrip(unittest.TestCase):
             self.assertEqual(meta["tracks"], [])
             self.assertEqual(meta["track_values"], [[] for _ in range(V)])
             self.assertEqual(meta["n_corpus_teams"], 14)
-            self.assertEqual(meta["schema_version"], 3)
+            self.assertEqual(meta["schema_version"], 4)
             self.assertEqual(meta["fit"]["lambda"], 10.0)
 
             h_read = np.fromfile(model_dir / "h.bin", dtype=np.float32)
@@ -162,13 +164,20 @@ class TestWriteModelRoundTrip(unittest.TestCase):
             self.assertEqual(tc, {"0-1-2-3-4-5": 10, "6-7-8-9-10-11": 4})
 
     def test_species_item_factored_schema(self) -> None:
-        """A species+item model derives one 'item' track and per-feature
-        track_values, grouping features onto their shared species site."""
+        """A species+item+ability model derives two tracks (item, ability) and
+        per-feature track_values, grouping features onto their shared species
+        site. Skips team_counts (species_graph fit is out of this round-trip's
+        scope)."""
         rng = np.random.default_rng(7)
-        # Three species (A, B, C) with 2 / 1 / 2 item states -> V = 5.
+        # Three species (A, B, C) with 2 / 1 / 2 (item, ability) states -> V = 5.
         species_of = ["A", "A", "B", "C", "C"]
         item_of = ["Life Orb", "None", "Focus Sash", "Leftovers", "None"]
-        vocab = [precompute_format(s, i) for s, i in zip(species_of, item_of)]
+        ability_of = ["Overgrow", "Chlorophyll", "Blaze", "Torrent", "Rain Dish"]
+        track_values_of: list[list[str | None]] = [[i, a] for i, a in zip(item_of, ability_of)]
+        vocab = [
+            precompute_format(s, i, a)
+            for s, i, a in zip(species_of, item_of, ability_of)
+        ]
         V = len(vocab)
         m = rng.uniform(0.01, 0.4, size=V).astype(np.float64)
         h = rng.standard_normal(V).astype(np.float64)
@@ -178,8 +187,10 @@ class TestWriteModelRoundTrip(unittest.TestCase):
         team_counts = Counter({frozenset(vocab[:5]): 3})
         latest_date = "2026-01-15T00:00:00.000Z"
 
-        fake_builder = mock.Mock(return_value=(
-            vocab, m, J, h, team_counts, species_of, item_of, latest_date,
+        fake_builder = mock.Mock(return_value=SpeciesModel(
+            vocab=vocab, m=m, J=J, h=h, team_counts=team_counts,
+            species_of=species_of, track_values_of=track_values_of,
+            track_specs=[ITEM_TRACK, ABILITY_TRACK], latest_date=latest_date,
         ))
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -192,23 +203,31 @@ class TestWriteModelRoundTrip(unittest.TestCase):
                         builder_type="species_item",
                         lam=4.5,
                         out_dir=Path(tmp),
+                        skip_team_counts=True,
                         force=True,
                     )
             with open(Path(tmp) / "synthetic-si" / "meta.json") as f:
                 meta = json.load(f)
-        self.assertEqual(meta["feature_dimensions"], 2)
-        self.assertEqual(meta["schema_version"], 3)
+        self.assertNotIn("feature_dimensions", meta)
+        self.assertEqual(meta["schema_version"], 4)
         self.assertEqual(meta["sites"], ["A", "B", "C"])
         self.assertEqual(meta["site_of"], [0, 0, 1, 2, 2])
-        self.assertEqual(meta["tracks"], [{"name": "item", "unique": True}])
+        self.assertEqual(meta["tracks"], [
+            {"name": "item", "cardinality": 1,
+             "crossSlotUnique": True, "withinSlotUnique": False},
+            {"name": "ability", "cardinality": 1,
+             "crossSlotUnique": False, "withinSlotUnique": False},
+        ])
         self.assertEqual(
             meta["track_values"],
-            [["Life Orb"], ["None"], ["Focus Sash"], ["Leftovers"], ["None"]],
+            [["Life Orb", "Overgrow"], ["None", "Chlorophyll"],
+             ["Focus Sash", "Blaze"], ["Leftovers", "Torrent"], ["None", "Rain Dish"]],
         )
 
 
-def precompute_format(species: str, item: str | None) -> str:
-    return species if item is None else f"{species} @ {item}"
+def precompute_format(species: str, item: str | None, ability: str) -> str:
+    base = species if item in (None, "None") else f"{species} @ {item}"
+    return f"{base} ({ability})"
 
 
 if __name__ == "__main__":

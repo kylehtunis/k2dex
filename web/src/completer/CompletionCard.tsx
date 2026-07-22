@@ -5,7 +5,7 @@
 
 import { type ReactNode, useCallback, useState } from "react";
 import { Link } from "react-router-dom";
-import { extractItem, extractSpecies, buildPartialPaste } from "../render/format";
+import { extractAbility, extractItem, extractSpecies, buildPartialPaste } from "../render/format";
 import { CorpusCell, ScoreChip } from "../render/atoms";
 import { SpriteBox } from "../render/Sprite";
 import { useFeatureModal } from "../components/FeatureModalContext";
@@ -20,13 +20,16 @@ function CompMonTile({
   name,
   pinned,
   hideItem,
+  hideAbility,
 }: {
   name: string;
   pinned: boolean;
   hideItem: boolean;
+  hideAbility: boolean;
 }) {
   const species = extractSpecies(name);
   const item = hideItem ? null : extractItem(name);
+  const ability = hideAbility ? null : extractAbility(name);
   const fm = useFeatureModal();
   const cls = `lab-comp-tile${pinned ? " is-pinned" : ""}`;
   const inner = (
@@ -35,6 +38,7 @@ function CompMonTile({
       <SpriteBox name={name} size={52} className="lab-comp-tile-sprite" />
       <div className="lab-comp-tile-name">{species}</div>
       {item && <div className="lab-comp-tile-item">@ {item}</div>}
+      {ability && <div className="lab-comp-tile-ability">{ability}</div>}
     </>
   );
   if (fm) {
@@ -70,6 +74,8 @@ export interface CompletionCardProps {
   model: IsingModel;
   /** Species-only mode: hide the marginalized-out item on every tile. */
   hideItems?: boolean;
+  /** Ability track deactivated: hide the marginalized-out ability on every tile. */
+  hideAbility?: boolean;
 }
 
 export function CompletionCard({
@@ -85,6 +91,7 @@ export function CompletionCard({
   rank,
   model,
   hideItems = false,
+  hideAbility = false,
 }: CompletionCardProps) {
   // Pinned tiles first (in vocab order), then the completer-filled ones.
   const freeSet = new Set(freeIdxs);
@@ -128,6 +135,7 @@ export function CompletionCard({
             name={model.vocab[i]}
             pinned={freeSet.size > 0 && !freeSet.has(i)}
             hideItem={hideItems}
+            hideAbility={hideAbility}
           />
         ))}
       </div>

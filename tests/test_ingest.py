@@ -25,9 +25,9 @@ from k2dex.tournament_ingest import (
 )
 
 
-def _make_team(species_items: list[tuple[str, str | None]], placing=None) -> Team:
+def _make_team(members: list[tuple[str, str | None, str]], placing=None) -> Team:
     return Team(
-        members=frozenset(species_items),
+        members=frozenset(members),
         placing=placing,
         wins=3, losses=1, ties=0,
     )
@@ -48,9 +48,10 @@ def _make_tournament(
 
 SAMPLE_TEAMS = [
     _make_team([
-        ("Venusaur", "Focus Sash"), ("Torkoal", "Charcoal"),
-        ("Rillaboom", "Miracle Seed"), ("Incineroar", "Safety Goggles"),
-        ("Urshifu", "Choice Band"), ("Farigiraf", "Leftovers"),
+        ("Venusaur", "Focus Sash", "Chlorophyll"), ("Torkoal", "Charcoal", "Drought"),
+        ("Rillaboom", "Miracle Seed", "Grassy Surge"),
+        ("Incineroar", "Safety Goggles", "Intimidate"),
+        ("Urshifu", "Choice Band", "Unseen Fist"), ("Farigiraf", "Leftovers", "Armor Tail"),
     ], placing=i + 1)
     for i in range(40)
 ]
@@ -189,7 +190,7 @@ class TestImportInPerson(unittest.TestCase):
                     "placing": i + 1,
                     "record": {"wins": 3, "losses": 1, "ties": 0},
                     "decklist": [
-                        {"name": f"Mon{j}", "item": f"Item{j}"}
+                        {"name": f"Mon{j}", "item": f"Item{j}", "ability": f"Ability{j}"}
                         for j in range(6)
                     ],
                 }
@@ -228,7 +229,7 @@ class TestImportInPerson(unittest.TestCase):
                     "placing": i + 1,
                     "record": {"wins": 3, "losses": 1, "ties": 0},
                     "decklist": [
-                        {"name": f"Mon{j}", "item": f"Item{j}"}
+                        {"name": f"Mon{j}", "item": f"Item{j}", "ability": f"Ability{j}"}
                         for j in range(6)
                     ],
                 }
@@ -256,7 +257,7 @@ def _standings_entry(
         "record": {"wins": 0, "losses": 0, "ties": 0},
         "rounds": rounds or {},
         "decklist": [
-            {"name": f"Mon{j}", "item": f"Item{j}"} for j in range(n_mons)
+            {"name": f"Mon{j}", "item": f"Item{j}", "ability": f"Ability{j}"} for j in range(n_mons)
         ],
     }
 
@@ -395,16 +396,16 @@ class TestMatchRoundTrip(unittest.TestCase):
         self.assertEqual(obs, [])
 
 
-class TestPerTypeCacheVersion(unittest.TestCase):
-    """v3 added match lists, which only in-person sources have: v2 limitless
-    entries stay valid (identical payload either way), v2 in-person entries
-    are stale and must be re-imported."""
+class TestCacheVersionGate(unittest.TestCase):
+    """v4 widened the member schema (the ability track) for BOTH sources, so any
+    pre-v4 cache entry -- regardless of type -- is stale and must be re-fetched /
+    re-imported."""
 
-    def _v2_payload(self, entry_type: str) -> dict:
+    def _old_payload(self, entry_type: str, version: int = 3) -> dict:
         return {
-            "version": 2,
+            "version": version,
             "type": entry_type,
-            "meta": {"id": f"v2-{entry_type}", "name": "Old Event",
+            "meta": {"id": f"old-{entry_type}", "name": "Old Event",
                      "date": "2026-01-01", "regulation": "M-A", "players": 40},
             "teams": [
                 {"members": [list(m) for m in sorted(t.members, key=lambda m: m[0])],
@@ -413,20 +414,19 @@ class TestPerTypeCacheVersion(unittest.TestCase):
             ],
         }
 
-    def test_v2_limitless_still_loads(self):
+    def test_pre_v4_limitless_rejected(self):
         with tempfile.TemporaryDirectory() as td:
             cache_dir = Path(td)
             with (cache_dir / "old.json").open("w") as f:
-                json.dump(self._v2_payload("limitless"), f)
+                json.dump(self._old_payload("limitless"), f)
             loaded = load_cached_tournaments(cache_dir=cache_dir, regulation="M-A")
-            self.assertEqual([t.meta.id for t in loaded], ["v2-limitless"])
-            self.assertEqual(loaded[0].matches, ())
+            self.assertEqual(loaded, [])
 
-    def test_v2_in_person_rejected(self):
+    def test_pre_v4_in_person_rejected(self):
         with tempfile.TemporaryDirectory() as td:
             cache_dir = Path(td)
             with (cache_dir / "old.json").open("w") as f:
-                json.dump(self._v2_payload("in-person"), f)
+                json.dump(self._old_payload("in-person"), f)
             loaded = load_cached_tournaments(cache_dir=cache_dir, regulation="M-A")
             self.assertEqual(loaded, [])
 
@@ -446,7 +446,7 @@ class TestPerTypeCacheVersion(unittest.TestCase):
             with (reg_dir / "ev9_2026-05-30.json").open("w") as f:
                 json.dump(standings, f)
 
-            stale = self._v2_payload("in-person")
+            stale = self._old_payload("in-person")
             stale["meta"]["id"] = "local_ev9_2026-05-30"
             with (cache_dir / "local_ev9_2026-05-30.json").open("w") as f:
                 json.dump(stale, f)

@@ -43,6 +43,7 @@ from k2dex.rendering import (
     score_cooccurrence,
 )
 from k2dex.rendering_html import species_to_slug
+from k2dex.loaders import format_triple
 
 
 BASELINE_PATH = Path(__file__).parent / "parity_baseline.json"
@@ -218,21 +219,37 @@ class TestParity(unittest.TestCase):
             with self.subTest(input=case["input"]):
                 self.assertEqual(species_to_slug(case["input"]), case["expected"])
 
+    def test_format_triple_cases(self) -> None:
+        """loaders.format_triple must match render/format.ts:formatTriple. The
+        (species, item, ability) vocab-string constructor -- itemless ("None"
+        or null) drops '@ Item', ability always appended."""
+        for case in self.baseline["formatTriple"]:
+            with self.subTest(input=case["input"]):
+                inp = case["input"]
+                self.assertEqual(
+                    format_triple(inp["species"], inp["item"], inp["ability"]),
+                    case["expected"],
+                )
+
     def test_site_tables_cases(self) -> None:
-        """build_site_tables parity: the per-site feature grouping and item-id
-        assignment must match potts.ts:buildSiteTables byte-for-byte."""
+        """build_site_tables parity: the per-site feature grouping, item-id, and
+        dense per-track value ids must match potts.ts:buildSiteTables."""
         expected = self.baseline["siteTables"]
-        tables = build_site_tables(self.species_of, self.item_of, self.V)
+        track_values_of = [[it] for it in self.item_of]
+        tables = build_site_tables(self.species_of, track_values_of, self.V)
         self.assertEqual(tables.n_sites, expected["nSites"])
         self.assertEqual(
             [list(x) for x in tables.site_features], expected["siteFeatures"],
         )
         self.assertEqual(list(tables.item_id), expected["itemId"])
+        self.assertEqual(tables.n_tracks, expected["nTracks"])
+        self.assertEqual(list(tables.track_vid.reshape(-1)), expected["trackVid"])
 
     def test_site_conditional_cases(self) -> None:
         """site_conditional parity: candidate feats, neg-energies, validity, and
         the log item-partition must match potts.ts:siteConditional."""
-        tables = build_site_tables(self.species_of, self.item_of, self.V)
+        track_values_of = [[it] for it in self.item_of]
+        tables = build_site_tables(self.species_of, track_values_of, self.V)
         avail = np.ones(self.V, dtype=bool)
         for case in self.baseline["siteConditional"]:
             with self.subTest(case=case["name"]):
@@ -248,6 +265,65 @@ class TestParity(unittest.TestCase):
                     inp["site"], r_feat, r_item_id,
                     self.J, self.h, inp["invTemp"], tables, avail,
                     r_weights,
+                )
+                exp = case["expected"]
+                self.assertEqual(list(feats), exp["feats"],
+                                 f"feats mismatch for {case['name']}")
+                np.testing.assert_allclose(
+                    neg_e, np.array(exp["negE"]), atol=ATOL,
+                    err_msg=f"negE mismatch for {case['name']}",
+                )
+                np.testing.assert_array_equal(
+                    valid.astype(np.uint8),
+                    np.array(exp["valid"], dtype=np.uint8),
+                    err_msg=f"valid mismatch for {case['name']}",
+                )
+                if exp["logZ"] is None:
+                    self.assertFalse(np.isfinite(log_z),
+                                     f"expected -inf logZ for {case['name']}")
+                else:
+                    self.assertAlmostEqual(
+                        log_z, exp["logZ"], delta=ATOL,
+                        msg=f"logZ mismatch for {case['name']}",
+                    )
+
+    def test_site_tables_2track_cases(self) -> None:
+        """build_site_tables parity on the 2-track (item + ability) model: the
+        dense per-track trackVid gains a second column."""
+        m2 = self.baseline["model2"]
+        expected = self.baseline["siteTables2"]
+        tables = build_site_tables(m2["speciesOf"], m2["trackValuesOf"], m2["V"])
+        self.assertEqual(tables.n_sites, expected["nSites"])
+        self.assertEqual(
+            [list(x) for x in tables.site_features], expected["siteFeatures"],
+        )
+        self.assertEqual(list(tables.item_id), expected["itemId"])
+        self.assertEqual(tables.n_tracks, expected["nTracks"])
+        self.assertEqual(list(tables.track_vid.reshape(-1)), expected["trackVid"])
+
+    def test_site_conditional_2track_cases(self) -> None:
+        """site_conditional parity with per-track pin_values on the 2-track
+        model: pinning a track must drop candidates whose value differs, the
+        critical new coverage for the per-track reroll kernel."""
+        m2 = self.baseline["model2"]
+        V2 = m2["V"]
+        J2 = np.array(m2["J"], dtype=np.float64).reshape(V2, V2)
+        h2 = np.array(m2["h"], dtype=np.float64)
+        tables = build_site_tables(m2["speciesOf"], m2["trackValuesOf"], V2)
+        avail = np.ones(V2, dtype=bool)
+        for case in self.baseline["siteConditional2"]:
+            with self.subTest(case=case["name"]):
+                inp = case["input"]
+                r_feat = inp["rFeat"]
+                r_item_id = [tables.item_id[f] for f in r_feat]
+                pin_raw = inp["pinValues"]
+                pin_values = (
+                    np.array(pin_raw, dtype=np.int64) if pin_raw is not None else None
+                )
+                log_z, neg_e, valid, feats = site_conditional(
+                    inp["site"], r_feat, r_item_id,
+                    J2, h2, inp["invTemp"], tables, avail,
+                    None, pin_values,
                 )
                 exp = case["expected"]
                 self.assertEqual(list(feats), exp["feats"],

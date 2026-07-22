@@ -23,6 +23,7 @@ import {
   pottsTrackReroll,
   type PottsContext,
 } from "./potts";
+import { POTTS_TRACK_REROLL_WEIGHTS } from "../constants";
 
 export interface PTOpts {
   fixed: readonly number[];
@@ -81,12 +82,19 @@ export function parallelTemperedMcmc(
   const lockedSlots = new Set<number>();
   for (let i = 0; i < seeds.length; i++) lockedSlots.add(i);
   const anchorStrength = opts.anchorStrength ?? 1;
+  // Per-track reroll weights (item ≫ ability) from the shared constant, keyed
+  // by track name; a track absent from the map gets weight 0 (never rerolled).
+  const trackRerollWeights = new Float64Array(model.tracks.length);
+  for (let t = 0; t < model.tracks.length; t++) {
+    trackRerollWeights[t] = POTTS_TRACK_REROLL_WEIGHTS[model.tracks[t].name] ?? 0;
+  }
   const ctx: PottsContext = {
     fixed: opts.fixed,
     avail,
     tables,
     lockedSlots,
     anchorStrength,
+    trackRerollWeights,
   };
   const hasTracks = model.tracks.length > 0;
   const pReroll = opts.pReroll ?? 0.5;

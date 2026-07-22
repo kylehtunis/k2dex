@@ -47,7 +47,7 @@ function buildModel(): IsingModel {
   const factored = factoredFromSpeciesItem(speciesOf, itemOf);
   return {
     id: "fd", displayName: "FD", regulation: "test",
-    featureDimensions: 2, latestTournamentDate: "",
+    latestTournamentDate: "",
     V, teamSize: 6, vocab, speciesOf, itemOf, ...factored, m, J, h, indexOf,
     nCorpusTeams: 20, name: "fd",
   };

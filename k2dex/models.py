@@ -37,6 +37,8 @@ from .constants import (
     BOLTZMANN_SEED,
     BOLTZMANN_SWAP_INTERVAL,
     BOLTZMANN_T_MAX,
+    POTTS_REROLL_PROB,
+    POTTS_TRACK_REROLL_WEIGHTS,
 )
 from .sampling import initialize_state
 
@@ -473,29 +475,62 @@ def _batched_moments(
 
 
 def _build_site_tables(
-    species_id: NDArray[np.int64], item_id: NDArray[np.int64], V: int,
-) -> tuple[int, NDArray[np.int64], NDArray[np.bool_], NDArray[np.int64]]:
-    """Group flat feature indices by species into padded (S, max_items) tables.
+    species_id: NDArray[np.int64],
+    track_vids: NDArray[np.int64],
+    item_id: NDArray[np.int64],
+    V: int,
+) -> tuple[
+    int, NDArray[np.int64], NDArray[np.bool_], NDArray[np.int64], NDArray[np.int64]
+]:
+    """Group flat feature indices by species into padded (S, max_states) tables.
 
-    Returns (S, sp_item_feat, sp_item_valid, sp_item_iid): the number of species
-    (sites), each species' item-state flat indices (right-padded with -1), the
-    padding-validity mask, and each slot's item id (padded with -2, a sentinel
-    that never equals a real item id >= 0 or the itemless id -1).
+    A *state* is one full feature of a species -- one point in the product of the
+    per-track value alphabets (item x ability x ...). ``track_vids`` is the
+    (V, n_tracks) per-feature per-track value id (dense, >= 0, from
+    ``_group_ids(..., none_sentinel=False)``); ``item_id`` is the separate
+    uniqueness id for the cross-slot-unique track (-1 for itemless).
+
+    Returns (S, sp_state_feat, sp_state_valid, sp_state_iid, sp_track_vid): the
+    number of species (sites); each species' state flat indices (right-padded
+    with -1); the padding-validity mask; each state's item id for uniqueness
+    (padded with -2, a sentinel that never equals a real item id >= 0 or the
+    itemless id -1); and each state's per-track value ids (S, max_states,
+    n_tracks) (padded with -1), used to decode a chosen state to its value tuple
+    and to restrict candidates on pinned tracks.
     """
     S = int(species_id.max()) + 1
+    n_tracks = track_vids.shape[1]
     feats_by_site: list[list[int]] = [[] for _ in range(S)]
     for f in range(V):
         feats_by_site[int(species_id[f])].append(f)
-    max_items = max(len(x) for x in feats_by_site)
-    sp_item_feat = np.full((S, max_items), -1, dtype=np.int64)
-    sp_item_valid = np.zeros((S, max_items), dtype=bool)
-    sp_item_iid = np.full((S, max_items), -2, dtype=np.int64)
+    max_states = max(len(x) for x in feats_by_site)
+    sp_state_feat = np.full((S, max_states), -1, dtype=np.int64)
+    sp_state_valid = np.zeros((S, max_states), dtype=bool)
+    sp_state_iid = np.full((S, max_states), -2, dtype=np.int64)
+    sp_track_vid = np.full((S, max_states, n_tracks), -1, dtype=np.int64)
     for s, feats in enumerate(feats_by_site):
         k = len(feats)
-        sp_item_feat[s, :k] = feats
-        sp_item_valid[s, :k] = True
-        sp_item_iid[s, :k] = item_id[feats]
-    return S, sp_item_feat, sp_item_valid, sp_item_iid
+        sp_state_feat[s, :k] = feats
+        sp_state_valid[s, :k] = True
+        sp_state_iid[s, :k] = item_id[feats]
+        sp_track_vid[s, :k, :] = track_vids[feats, :]
+    return S, sp_state_feat, sp_state_valid, sp_state_iid, sp_track_vid
+
+
+def _build_feat_lookup(
+    species_id: NDArray[np.int64], track_vids: NDArray[np.int64], V: int,
+) -> NDArray[np.int64]:
+    """Build the (n_tracks+1)-D flat-feature lookup ``feat_lookup[site, v_0, v_1,
+    ...] = flat feat``, from per-feature ``species_id`` and per-track value ids
+    ``track_vids`` (V, n_tracks). Invalid value combinations stay -1; the bank
+    only ever holds real states, so those entries are never indexed."""
+    S = int(species_id.max()) + 1
+    n_tracks = track_vids.shape[1]
+    dims = [S] + [int(track_vids[:, t].max()) + 1 for t in range(n_tracks)]
+    feat_lookup = np.full(dims, -1, dtype=np.int64)
+    idx = (species_id,) + tuple(track_vids[:, t] for t in range(n_tracks))
+    feat_lookup[idx] = np.arange(V, dtype=np.int64)
+    return feat_lookup
 
 
 def _masked_logsumexp(
@@ -519,26 +554,46 @@ def _site_conditional(
     J: NDArray[np.float64],
     h_eff: NDArray[np.float64],
     inv_temp: NDArray[np.float64],
-    sp_item_feat: NDArray[np.int64],
-    sp_item_valid: NDArray[np.bool_],
-    sp_item_iid: NDArray[np.int64],
+    sp_state_feat: NDArray[np.int64],
+    sp_state_valid: NDArray[np.bool_],
+    sp_state_iid: NDArray[np.int64],
+    sp_track_vid: NDArray[np.int64],
+    pin_values: NDArray[np.int64] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_], NDArray[np.int64]]:
-    """Per-chain item conditional for placing species ``sp[c]`` alongside the
+    """Per-chain state conditional for placing species ``sp[c]`` alongside the
     held members ``R_feat[c]``.
 
-    Returns (log_Z, neg_e, valid, feats) each shaped (n_chains, max_items):
-    ``feats`` are the candidate item-state flat indices, ``valid`` marks the ones
-    that clear item-exclusion against R (and aren't padding), ``neg_e`` is
-    ``-E_slot / T`` at those slots (``E_slot = -h_eff[f] - Σ_{j in R} J[f, j]``),
-    and ``log_Z`` is the tempered log item-partition ``log Σ_valid exp(neg_e)``.
+    Candidate states are the species' full features (item x ability x ...).
+    ``pin_values`` (n_chains, n_tracks), when given, restricts candidates to
+    states matching every pinned track: entry ``-1`` leaves that track free, any
+    other value id constrains the candidate's track value to equal it. A joint
+    species-swap draw passes all-free (or ``None``); a per-track reroll of track
+    ``t`` pins every track except ``t``.
+
+    Returns (log_Z, neg_e, valid, feats) each shaped (n_chains, max_states):
+    ``feats`` are the candidate flat feature indices, ``valid`` marks the ones
+    that clear item-exclusion against R and the pins (and aren't padding),
+    ``neg_e`` is ``-E_slot / T`` at those slots (``E_slot = -h_eff[f] - Σ_{j in
+    R} J[f, j]``), and ``log_Z`` is the tempered log partition ``log Σ_valid
+    exp(neg_e)``.
     """
-    feats = sp_item_feat[sp]              # (N, M); -1 padding
-    valid = sp_item_valid[sp].copy()      # (N, M)
-    iid = sp_item_iid[sp]                 # (N, M); -2 pad, -1 itemless, >=0 item
-    # Item-exclusion: a candidate with a real item conflicts if that item id is
-    # already held by one of the retained members. Itemless (iid < 0) never does.
+    feats = sp_state_feat[sp]             # (N, M); -1 padding
+    valid = sp_state_valid[sp].copy()     # (N, M)
+    iid = sp_state_iid[sp]                # (N, M); -2 pad, -1 itemless, >=0 item
+    # Item-exclusion (the cross-slot-unique track): a candidate with a real item
+    # conflicts if that item id is already held by one of the retained members.
+    # Itemless (iid < 0) never does.
     conflict = ((iid[:, :, None] == R_iid[:, None, :]) & (iid[:, :, None] >= 0)).any(axis=2)
     valid &= ~conflict
+    # Pin restriction: for each pinned track (value id >= 0), drop candidates
+    # whose value on that track differs. Free tracks (-1) impose nothing.
+    if pin_values is not None:
+        vids = sp_track_vid[sp]           # (N, M, n_tracks)
+        for t in range(pin_values.shape[1]):
+            pinned = pin_values[:, t] >= 0
+            if pinned.any():
+                match = vids[:, :, t] == pin_values[:, t, None]
+                valid &= match | ~pinned[:, None]
     # E_slot = -h_eff[f] - Σ_{j in R} J[f, j]; padded feats index garbage rows of
     # h/J but are masked out below, so the reads are harmless.
     h_term = -h_eff[feats]
@@ -560,12 +615,12 @@ def _gumbel_choice(
 
 # The bank is stored FACTORED for the Potts kernel: a slot is a (site, values)
 # pair, `team_sites[c, p]` the species id and `team_values[c, p, t]` the value
-# index on track t (the intra-species item column at n_tracks=1). `feat_lookup`
-# reconstructs the flat feature index -- at n_tracks=1 it IS `sp_item_feat`
-# (site, item-column -> flat feat). The Gumbel `choice` a conditional draws is
-# exactly that item-column, so it stores straight into `team_values` with no
-# flat round-trip. Energy / moment / replica-exchange code wants flat indices, so
-# `_bank_flat_indices` rebuilds them on demand.
+# id on track t. `feat_lookup[site, v_0, v_1, ...]` reconstructs the flat feature
+# index from a site and its per-track value ids. A conditional draws a candidate
+# *column* (a full state); its per-track value ids are read off `sp_track_vid`
+# and written into `team_values` -- a species swap writes all tracks, a per-track
+# reroll writes just that track's column. Energy / moment / replica-exchange code
+# wants flat indices, so `_bank_flat_indices` rebuilds them on demand.
 
 
 def _bank_flat_indices(
@@ -587,7 +642,9 @@ def _potts_species_swap_sweep(
     J: NDArray[np.float64],
     h_eff: NDArray[np.float64],
     item_id: NDArray[np.int64],
-    site: tuple[int, NDArray[np.int64], NDArray[np.bool_], NDArray[np.int64]],
+    site: tuple[
+        int, NDArray[np.int64], NDArray[np.bool_], NDArray[np.int64], NDArray[np.int64]
+    ],
     feat_lookup: NDArray[np.int64],
     rng: np.random.Generator,
     *,
@@ -599,7 +656,7 @@ def _potts_species_swap_sweep(
     (n_chains, team_size, n_tracks); both mutated in place). See the module
     comment above for the derivation of ``min(1, Z_B / Z_A)``. Returns the
     acceptance fraction over chains."""
-    S, sp_item_feat, sp_item_valid, sp_item_iid = site
+    S, sp_state_feat, sp_state_valid, sp_state_iid, sp_track_vid = site
     n_chains, k = team_sites.shape
     rows = np.arange(n_chains)
     inv_temp = (1.0 / np.asarray(temp, dtype=np.float64)) * np.ones(n_chains)
@@ -627,42 +684,46 @@ def _potts_species_swap_sweep(
 
     logZ_A, _, _, _ = _site_conditional(
         A, R_feat, R_iid, J, h_eff, inv_temp,
-        sp_item_feat, sp_item_valid, sp_item_iid)
+        sp_state_feat, sp_state_valid, sp_state_iid, sp_track_vid)
     logZ_B, negE_B, valid_B, _ = _site_conditional(
         B, R_feat, R_iid, J, h_eff, inv_temp,
-        sp_item_feat, sp_item_valid, sp_item_iid)
-    found &= np.isfinite(logZ_B) & np.isfinite(logZ_A)  # B needs >= 1 valid item
+        sp_state_feat, sp_state_valid, sp_state_iid, sp_track_vid)
+    found &= np.isfinite(logZ_B) & np.isfinite(logZ_A)  # B needs >= 1 valid state
 
     log_ratio = logZ_B - logZ_A
     accept = found & (
         (log_ratio >= 0.0) | (rng.random(n_chains) < np.exp(np.minimum(log_ratio, 0.0)))
     )
-    # On accept, draw B's item from the exact conditional; the chosen column is
-    # the value index on track 0, stored straight into the factored bank.
+    # On accept, draw B's full state from the exact conditional (all tracks free);
+    # decode the chosen column to its per-track value ids and write every track.
     choice = _gumbel_choice(negE_B, valid_B, rng)
+    chosen_vids = sp_track_vid[B, choice]  # (n_chains, n_tracks)
     team_sites[rows[accept], p[accept]] = B[accept]
-    team_values[rows[accept], p[accept], 0] = choice[accept]
+    team_values[rows[accept], p[accept], :] = chosen_vids[accept]
     return float(accept.mean())
 
 
-def _potts_item_reroll_sweep(
+def _potts_track_reroll_sweep(
     team_sites: NDArray[np.int64],
     team_values: NDArray[np.int64],
     J: NDArray[np.float64],
     h_eff: NDArray[np.float64],
     item_id: NDArray[np.int64],
-    site: tuple[int, NDArray[np.int64], NDArray[np.bool_], NDArray[np.int64]],
+    site: tuple[
+        int, NDArray[np.int64], NDArray[np.bool_], NDArray[np.int64], NDArray[np.int64]
+    ],
     feat_lookup: NDArray[np.int64],
     rng: np.random.Generator,
     *,
-    track: int = 0,
+    track: int,
     temp: NDArray[np.float64] | float = 1.0,
 ) -> None:
     """One Gibbs value-reroll per chain on track ``track``: resample a random
-    on-team slot's value from the exact conditional given the rest of the team.
-    Species roster is unchanged; always accepted. Mutates ``team_values`` in
-    place (at n_tracks=1, ``track`` is always 0 -- the item reroll)."""
-    _, sp_item_feat, sp_item_valid, sp_item_iid = site
+    on-team slot's track-``track`` value from the exact conditional given the
+    rest of the team AND the slot's other tracks (Gibbs on ``P(v_t | v_{-t},
+    team)``). Species roster and the untouched tracks are unchanged; always
+    accepted. Mutates ``team_values`` in place."""
+    _, sp_state_feat, sp_state_valid, sp_state_iid, sp_track_vid = site
     n_chains, k = team_sites.shape
     rows = np.arange(n_chains)
     inv_temp = (1.0 / np.asarray(temp, dtype=np.float64)) * np.ones(n_chains)
@@ -676,11 +737,16 @@ def _potts_item_reroll_sweep(
     R_feat = _bank_flat_indices(R_sites, R_vals, feat_lookup)
     R_iid = item_id[R_feat]
 
+    # Pin every track except the rerolled one to the slot's current values, so
+    # the conditional ranges only over states that differ in track ``track``.
+    pin_values = team_values[rows, p, :].copy()
+    pin_values[:, track] = -1
     _, neg_e, valid, _ = _site_conditional(
         s, R_feat, R_iid, J, h_eff, inv_temp,
-        sp_item_feat, sp_item_valid, sp_item_iid)
+        sp_state_feat, sp_state_valid, sp_state_iid, sp_track_vid,
+        pin_values=pin_values)
     choice = _gumbel_choice(neg_e, valid, rng)
-    team_values[rows, p, track] = choice
+    team_values[rows, p, track] = sp_track_vid[s, choice, track]
 
 
 def _replica_exchange_factored(
@@ -719,20 +785,23 @@ def _advance_bank_potts(
     h_eff: NDArray[np.float64],
     temps: NDArray[np.float64],
     item_id: NDArray[np.int64],
-    site: tuple[int, NDArray[np.int64], NDArray[np.bool_], NDArray[np.int64]],
+    site: tuple[
+        int, NDArray[np.int64], NDArray[np.bool_], NDArray[np.int64], NDArray[np.int64]
+    ],
     feat_lookup: NDArray[np.int64],
     rng: np.random.Generator,
     *,
     n_sweeps: int,
     swap_interval: int,
     p_reroll: float,
+    track_weights: NDArray[np.float64] | None = None,
 ) -> tuple[float, float]:
     """Advance the tempered persistent factored bank ``n_sweeps`` steps under the
     Potts move kernel: a random-scan mixture of species swap and value reroll
-    (reroll chosen with probability ``p_reroll``, on a random track), interleaving
-    replica exchange every ``swap_interval`` sweeps when tempered. Mirrors
-    ``_advance_bank``; returns (mean species-swap acceptance, mean
-    replica-exchange acceptance)."""
+    (reroll chosen with probability ``p_reroll``, then a track chosen weighted by
+    ``track_weights`` -- uniform when None), interleaving replica exchange every
+    ``swap_interval`` sweeps when tempered. Mirrors ``_advance_bank``; returns
+    (mean species-swap acceptance, mean replica-exchange acceptance)."""
     n_temps, n_chains, k = team_sites.shape
     n_tracks = team_values.shape[-1]
     flat_sites = team_sites.reshape(n_temps * n_chains, k)  # views: writes propagate
@@ -744,8 +813,8 @@ def _advance_bank_potts(
     accept_sweeps = 0
     for sw in range(n_sweeps):
         if rng.random() < p_reroll:
-            track = int(rng.integers(n_tracks))  # n_tracks=1 -> always 0
-            _potts_item_reroll_sweep(
+            track = int(rng.choice(n_tracks, p=track_weights))  # n_tracks=1 -> 0
+            _potts_track_reroll_sweep(
                 flat_sites, flat_vals, J, h_eff, item_id, site, feat_lookup, rng,
                 track=track, temp=temp_row)
         else:
@@ -774,6 +843,8 @@ def fit_boltzmann_ising(
     init_h: NDArray[np.floating] | None = None,
     species_of: list[str] | None = None,
     item_of: list[str | None] | None = None,
+    track_values: list[list[str | None]] | None = None,
+    track_names: list[str] | None = None,
     field_weight: float = 1.0,
     reg: str = BOLTZMANN_REG,
     reg_lambda: float = BOLTZMANN_REG_LAMBDA,
@@ -789,7 +860,7 @@ def fit_boltzmann_ising(
     t_max: float = BOLTZMANN_T_MAX,
     swap_interval: int = BOLTZMANN_SWAP_INTERVAL,
     potts_moves: bool = True,
-    p_reroll: float = 0.5,
+    p_reroll: float = POTTS_REROLL_PROB,
     adam_betas: tuple[float, float] = (0.9, 0.999),
     adam_eps: float = 1e-8,
     seed: int = BOLTZMANN_SEED,
@@ -822,7 +893,15 @@ def fit_boltzmann_ising(
         init_J, init_h: warm-start (e.g. the PL fit). Default zeros. `init_J` is
            also the frozen value for any coupling masked out by `support_mask`.
         species_of, item_of: uniqueness lookups; passed to the sampler. `None`
-           disables the corresponding uniqueness constraint.
+           disables the corresponding uniqueness constraint. `item_of` is the
+           cross-slot-unique track (item-exclusion in the Potts kernel).
+        track_values, track_names: the full attribute-track structure for the
+           factored Potts bank -- `track_values[t]` is the per-feature value list
+           of track `t` and `track_names[t]` its name (used to weight per-track
+           rerolls via `POTTS_TRACK_REROLL_WEIGHTS`). When None, the kernel runs
+           single-track on `item_of` (`track_names = ["item"]`), matching the
+           pre-ability behavior. The item track must appear here for a
+           species+item+... build; `item_of` still drives item-exclusion.
         field_weight: scales `h` inside the sampler's energy (`h_eff = fw*h`).
            Leave at 1.0 to match moments at full field strength.
         reg: "l2" or "l1". reg_lambda: regularization strength (toward zero).
@@ -925,21 +1004,34 @@ def fit_boltzmann_ising(
     use_potts = potts_moves and species_id is not None
     site = None
     feat_lookup = None
+    track_weights = None
     # Potts uses a FACTORED bank (team_sites + team_values); the atomic path
     # keeps the flat-index bank. Both seed from the flat `team` init above.
     team_sites = team_values = None
     if use_potts:
         assert species_id is not None and item_id is not None
-        site = _build_site_tables(species_id, item_id, V)
-        # feat_lookup[site, item-column] -> flat feat; at n_tracks=1 this is the
-        # site table itself. feat_to_val0[f] is f's item-column within its site,
-        # used to convert the flat init to factored form.
-        _S, sp_item_feat, sp_item_valid, _iid = site
-        feat_lookup = sp_item_feat
-        feat_to_val0 = np.zeros(V, dtype=np.int64)
-        feat_to_val0[sp_item_feat[sp_item_valid]] = np.nonzero(sp_item_valid)[1]
+        # The attribute tracks: the caller's full list, or the single item track
+        # (pre-ability behavior) when only `item_of` is given.
+        if track_values is None:
+            tvals: list[list[str | None]] = [item_of if item_of is not None else []]
+            tnames = ["item"]
+        else:
+            tvals = track_values
+            tnames = track_names if track_names is not None else [
+                f"track{i}" for i in range(len(tvals))]
+        # Dense per-feature per-track value ids (none_sentinel=False: every value,
+        # incl. an itemless "None", is a real state, so it indexes feat_lookup).
+        track_vids = np.stack(
+            [_group_ids(vals, V, none_sentinel=False) for vals in tvals], axis=1)
+        site = _build_site_tables(species_id, track_vids, item_id, V)
+        feat_lookup = _build_feat_lookup(species_id, track_vids, V)
+        # Reroll track chosen weighted by name (item >> ability), normalized.
+        track_weights = np.array(
+            [POTTS_TRACK_REROLL_WEIGHTS.get(n, 1.0) for n in tnames], dtype=np.float64)
+        track_weights = track_weights / track_weights.sum()
+        # Seed the factored bank from the flat init: site id + per-track value ids.
         team_sites = species_id[team]                       # (n_temps, n_chains, k)
-        team_values = feat_to_val0[team][..., None]         # (..., n_tracks=1)
+        team_values = track_vids[team]                      # (..., n_tracks)
         # Item-states of the SAME species never co-occur on a team (species
         # uniqueness), so their coupling is neither sampled nor constrained by
         # data. Freeze it at zero and drop it from the fit mask.
@@ -955,7 +1047,8 @@ def fit_boltzmann_ising(
             return _advance_bank_potts(
                 team_sites, team_values, J, h_eff, temps, item_id, site,
                 feat_lookup, rng,
-                n_sweeps=n, swap_interval=swap_interval, p_reroll=p_reroll)
+                n_sweeps=n, swap_interval=swap_interval, p_reroll=p_reroll,
+                track_weights=track_weights)
         return _advance_bank(
             team, J, h_eff, temps, species_id, item_id, rng,
             n_sweeps=n, swap_interval=swap_interval)

@@ -106,7 +106,7 @@ export function greedyOptimize(
       }
       // Per-unique-track value uniqueness against the rest of the team.
       for (let t = 0; t < tracks.length; t++) {
-        if (!tracks[t].unique) continue;
+        if (!tracks[t].crossSlotUnique) continue;
         const othersValues = new Set<string>();
         for (const j of others) {
           const v = trackValues[j][t];
