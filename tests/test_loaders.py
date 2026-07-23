@@ -9,6 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
+from k2dex.constants import MIN_TEAMS_PER_TOURNAMENT
 from k2dex.loaders import build_species_item_model, team_weights
 from k2dex.tournament_ingest import (
     Team,
@@ -99,14 +100,17 @@ class TestWeightedVocabCutoff(unittest.TestCase):
         return TournamentTeams(meta=meta, teams=teams, tournament_type=ttype)
 
     def test_single_heavy_team_cannot_mint_vocab(self) -> None:
-        # 64 old online teams (age 60d) + 32 recent in-person teams. At
-        # tau=20 / mult=4 each recent team carries weight ~2.9, above the
-        # cutoff of 2. One recent team carries a unique (ghost) pair; two old
-        # teams carry a (stale) pair whose weighted mass decays below 2.
-        old_teams = [self._team(self._rotating(t, 6)) for t in range(62)]
+        # Two tournaments each sized to clear the load-time team-count filter:
+        # `n` old online teams (age 60d) + `n` recent in-person teams. At
+        # tau=20 / mult=4 each recent team far outweighs an old one, so a pair
+        # carried only by two old teams decays well below the cutoff of 2 even
+        # though its raw count meets it. One recent team carries a unique (ghost)
+        # pair (raw=1, below cutoff); two old teams carry a (stale) pair.
+        n = MIN_TEAMS_PER_TOURNAMENT
+        old_teams = [self._team(self._rotating(t, 6)) for t in range(n - 2)]
         old_teams += [self._team(self._rotating(t, 5) + [("StaleMon", "Stale Item", "Stale Ability")])
                       for t in range(2)]
-        new_teams = [self._team(self._rotating(t, 6)) for t in range(31)]
+        new_teams = [self._team(self._rotating(t, 6)) for t in range(n - 1)]
         new_teams += [self._team(self._rotating(7, 5) + [("GhostMon", "Ghost Item", "Ghost Ability")])]
 
         cwd = os.getcwd()

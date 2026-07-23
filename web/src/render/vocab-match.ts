@@ -96,11 +96,12 @@ export interface ParsedMon {
 }
 
 // Showdown exports mega-evolved species under their mega forme name
-// ("Charizard-Mega-Y", "Blastoise-Mega"), but the corpus buckets them
-// under the base species — the held Mega Stone is the source of truth for
-// which forme (mirrors limitless_ingest.strip_mega_prefix, which collapses
-// the Limitless API's *prefix* form). Stripping the suffix on import lets
-// the slug bridge to the base species.
+// ("Charizard-Mega-Y", "Blastoise-Mega"). The corpus has no mega entries at
+// all — the ingest now drops any teamsheet that lists a mega forme (its
+// post-mega ability would poison the ability vocab; see
+// tournament_ingest.is_mega_forme). This paste bridge is a user convenience:
+// someone pasting a mega-named team almost certainly means the base forme the
+// corpus stores, so we strip the suffix to slug-match the base species.
 //
 // A few formes the corpus also collapses don't reduce by suffix-stripping
 // alone and need an explicit slug pre-map: "Eternal Flower Floette" is

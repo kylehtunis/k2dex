@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from k2dex.constants import MIN_TEAMS_PER_TOURNAMENT
 from k2dex.tournament_ingest import (
     CACHE_VERSION,
     Match,
@@ -23,6 +24,11 @@ from k2dex.tournament_ingest import (
     import_in_person_tournaments,
     normalize_bracket_forme,
 )
+
+# Fixture tournaments must clear the load-time size filter; size to the current
+# threshold (+ a margin) so a future MIN_TEAMS_PER_TOURNAMENT bump can't silently
+# drop every fixture below it.
+_FIXTURE_TEAMS = MIN_TEAMS_PER_TOURNAMENT + 6
 
 
 def _make_team(members: list[tuple[str, str | None, str]], placing=None) -> Team:
@@ -53,7 +59,7 @@ SAMPLE_TEAMS = [
         ("Incineroar", "Safety Goggles", "Intimidate"),
         ("Urshifu", "Choice Band", "Unseen Fist"), ("Farigiraf", "Leftovers", "Armor Tail"),
     ], placing=i + 1)
-    for i in range(40)
+    for i in range(_FIXTURE_TEAMS)
 ]
 
 
@@ -143,7 +149,7 @@ class TestLoadCachedTournaments(unittest.TestCase):
         payload = {
             "version": CACHE_VERSION,
             "meta": {"id": "old", "name": "Old Event", "date": "2025-12-01",
-                     "regulation": "M-A", "players": 40},
+                     "regulation": "M-A", "players": _FIXTURE_TEAMS},
             "teams": [
                 {"members": [list(m) for m in sorted(t.members, key=lambda m: m[0])],
                  "placing": t.placing, "record": [t.wins, t.losses, t.ties]}
@@ -194,7 +200,7 @@ class TestImportInPerson(unittest.TestCase):
                         for j in range(6)
                     ],
                 }
-                for i in range(40)
+                for i in range(_FIXTURE_TEAMS)
             ]
             with (reg_dir / "ev001_2026-05-30.json").open("w") as f:
                 json.dump(standings, f)
@@ -233,7 +239,7 @@ class TestImportInPerson(unittest.TestCase):
                         for j in range(6)
                     ],
                 }
-                for i in range(40)
+                for i in range(_FIXTURE_TEAMS)
             ]
             with (reg_dir / "0000187-Masters_2026_05_30.json").open("w") as f:
                 json.dump(standings, f)
@@ -406,7 +412,7 @@ class TestCacheVersionGate(unittest.TestCase):
             "version": version,
             "type": entry_type,
             "meta": {"id": f"old-{entry_type}", "name": "Old Event",
-                     "date": "2026-01-01", "regulation": "M-A", "players": 40},
+                     "date": "2026-01-01", "regulation": "M-A", "players": _FIXTURE_TEAMS},
             "teams": [
                 {"members": [list(m) for m in sorted(t.members, key=lambda m: m[0])],
                  "placing": t.placing, "record": [t.wins, t.losses, t.ties]}

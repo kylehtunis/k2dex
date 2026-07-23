@@ -34,7 +34,9 @@ in the cache record alongside (as richer per-member JSON entries) but are NOT
 part of the in-memory member tuple, so future attribute tracks can be added
 without another data re-fetch; nothing consumes them yet. A member missing an
 ability is malformed (no-ability is not a valid game state), so its whole team
-is dropped at parse time. Tournaments are immutable once finished, so the
+is dropped at parse time; likewise a member listed as a **mega forme** (a common
+teamsheet error) drops the team -- the base forme is the legal entry, and the
+mega's ability would otherwise contaminate the ability vocab. Tournaments are immutable once finished, so the
 cache is write-once / read-many. Each cache entry carries a ``type`` field
 (``"limitless"`` or ``"in-person"``) for provenance tracking; old cache
 files without this field default to ``"limitless"`` on read.
@@ -49,11 +51,15 @@ exposes no match-level data, so limitless entries have an empty match list.
 Cache format versioning: each payload includes a ``version`` field. Loading
 a cached file below the minimum version for its type returns None, forcing
 a re-fetch / re-import; old formats are not upgraded in place. Bump
-CACHE_VERSION whenever the parsing logic changes in a way that would yield
-different payloads than what's in cached files. The minimum is per-type
-(``_MIN_CACHE_VERSION``) so that a bump which only adds in-person data
-(e.g. v3's match lists) does not force a multi-hour re-walk of the
-Limitless API for entries whose payload would be byte-identical.
+CACHE_VERSION ONLY when the cache *structure* changes -- a new/renamed/removed
+field, a changed record shape -- i.e. when an old payload can no longer be read
+correctly. Do NOT bump for parsing *content* changes (e.g. tightening which
+teams are valid, renaming/normalizing a value): those re-apply naturally on the
+next manual re-ingest and don't make existing payloads unreadable, so a bump
+would only force an unnecessary multi-hour re-walk. The minimum is per-type
+(``_MIN_CACHE_VERSION``) so that a bump which only adds in-person data (e.g.
+v3's match lists) does not force a re-walk of the Limitless API for entries
+whose payload would be byte-identical.
 """
 
 from __future__ import annotations
@@ -85,8 +91,8 @@ API_BASE = "https://play.limitlesstcg.com/api"
 DEFAULT_GAME = "VGC"
 DEFAULT_CACHE_DIR = Path("tournaments_cache")
 MIN_PROTECT_PER_PLAYER = 1.0
-POLITE_SLEEP_SEC = 2.0
-CACHE_VERSION = 4  # bumped when payload schema changes; see module docstring
+POLITE_SLEEP_SEC = 5.0
+CACHE_VERSION = 4  # bumped when the cache STRUCTURE changes; see module docstring
                    # v2: each team carries placing + win/loss/tie record
                    # v3: in-person entries carry per-round match results
                    # v4: members are (species, item, ability) triples; each
@@ -216,8 +222,6 @@ class MatchObservation:
     date: str
     tournament_id: str
 
-
-_MEGA_FORME_SUFFIXES = (" X", " Y", " Z")
 
 # Species whose Limitless API name appears inconsistently and must be
 # collapsed to a single canonical form before entering the corpus vocab.
@@ -425,26 +429,25 @@ def normalize_bracket_forme(name: str) -> str:
     return name
 
 
-def strip_mega_prefix(species: str) -> str:
-    """Collapse 'Mega <Base>' / 'Mega <Base> X/Y/Z' species names down to
-    '<Base>'. Players are inconsistent about whether they prefix mega-evolved
-    species in the Limitless decklist; the held Mega Stone is the source of
-    truth for which mega forme. By stripping the prefix here we bucket
-    'Mega Blastoise @ Blastoisite' with 'Blastoise @ Blastoisite' (same
-    forme, same model feature), and 'Mega Charizard Y @ Charizardite Y' with
-    'Charizard @ Charizardite Y'. The trailing forme letter is stripped only
-    when the 'Mega ' prefix is present, to avoid mangling any non-mega species
-    name that happens to end in a stray letter. ' Z' is included for
-    future-proofing (e.g. 'Mega Lucario Z' -> 'Lucario').
+def is_mega_forme(species: str) -> bool:
+    """True if `species` names a mega-evolved forme.
+
+    A teamsheet listing the mega forme (rather than the legal base forme it
+    reverts to at team preview) is a common submission error. It used to be
+    collapsed to the base forme, but with the ability track that is no longer
+    safe: a mega's ability differs from the base forme's, so keeping the entry
+    would contaminate the ability vocab with the post-mega ability. Such teams
+    are now dropped as malformed (see `_parse_members`).
+
+    Matches the two forms the raw data uses after normalization: the
+    ``'Mega <Base>'`` prefix (``'Mega Charizard Y'``, ``'Mega Blastoise'``) and
+    a hyphen-token ``'Mega'`` (``'Charizard-Mega-Y'``). The check is on whole
+    tokens, never substrings, so genuine species that merely contain the letters
+    "mega" -- ``Meganium``, ``Yanmega`` -- are not flagged.
     """
-    if not species.startswith("Mega "):
-        return species
-    stripped = species[len("Mega "):]
-    for suffix in _MEGA_FORME_SUFFIXES:
-        if stripped.endswith(suffix):
-            stripped = stripped[: -len(suffix)]
-            break
-    return stripped
+    if species.lower().startswith("mega "):
+        return True
+    return any(part.lower() == "mega" for part in species.split("-"))
 
 
 def normalize_name(s: str | None) -> str | None:
@@ -567,8 +570,9 @@ def _parse_members(
     Returns None when the decklist isn't exactly TEAM_SIZE entries with distinct
     species (incomplete submissions, drops before lock-in, or the game's
     no-duplicate-species rule violated by malformed data), when any member is
-    missing an ability (no-ability is not a valid game state, so the team is
-    malformed), or when no member reports an item. Shared by `extract_teams` and
+    missing an ability (no-ability is not a valid game state) or is a mega forme
+    (a teamsheet error whose post-mega ability would poison the vocab), or when
+    no member reports an item. Shared by `extract_teams` and
     `extract_matches` so both produce the same valid-entry filtering -- match
     winner/loser indices stay aligned with the team list.
     """
@@ -578,7 +582,16 @@ def _parse_members(
         name = normalize_name(normalize_bracket_forme(raw_name))
         if not name:
             continue
-        name = strip_mega_prefix(name)
+        if is_mega_forme(name):
+            # A mega forme on the sheet is a teamsheet error (the base forme is
+            # the legal roster entry). Collapsing it to the base -- as we used to
+            # -- would poison the ability vocab with the post-mega ability, so
+            # the whole team is dropped as malformed (counted warning).
+            logger.warning(
+                "dropping team: member %r is a mega forme (teamsheet error)",
+                raw_name or name,
+            )
+            return None
         name = _SPECIES_ALIASES.get(name, name)
         item = normalize_name(mon.get("item"))
         if item in _ITEMLESS_SPELLINGS:

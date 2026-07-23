@@ -21,11 +21,13 @@ interface Opt {
 const portalStyles = { menuPortal: (base: Record<string, unknown>) => ({ ...base, zIndex: 9999 }) };
 
 /** Distinct values on track `t` among the slot's features that match every
- * *other* pinned track (a cascade, so a chosen combination always exists). In
- * first-appearance (vocab) order; a `null` value renders as an em dash. */
+ * *other* pinned track (a cascade, so a chosen combination always exists),
+ * sorted by usage (summed marginal mass over the features holding each value,
+ * descending) so popular items/abilities lead. A `null` value renders as an em
+ * dash. */
 function trackOptions(model: IsingModel, slot: RosterSlot, t: number): Opt[] {
-  const seen = new Set<string | null>();
-  const opts: Opt[] = [];
+  const massByValue = new Map<string | null, number>();
+  const order: (string | null)[] = [];
   for (const f of model.siteFeatures[slot.site]) {
     let ok = true;
     for (let o = 0; o < slot.trackValues.length; o++) {
@@ -36,19 +38,12 @@ function trackOptions(model: IsingModel, slot: RosterSlot, t: number): Opt[] {
     }
     if (!ok) continue;
     const v = model.trackValues[f][t];
-    if (seen.has(v)) continue;
-    seen.add(v);
-    opts.push({ label: v ?? "—", value: v ?? "" });
+    if (!massByValue.has(v)) order.push(v);
+    massByValue.set(v, (massByValue.get(v) ?? 0) + model.m[f]);
   }
-  return opts;
-}
-
-/** Number of distinct values a species carries on track `t` (ignoring pins) —
- * used to hide a picker for a degenerate track (one value). */
-function trackCardinality(model: IsingModel, site: number, t: number): number {
-  const seen = new Set<string | null>();
-  for (const f of model.siteFeatures[site]) seen.add(model.trackValues[f][t]);
-  return seen.size;
+  return order
+    .sort((a, b) => (massByValue.get(b) ?? 0) - (massByValue.get(a) ?? 0))
+    .map((v) => ({ label: v ?? "—", value: v ?? "" }));
 }
 
 export function RosterEditor({
@@ -104,19 +99,21 @@ export function RosterEditor({
     inst?.focus();
   });
 
-  // The visible track indices for a slot: active tracks, with track 0 always
-  // shown and later tracks only when the species is non-degenerate on them.
-  const visibleTracks = (site: number): number[] => {
+  // The visible track indices for a slot: every active track. A degenerate
+  // track (one value for this species) still shows its picker — a one-option
+  // dropdown — so the editor is consistent across species (some carry stray
+  // extra ability values from teamsheet contamination, and hiding the picker
+  // only for the clean ones was confusingly inconsistent).
+  const visibleTracks = (): number[] => {
     const out: number[] = [];
     for (let t = 0; t < model.tracks.length; t++) {
-      if (!trackActive(t)) continue;
-      if (t === 0 || trackCardinality(model, site, t) > 1) out.push(t);
+      if (trackActive(t)) out.push(t);
     }
     return out;
   };
 
-  const focusAfterSpecies = (slot: number, site: number) => {
-    pendingFocus.current = visibleTracks(site).length > 0
+  const focusAfterSpecies = (slot: number) => {
+    pendingFocus.current = visibleTracks().length > 0
       ? { kind: "track", slot }
       : slot + 1 < teamSize
         ? { kind: "species", slot: slot + 1 }
@@ -129,14 +126,14 @@ export function RosterEditor({
       onChange(roster.filter((_, i) => i !== slot));
     } else {
       // New species → tracks reset to unset (values are species-specific).
-      focusAfterSpecies(slot, site);
+      focusAfterSpecies(slot);
       onChange(roster.map((s, i) => (i === slot ? emptySlot(model, site) : s)));
     }
   };
   const setTrack = (slot: number, track: number, value: string | null) =>
     onChange(roster.map((s, i) => (i === slot ? setSlotTrack(s, track, value) : s)));
   const addSpecies = (site: number) => {
-    focusAfterSpecies(roster.length, site);
+    focusAfterSpecies(roster.length);
     onChange([...roster, emptySlot(model, site)]);
   };
 
@@ -146,7 +143,7 @@ export function RosterEditor({
       const slot = roster[i];
       const feat = slotFeature(model, slot);
       const spriteName = feat !== null ? model.vocab[feat] : model.sites[slot.site];
-      const tracks = visibleTracks(slot.site);
+      const tracks = visibleTracks();
       slots.push(
         <div className="lab-roster-slot" key={`slot-${i}`}>
           <SpriteBox name={spriteName} size={56} className="lab-roster-slot-sprite" />
