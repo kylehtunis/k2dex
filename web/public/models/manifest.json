@@ -13,17 +13,16 @@
       "regulation": "M-B",
       "type": "standard",
       "feature_dimensions": 2,
-      "V": 790,
-      "n_corpus_teams": 13390,
-      "latest_tournament_date": "2026-07-13T01:00:00.000Z",
+      "V": 888,
+      "n_corpus_teams": 15815,
+      "latest_tournament_date": "2026-08-02T05:00:00.000Z",
       "team_size": 6,
       "tracks": [
         {
           "name": "item",
           "unique": true
         }
-      ],
-      "new": true
+      ]
     },
     {
       "id": "reg-m-a",
@@ -31,9 +30,9 @@
       "regulation": "M-A",
       "type": "standard",
       "feature_dimensions": 2,
-      "V": 843,
-      "n_corpus_teams": 22037,
-      "latest_tournament_date": "2026-06-15T23:00:00.000Z",
+      "V": 736,
+      "n_corpus_teams": 17209,
+      "latest_tournament_date": "2026-06-14T14:00:00.000Z",
       "team_size": 6,
       "tracks": [
         {
