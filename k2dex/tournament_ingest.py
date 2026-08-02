@@ -80,7 +80,7 @@ API_BASE = "https://play.limitlesstcg.com/api"
 DEFAULT_GAME = "VGC"
 DEFAULT_CACHE_DIR = Path("tournaments_cache")
 MIN_PROTECT_PER_PLAYER = 1.0
-POLITE_SLEEP_SEC = 2.0
+POLITE_SLEEP_SEC = 5.0
 CACHE_VERSION = 3  # bumped when payload schema changes; see module docstring
                    # v2: each team carries placing + win/loss/tie record
                    # v3: in-person entries carry per-round match results
