@@ -12,37 +12,25 @@
       "display_name": "Reg. M-B",
       "regulation": "M-B",
       "type": "standard",
-      "V": 790,
-      "n_corpus_teams": 13390,
-      "latest_tournament_date": "2026-07-13T01:00:00.000Z",
+      "V": 1001,
+      "n_corpus_teams": 12573,
+      "latest_tournament_date": "2026-07-22T22:00:00.000Z",
       "team_size": 6,
       "tracks": [
         {
           "name": "item",
           "cardinality": 1,
           "crossSlotUnique": true,
+          "withinSlotUnique": false
+        },
+        {
+          "name": "ability",
+          "cardinality": 1,
+          "crossSlotUnique": false,
           "withinSlotUnique": false
         }
       ],
       "new": true
-    },
-    {
-      "id": "reg-m-a",
-      "display_name": "Reg. M-A",
-      "regulation": "M-A",
-      "type": "standard",
-      "V": 843,
-      "n_corpus_teams": 22037,
-      "latest_tournament_date": "2026-06-15T23:00:00.000Z",
-      "team_size": 6,
-      "tracks": [
-        {
-          "name": "item",
-          "cardinality": 1,
-          "crossSlotUnique": true,
-          "withinSlotUnique": false
-        }
-      ]
     }
   ]
 }
