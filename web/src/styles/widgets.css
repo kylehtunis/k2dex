@@ -323,6 +323,28 @@
   margin: -2px 0 8px 0;
 }
 
+/* Plain text/search input, matched to the react-select control so the two
+ * read as one control family. */
+.lab-search-input {
+  appearance: none;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--lab-rule);
+  border-radius: 3px;
+  background: var(--lab-panel);
+  color: var(--lab-ink);
+  font-family: var(--lab-font-sans);
+  font-size: 13px;
+}
+.lab-search-input::placeholder {
+  color: var(--lab-ink-muted);
+}
+.lab-search-input:focus {
+  outline: none;
+  border-color: var(--lab-accent);
+}
+
 /* react-select shell. The library is theme-able via the `styles` prop
  * but we'd rather drive everything from CSS vars. Setting
  * `classNamePrefix="lab-select"` on the component opens these hooks. */
@@ -422,7 +444,8 @@
   /* iOS Safari auto-zooms focused inputs under 16px. */
   .lab-select__control,
   .lab-select__input-container,
-  .lab-select__option {
+  .lab-select__option,
+  .lab-search-input {
     font-size: 16px !important;
   }
 }
@@ -444,6 +467,9 @@
   }
   .lab-select__control {
     min-height: 44px !important;
+  }
+  .lab-search-input {
+    min-height: 44px;
   }
   .lab-select__multi-value__remove {
     padding: 0 8px !important;

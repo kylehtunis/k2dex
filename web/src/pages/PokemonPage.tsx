@@ -4,8 +4,10 @@
 // links navigate only on modifier-click; a plain click matches the modal's
 // behavior (row expands, and an expanded modulation row opens the feature
 // modal via openSite rather than navigating the page). Prerendered per
-// species by scripts/prerender-routes.tsx from the default model; at runtime
-// it reflects the active model, and a species missing from it (e.g. after
+// species by scripts/prerender-routes.tsx from the default model. It uses
+// SpeciesDetail's "page" variant, which spans the full container width and
+// renders corpus appearances as completer-style team cards. At runtime it
+// reflects the active model, and a species missing from it (e.g. after
 // switching regulation) gets a friendly fallback.
 
 import { useMemo } from "react";
@@ -57,6 +59,7 @@ export function PokemonPage() {
                 Reg {model.regulation} · {model.nCorpusTeams.toLocaleString()} teams
               </div>
             }
+            variant="page"
             onDrillSite={(s) => featureModal?.openSite(s)}
             partnerHref={(sp) => `/pokemon/${speciesPageSlug(sp)}/`}
           />

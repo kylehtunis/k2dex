@@ -2,7 +2,8 @@
 // page content + status banner if the active model failed to load.
 //
 // Nav has two groups: left-aligned teambuilding tabs (Team Completer / Team Analysis /
-// Metagame Model) and a right-aligned Articles tab to signal it's a separate surface.
+// Metagame Model / Pokédex) and a right-aligned Articles tab to signal it's a
+// separate surface.
 // Model picker is hidden on /articles only (those pages carry their own).
 
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
@@ -15,6 +16,9 @@ const PRIMARY_TABS = [
   { path: "/completer/", label: "Team Completer" },
   { path: "/analysis/", label: "Team Analysis" },
   { path: "/meta/", label: "Metagame Model" },
+  // NavLink matches sub-paths by default, so this also lights up on
+  // /pokemon/<slug> species pages.
+  { path: "/pokemon/", label: "Pokédex" },
 ];
 const ARTICLES_TAB = { path: "/articles/", label: "Articles" };
 

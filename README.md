@@ -9,7 +9,7 @@ The core model is a **pairwise maximum-entropy (inverse Ising)** fit on tourname
 
 Models are organized by regulation (e.g. M-A, M-B) and discoverable via a `manifest.json` that the webapp fetches on boot. A collapsible model picker groups available models by regulation.
 
-The webapp surfaces these as a **team completer** (parallel-tempered MCMC or greedy sampling), **per-team diagnostics** (pairwise couplings, swap suggestions, nearest observed teams), and **format-wide statistics** (top teams, extreme couplings). An **Articles** section holds interactive explainers: "The Science of k2dex" walks through the math from first principles with toy simulations, and "Why Not Just Count?" compares the model head-to-head against the raw co-occurrence baseline every other teambuilder uses.
+The webapp surfaces these as a **team completer** (parallel-tempered MCMC or greedy sampling), **per-team diagnostics** (pairwise couplings, swap suggestions, nearest observed teams), and **format-wide statistics** (top teams, extreme couplings), plus a searchable **Pokédex** with a page per Pokemon (best teammates, item builds, and the real tournament teams it appears on). An **Articles** section holds interactive explainers: "The Science of k2dex" walks through the math from first principles with toy simulations, and "Why Not Just Count?" compares the model head-to-head against the raw co-occurrence baseline every other teambuilder uses.
 
 **[Live site →](https://kylehtunis.github.io/k2dex/)**
 

@@ -7,6 +7,11 @@
 // filter, and route-gated quick actions (completer: pin/exclude; analysis:
 // add). When `partnerHref` is given (the page), partner species names render
 // as real links so the species pages cross-link crawlably.
+//
+// `variant` picks how much room the surface has. "modal" is the compact
+// original (narrow panel, corpus appearances as one-line sprite strips);
+// "page" is the full-width species page, which renders corpus appearances as
+// the same stacked CompletionCards the completer uses.
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -19,6 +24,9 @@ import { SpriteBox } from "../render/Sprite";
 import { TeamMiniStrip } from "../render/cells";
 import { ScoreChip, SignedBar, StatStrip } from "../render/atoms";
 import { extractItem, formatPct, formatSigned } from "../render/format";
+import { teamObservables } from "../render/observables";
+import { percentileTitle } from "../render/corpusScore";
+import { CompletionCard, CompletionList } from "../completer/CompletionCard";
 import {
   featureCorpusAppearances,
   siteCorpusAppearances,
@@ -49,6 +57,8 @@ export interface SpeciesDetailProps {
   /** When set (the page), partner species names in the coupling lists render
    * as links to this href, so crawlers can walk the species graph. */
   partnerHref?: (species: string) => string;
+  /** Surface density: the compact modal/dock panel, or the full-width page. */
+  variant?: "modal" | "page";
 }
 
 export function SpeciesDetail({
@@ -61,11 +71,13 @@ export function SpeciesDetail({
   titleExtra,
   headingLevel = "h2",
   partnerHref,
+  variant = "modal",
 }: SpeciesDetailProps) {
-  const { teamCounts, speciesGraph } = useModel();
+  const { teamCounts, speciesGraph, corpusScoreIndex } = useModel();
 
   const species = model.sites[site];
   const Heading = headingLevel;
+  const isPage = variant === "page";
 
   // Item filter for corpus section only.
   const [corpusFeatureIdx, setCorpusFeatureIdx] = useState<number | null>(null);
@@ -112,7 +124,7 @@ export function SpeciesDetail({
       <header className="lab-feature-modal-head">
         {headExtra}
         <div className="lab-feature-modal-identity">
-          <SpriteBox name={species} size={64} />
+          <SpriteBox name={species} size={isPage ? 96 : 64} />
           <div className="lab-feature-modal-title-wrap">
             <Heading id={titleId} className="lab-feature-modal-title">
               {species}
@@ -184,6 +196,42 @@ export function SpeciesDetail({
             <p className="lab-feature-modal-empty">
               Not seen in any observed roster.
             </p>
+          ) : isPage ? (
+            <CompletionList>
+              {corpus.teams.map((t, i) => {
+                const obs = teamObservables(model, t.team, 1);
+                return (
+                  <CompletionCard
+                    key={i}
+                    fullTeam={t.team}
+                    freeIdxs={[]}
+                    rank={i + 1}
+                    freqPct={
+                      model.nCorpusTeams > 0
+                        ? (t.count / model.nCorpusTeams) * 100
+                        : undefined
+                    }
+                    score={obs.scoreRaw}
+                    scoreTitle={
+                      corpusScoreIndex
+                        ? percentileTitle(corpusScoreIndex.score, obs.scoreRaw)
+                        : null
+                    }
+                    coherence={obs.coherence}
+                    coherenceTitle={
+                      corpusScoreIndex
+                        ? percentileTitle(
+                            corpusScoreIndex.coherence,
+                            obs.coherence,
+                          )
+                        : null
+                    }
+                    corpus={{ delta: 0, count: t.count }}
+                    model={model}
+                  />
+                );
+              })}
+            </CompletionList>
           ) : (
             <ul className="lab-feature-corpus-list">
               {corpus.teams.map((t, i) => (

@@ -2090,17 +2090,51 @@ button.lab-comp-tile {
   color: var(--lab-accent);
 }
 
-/* The species page reuses the modal's section classes; the page wrapper keeps
-   the content readable on wide screens. */
-.lab-pokemon-page {
-  max-width: 760px;
-}
-.lab-pokemon-detail {
-  border: 1px solid var(--lab-rule);
-  background: var(--lab-paper, transparent);
+/* The species page reuses the modal's section classes, but it is a page, not a
+   panel: it spans the full container width and drops the modal's box chrome,
+   scroll container, and inner padding. */
+.lab-pokemon-detail .lab-feature-modal-head {
+  padding: 0 0 16px;
 }
 .lab-pokemon-detail .lab-feature-modal-body {
   overflow-y: visible;
+  overflow-x: visible;
+  padding: 18px 0 0;
+}
+.lab-pokemon-detail .lab-feature-modal-title {
+  font-size: 30px;
+}
+.lab-pokemon-detail .lab-feature-modal-identity {
+  gap: 18px;
+  margin-bottom: 16px;
+}
+/* Exactly two coupling lists, so pin the page to two columns rather than
+   letting auto-fit spread them across the full width. */
+.lab-pokemon-detail .lab-feature-modal-couplings {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 48px;
+}
+/* Corpus appearances render as completer cards here; a full-width card fits
+   all six mons in one row. */
+.lab-pokemon-detail .lab-comp-mon-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+@media (max-width: 900px) {
+  .lab-pokemon-detail .lab-feature-modal-couplings {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .lab-pokemon-detail .lab-comp-mon-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .lab-pokemon-detail .lab-feature-modal-title {
+    font-size: 24px;
+  }
+  .lab-pokemon-detail .lab-comp-mon-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .lab-pokemon-caption {
   font-family: var(--lab-font-sans);
@@ -2118,9 +2152,24 @@ a.lab-feature-coupling-name:hover .lab-comp-mon-name {
   text-decoration: underline;
 }
 
+.lab-pokedex-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+.lab-pokedex-search .lab-search-input {
+  flex: 0 1 320px;
+}
+.lab-pokedex-count {
+  font-family: var(--lab-font-mono);
+  font-size: 11px;
+  color: var(--lab-ink-muted);
+}
+
 .lab-pokedex-grid {
   list-style: none;
-  margin: 18px 0 0;
+  margin: 14px 0 0;
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
