@@ -3,12 +3,13 @@
 //   §01  Top teams                 (top META_TOP_TEAMS by corpus count)
 //   §02  Extreme couplings         (top META_TOP_PAIRS species pairs by APC-corrected synergy)
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { META_TOP_PAIRS, META_TOP_TEAMS } from "../constants";
 import { useModel } from "../state/ModelContext";
 import { PageTitle, SectionLabel } from "../render/atoms";
 import {
   SpeciesCouplingsTable,
+  type MetaAttribute,
   type SpeciesCouplingRow,
 } from "../meta/ExtremeCouplingsTable";
 import { TopTeamsTable } from "../meta/TopTeamsTable";
@@ -46,6 +47,11 @@ function buildSpeciesCouplingRows(
 
 export function MetaPage() {
   const { model, teamCounts, speciesGraph, corpusScoreIndex, status } = useModel();
+
+  // Attribute of interest for the §02 drill-down. Owned here (not by a table or
+  // a row) so it is sticky: switching which pair is expanded, or which of the
+  // two tables, keeps the chosen breakdown. Item (track 0) is the default.
+  const [attribute, setAttribute] = useState<MetaAttribute>(0);
 
   const teams = useMemo(() => {
     if (!model || !teamCounts) return null;
@@ -109,6 +115,8 @@ export function MetaPage() {
                 maxSynergy={speciesCouplings.maxSynergy}
                 graph={speciesGraph}
                 model={model}
+                attribute={attribute}
+                onAttributeChange={setAttribute}
               />
             </div>
             <div>
@@ -120,6 +128,8 @@ export function MetaPage() {
                 maxSynergy={speciesCouplings.maxSynergy}
                 graph={speciesGraph}
                 model={model}
+                attribute={attribute}
+                onAttributeChange={setAttribute}
               />
             </div>
           </div>

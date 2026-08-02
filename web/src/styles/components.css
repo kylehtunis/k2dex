@@ -2050,6 +2050,73 @@ button.lab-comp-tile {
   overflow-wrap: anywhere;
 }
 
+/* ----- /meta §02 hierarchical drill-down ----- */
+
+/* Attribute-of-interest radio, rendered above the item-modulation table. */
+.lab-attr-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.lab-attr-picker-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--lab-ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.lab-attr-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--lab-ink);
+  cursor: pointer;
+}
+.lab-attr-option input {
+  accent-color: var(--lab-accent);
+  cursor: pointer;
+}
+
+/* An item-pair row that can open its attribute tier. */
+.lab-mod-caret {
+  width: 14px;
+  padding-right: 4px !important;
+  color: var(--lab-ink-muted);
+  font-size: 10px;
+  line-height: 1;
+}
+.lab-mod-drillable:hover {
+  background: var(--lab-surface-hover, rgba(128, 128, 128, 0.06));
+}
+.lab-mod-pair-row.lab-expanded {
+  background: var(--lab-surface-hover, rgba(128, 128, 128, 0.06));
+}
+.lab-attr-detail > td {
+  padding: 0 0 6px 18px !important;
+}
+.lab-attr-table {
+  width: 100%;
+  font-size: 12px;
+  border-collapse: collapse;
+  border-left: 2px solid var(--lab-border);
+}
+.lab-attr-table td {
+  padding: 3px 8px 3px 8px;
+  vertical-align: middle;
+}
+.lab-attr-table td.num {
+  text-align: right;
+  font-family: var(--lab-font-mono);
+}
+.lab-attr-empty {
+  font-size: 12px;
+  color: var(--lab-ink-muted);
+  padding: 2px 0 4px 8px;
+}
+
 /* ----- Feature modal: item-shift annotation ----- */
 .lab-feature-item-shift {
   font-family: var(--lab-font-mono);
