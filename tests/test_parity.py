@@ -212,7 +212,7 @@ class TestParity(unittest.TestCase):
                     )
 
     def test_species_to_slug_cases(self) -> None:
-        """Sprite-slug rules duplicated in web/src/render/sprite.ts. Any
+        """Sprite-slug rules duplicated in web/src/render/sprite-url.ts. Any
         rule change must touch both sides + this gate."""
         for case in self.baseline["slugs"]:
             with self.subTest(input=case["input"]):

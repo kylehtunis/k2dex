@@ -1,6 +1,6 @@
 // Team analysis page.
 //
-// Layout mirrors app.py:_render_analysis:
+// Layout:
 //   PageTitle
 //   §01  Team       (slot strip + multiselect, exactly TEAM_SIZE mons)
 //   §02  Observables strip (Score, Coherence, Corpus)
@@ -114,14 +114,16 @@ export function AnalysisPage() {
     [teamIdxs],
   );
   useEffect(() => {
-    if (!model || teamIdxs.length === 0) return;
+    if (!model) return;
     const incoming = searchParams.get("t");
     if (incoming && incoming !== appliedTokenRef.current) return;
-    const token = encodeCore(modelId, teamIdxs, model);
-    if (token === searchParams.get("t")) return;
+    // An emptied team clears the token instead of leaving the old one in the
+    // URL, which a reload would otherwise decode back into the page.
+    const token = teamIdxs.length > 0 ? encodeCore(modelId, teamIdxs, model) : "";
+    if (token === (searchParams.get("t") ?? "")) return;
     const handle = setTimeout(() => {
       appliedTokenRef.current = token;
-      setSearchParams({ t: token }, { replace: true });
+      setSearchParams(token ? { t: token } : {}, { replace: true });
     }, 300);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -150,8 +152,8 @@ export function AnalysisPage() {
     [teamIdxs],
   );
 
-  // Phase 3 uniqueness validation (inert under Species vocab — species
-  // are unique by construction and itemOf is all-null there).
+  // Species/item uniqueness validation (inert under a species-only model,
+  // where species are unique by construction and itemOf is all-null).
   const uniquenessError = useMemo<string | null>(() => {
     if (!model) return null;
     const seenSp = new Map<string, string>();
@@ -175,21 +177,29 @@ export function AnalysisPage() {
 
   const teamComplete = teamIdxs.length === TEAM_SIZE;
 
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<boolean | "failed">(false);
   const handleCopyPaste = useCallback(() => {
     if (!model || teamIdxs.length === 0) return;
     const paste = buildPartialPaste(teamIdxs, model.vocab, speciesToSlug);
-    navigator.clipboard.writeText(paste).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+    // Clipboard access can be denied (insecure context, permissions); surface
+    // that instead of leaving an unhandled rejection and a stuck label.
+    navigator.clipboard.writeText(paste).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      },
+      () => {
+        setCopied("failed");
+        setTimeout(() => setCopied(false), 1500);
+      },
+    );
   }, [model, teamIdxs]);
 
   // Heavy diagnostics — only compute when the team is valid + complete.
   // Everything is scored on the fitted model as-is (fieldWeight = 1).
   const diagnostics = useMemo(() => {
     if (!model || !teamComplete || uniquenessError) return null;
-    const obs = teamObservables(model, teamSorted, 1);
+    const obs = teamObservables(model, teamSorted);
     const pjRows = pairwiseJRows(teamSorted, model.vocab, model.J, model.V);
     const swaps = rankSingleSwaps(model, {
       team: teamSorted,
@@ -203,7 +213,7 @@ export function AnalysisPage() {
       fieldWeight: 1,
       maxSwaps: GREEDY_MAX_SWAPS,
     });
-    const finalObs = teamObservables(model, greedy.finalTeam, 1);
+    const finalObs = teamObservables(model, greedy.finalTeam);
     const finalSumJ = intraTeamSumJ(model.J, model.V, greedy.finalTeam);
     return { obs, pjRows, swaps, greedy, finalObs, finalSumJ };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -259,7 +269,11 @@ export function AnalysisPage() {
           onClick={handleCopyPaste}
           disabled={!teamComplete}
         >
-          {copied ? "Copied!" : "Copy pokepaste"}
+          {copied === "failed"
+            ? "Copy failed"
+            : copied
+              ? "Copied!"
+              : "Copy pokepaste"}
         </button>
         <button
           type="button"
@@ -308,8 +322,8 @@ export function AnalysisPage() {
                 sub: "intra-team coupling",
                 tooltip:
                   "Σ J_ij over the C(team_size,2) unordered pairs. Positive " +
-                  "= synergistic archetype; negative = balance team the " +
-                  "pairwise model can't see what makes it work." +
+                  "= a synergistic archetype; negative = a balance team, " +
+                  "whose strengths the pairwise model can't see." +
                   (corpusScoreIndex
                     ? ` ${percentileTitle(corpusScoreIndex.coherence, diagnostics.obs.coherence)}.`
                     : ""),

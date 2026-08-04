@@ -94,6 +94,18 @@ export function Pokemon() {
         high energy, but it's good to enforce it explicitly).
       </p>
       <p>
+        Because a feature here is a <i>pair</i>, a species together with its held
+        item, the real sampler splits that swap into two kinds of move. One
+        proposes exchanging a species on the team for one off it, scoring the
+        proposal against every item that species could plausibly hold rather than
+        a single build, then drawing the item it actually arrives with. The other
+        leaves the six species alone and just rerolls one of their items. Picking
+        randomly between the two on each step explores which Pokémon belong on
+        the team and which items they should hold as separate questions, which
+        mixes far better than treating every species and item combination as its
+        own indivisible spin.
+      </p>
+      <p>
         The figure below shows how the couplings in the fitted model connect the
         top species together. Use the slider to hide the weaker couplings and
         watch the structure of the strongest relationships emerge.

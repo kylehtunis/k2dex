@@ -1,7 +1,7 @@
 // Number + vocab-string formatting helpers.
 //
-// Mirrors the private `_fmt_signed` / `_fmt_pct` and the public
-// `extract_species` / `extract_item` from rendering_html.py.
+// Webapp-only apart from the vocab-string shape itself, which is produced by
+// `loaders.format_pair` on the Python side.
 
 export function formatSigned(value: number, decimals = 3): string {
   const sign = value >= 0 ? "+" : "";
@@ -12,14 +12,14 @@ export function formatPct(value: number, decimals = 1): string {
   return `${(value * 100).toFixed(decimals)}%`;
 }
 
-/** Pull the species name out of a Phase 3 vocab string. Phase 3 uses
- * "Species @ Item"; bare species for itemless mons. */
+/** Pull the species name out of a vocab string, which is "Species @ Item"
+ * for a feature carrying an item and a bare species for an itemless one. */
 export function extractSpecies(feature: string): string {
   const i = feature.indexOf(" @ ");
   return i < 0 ? feature : feature.slice(0, i);
 }
 
-/** Pull the item out of a Phase 3 vocab string, or null if itemless. */
+/** Pull the item out of a vocab string, or null if itemless. */
 export function extractItem(feature: string): string | null {
   const i = feature.indexOf(" @ ");
   return i < 0 ? null : feature.slice(i + 3);
@@ -33,7 +33,11 @@ export function formatPair(species: string, item: string | null): string {
 }
 
 /** Partial pokepaste: one line per mon (species slug, or slug @ Item),
- * blank-line separated. Uses canonical Smogon slugs for species names. */
+ * blank-line separated. Uses canonical Smogon slugs for species names.
+ *
+ * An itemless mon is written with no item clause at all. Internally "None" is
+ * an ordinary item value, but this is an export boundary: Showdown's importer
+ * rejects a literal `@ None` item line. */
 export function buildPartialPaste(
   teamIdxs: readonly number[],
   vocab: readonly string[],
@@ -46,7 +50,7 @@ export function buildPartialPaste(
       const species = extractSpecies(entry);
       const item = extractItem(entry);
       const slug = slugFn(species);
-      return item !== null ? `${slug} @ ${item}` : slug;
+      return item !== null && item !== "None" ? `${slug} @ ${item}` : slug;
     })
     .join("\n\n");
 }

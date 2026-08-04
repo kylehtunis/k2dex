@@ -26,7 +26,6 @@ function ModelOption({
 }) {
   return (
     <button
-      key={m.id}
       type="button"
       role="option"
       aria-selected={isActive}
@@ -106,6 +105,10 @@ export function ModelPicker() {
     }
     setModelId(m.id);
     setOpen(false);
+    // Hard reload, deliberately. Page state (rosters, analysis teams, run
+    // results) is stored as vocab indices, which mean something different in
+    // the new model; reloading is what guarantees nothing survives half-
+    // translated. Query params are dropped for the same reason.
     const base = import.meta.env.BASE_URL.replace(/\/$/, "");
     window.location.replace(base + pathname);
   }

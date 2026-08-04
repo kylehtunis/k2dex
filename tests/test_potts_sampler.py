@@ -295,15 +295,18 @@ class TestPottsFitPath(unittest.TestCase):
         # Same-species couplings must remain frozen at zero.
         same = sid[:, None] == sid[None, :]
         np.testing.assert_allclose(J[same], 0.0, atol=1e-12)
-        # Independent check against the atomic sampler used by estimate_moments.
+        # End-to-end check: re-estimate the fitted model's moments and compare
+        # to the data. NOT independent of the kernel under test -- estimate_moments
+        # runs parallel_tempered_mcmc, which is itself the Potts kernel, so a bug
+        # shared by both paths would pass here. The independent gate is
+        # test_matches_exact_moments (Potts vs brute-force enumeration); this is
+        # the looser end-to-end sanity check, stacking sampler MC noise on top of
+        # the finite-corpus mean.
         res = estimate_moments(
             J, h, k, species_of=_SPECIES, item_of=_ITEM,
             n_runs=5, n_steps=15_000, burn_in=4_000, thin=20, seed=9)
         assert res is not None
         m_hat, _, _ = res
-        # A cross-sampler sanity check, not the tight gate: it stacks the atomic
-        # sampler's MC noise on top of the finite-corpus mean, so it is looser
-        # than the Potts-vs-exact gate (test_matches_exact_moments).
         m_data = X.mean(axis=0)
         self.assertLess(np.abs(m_hat - m_data).max(), 0.08)
 

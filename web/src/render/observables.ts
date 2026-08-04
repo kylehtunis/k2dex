@@ -2,7 +2,7 @@
 //
 // Shared between /completer (post-run results) and /analysis (per-team
 // diagnostics). Mirrors rendering.intra_team_sum_j + pairwise_j_rows
-// and the inline observable math in app.py:_render_completer.
+// and the inline observable math the completer displays.
 //
 // Sign convention: scores are sign-flipped relative to the Hamiltonian
 // space H(s) so higher = better team. Coherence is the pure J piece
@@ -32,7 +32,6 @@ export function intraTeamSumJ(
 }
 
 export interface Observables {
-  scoreAdj: number;
   scoreRaw: number;
   coherence: number;
 }
@@ -40,15 +39,10 @@ export interface Observables {
 export function teamObservables(
   model: IsingModel,
   team: readonly number[],
-  fieldWeight: number,
 ): Observables {
   const hDot = teamHSum(model.h, team);
   const coherence = intraTeamSumJ(model.J, model.V, team);
-  return {
-    scoreAdj: fieldWeight * hDot + coherence,
-    scoreRaw: hDot + coherence,
-    coherence,
-  };
+  return { scoreRaw: hDot + coherence, coherence };
 }
 
 export interface PairwiseJRow {

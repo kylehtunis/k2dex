@@ -52,6 +52,13 @@ export function Modal({ onClose, labelledBy, variant = "modal", children }: Moda
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
+        // An open dropdown owns Escape: it should close the menu, not the whole
+        // panel. This listener is on `document` in capture phase, so without
+        // the bail it fires before react-select's own handler ever runs (React
+        // delegates from the root container, a descendant of document) and the
+        // panel closes with the menu still logically open. react-select only
+        // renders `__menu` while the menu is open, in a portal.
+        if (document.querySelector(".lab-select__menu")) return;
         e.stopPropagation();
         onClose();
         return;

@@ -24,9 +24,9 @@ export interface CouplingEdge {
 }
 
 export interface SpeciesRep {
-  /** Display species name (extracted from vocab string for Phase 3). */
+  /** Display species name, extracted from the vocab string. */
   species: string;
-  /** Item string for Phase 3 features, null for Phase 2 / itemless features. */
+  /** Item string, null for an itemless feature or a species-only model. */
   item: string | null;
   vocabIdx: number;
   m: number;
@@ -107,8 +107,8 @@ export function CouplingGraph({
   const spriteSize = nodeRadius * 2.2;
   const viewRadius = viewSize / 3;
 
-  // One rep per vocab feature. For Phase 2 each rep is a bare species; for
-  // Phase 3 each rep is a distinct (species, item) build. `topSpecies` caps
+  // One rep per vocab feature: a bare species under a species-only model, a
+  // distinct (species, item) build otherwise. `topSpecies` caps
   // the candidate pool to the most-marginal features.
   const reps = useMemo<SpeciesRep[]>(() => {
     const all: SpeciesRep[] = [];

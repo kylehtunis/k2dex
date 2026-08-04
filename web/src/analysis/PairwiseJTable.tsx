@@ -1,6 +1,5 @@
 // §03 of /analysis: C(6,2) = 15 pairwise couplings sorted by |J|.
 //
-// Mirrors app.py:_render_pairwise_j_html.
 
 import { PairCell } from "../render/cells";
 import { ScoreChip, SignedBar } from "../render/atoms";
@@ -10,9 +9,11 @@ export interface PairwiseJTableProps {
   rows: readonly PairwiseJRow[];
 }
 
-const SIGNED_BAR_MAX = 2.5;
-
 export function PairwiseJTable({ rows }: PairwiseJTableProps) {
+  // Scale the bars to the strongest coupling on screen, like every other
+  // signed-bar table. A fixed cap would flatten any pair beyond it, making a
+  // very strong coupling indistinguishable from a merely strong one.
+  const barMax = Math.max(...rows.map((r) => Math.abs(r.jValue)), 1e-9);
   return (
     <table className="lab-comp-table lab-table-pairs">
       <thead>
@@ -32,7 +33,7 @@ export function PairwiseJTable({ rows }: PairwiseJTableProps) {
             </td>
             <td className="num" data-label="coupling">
               <div className="lab-coupling-val">
-                <SignedBar value={r.jValue} maxValue={SIGNED_BAR_MAX} width={80} />
+                <SignedBar value={r.jValue} maxValue={barMax} width={80} />
                 <ScoreChip value={r.jValue} />
               </div>
             </td>

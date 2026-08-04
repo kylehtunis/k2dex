@@ -8,6 +8,7 @@ import type { IsingModel } from "../types";
 import { factoredFromSpeciesItem, unpackLowerTriangle } from "../model";
 import {
   buildSiteTables,
+  pottsMoveSets,
   siteConditional,
   pottsSpeciesSwap,
   pottsTrackReroll,
@@ -64,12 +65,24 @@ function speciesOnlyModel(): IsingModel {
   return buildModel(species, items, 4);
 }
 
-function ctxFor(model: IsingModel, fixed: number[], excluded: number[]): PottsContext {
+function ctxFor(
+  model: IsingModel,
+  fixed: number[],
+  excluded: number[],
+  opts: { lockedSlots?: ReadonlySet<number>; anchorStrength?: number } = {},
+): PottsContext {
   const tables = buildSiteTables(model);
   const avail = new Uint8Array(model.V).fill(1);
   for (const e of excluded) avail[e] = 0;
   for (const f of fixed) avail[f] = 0;
-  return { fixed, avail, tables };
+  const nFreeSlots = model.teamSize - fixed.length;
+  return {
+    fixed,
+    avail,
+    tables,
+    ...opts,
+    ...pottsMoveSets(tables, avail, nFreeSlots, opts.lockedSlots),
+  };
 }
 
 function assertValid(team: number[], model: IsingModel) {

@@ -1,7 +1,7 @@
 // Meta data page:
 //   PageTitle
 //   §01  Top teams                 (top META_TOP_TEAMS by corpus count)
-//   §02  Extreme couplings         (top META_TOP_PAIRS species pairs by APC-corrected synergy)
+//   §02  Extreme couplings         (top META_TOP_PAIRS species pairs by signed synergy)
 
 import { useMemo } from "react";
 import { META_TOP_PAIRS, META_TOP_TEAMS } from "../constants";
@@ -22,9 +22,7 @@ function buildSpeciesCouplingRows(
   const all: SpeciesCouplingRow[] = [];
   for (let i = 0; i < S; i++) {
     for (let j = i + 1; j < S; j++) {
-      const synergy = graph.synergy[i * S + j];
-      const corrected = graph.corrected[i * S + j];
-      all.push({ a: i, b: j, synergy, corrected });
+      all.push({ a: i, b: j, synergy: graph.synergy[i * S + j] });
     }
   }
   let maxSynergy = 0;
@@ -97,7 +95,7 @@ export function MetaPage() {
           <SectionLabel
             num="02"
             title="Extreme couplings"
-            right={`top ${META_TOP_PAIRS} each direction · ranked by species synergy (APC-corrected)`}
+            right={`top ${META_TOP_PAIRS} each direction · ranked by species synergy`}
           />
           <div className="lab-split-pair">
             <div>

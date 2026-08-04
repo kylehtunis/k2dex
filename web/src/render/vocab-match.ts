@@ -40,9 +40,11 @@ export interface ResolveResult {
 
 /** Resolve a (speciesSlug, itemSlug) pair to a vocab index.
  * Unknown species -> idx:null + warning. Item given but unmatched ->
- * best-marginal candidate for that species + a gentle warning. Itemless
- * models/candidates -> best candidate. `labels` supply friendly display
- * names for the messages (fall back to the slugs). */
+ * idx:null + warning; never a different build, because silently swapping in
+ * an item the user didn't ask for means they analyze a team they didn't
+ * paste. No item given -> best-marginal candidate for that species.
+ * `labels` supply friendly display names for the messages (fall back to the
+ * slugs). */
 export function resolveFeature(
   slugIndex: SlugIndex,
   model: IsingModel,
@@ -53,7 +55,10 @@ export function resolveFeature(
   const candidates = slugIndex.bySpecies.get(speciesSlug);
   const speciesLabel = labels?.species ?? speciesSlug;
   if (!candidates || candidates.length === 0) {
-    return { idx: null, warning: `${speciesLabel} is not in this model — skipped.` };
+    return {
+      idx: null,
+      warning: `${speciesLabel} is not in this model, so it was skipped.`,
+    };
   }
   if (itemSlug) {
     for (const i of candidates) {
@@ -63,15 +68,9 @@ export function resolveFeature(
       }
     }
     const itemLabel = labels?.item ?? itemSlug;
-    if (candidates.length === 1) {
-      return {
-        idx: candidates[0],
-        warning: null,
-      };
-    }
     return {
       idx: null,
-      warning: `${speciesLabel} @ ${itemLabel} is not in this model — skipped.`,
+      warning: `${speciesLabel} @ ${itemLabel} is not in this model, so it was skipped.`,
     };
   }
   return { idx: candidates[0], warning: null };
@@ -182,6 +181,10 @@ export function matchPaste(model: IsingModel, text: string): MatchResult {
   const idxs: number[] = [];
   const warnings: string[] = [];
   const seenSpecies = new Set<string>();
+  // Held items are unique per team (VGC item clause), and every sampler here
+  // treats a duplicate as a forbidden state — so a paste carrying one must not
+  // load as a scoreable team. Skip the later mon and say why.
+  const seenItems = new Map<string, string>();
   for (const p of parsed) {
     if (idxs.length >= TEAM_SIZE) break;
     const r = resolveFeature(slugIndex, model, p.speciesSlug, p.itemSlug, {
@@ -193,6 +196,17 @@ export function matchPaste(model: IsingModel, text: string): MatchResult {
       continue;
     }
     if (seenSpecies.has(p.speciesSlug)) continue;
+    const item = model.itemOf[r.idx];
+    if (item !== null) {
+      const holder = seenItems.get(item);
+      if (holder !== undefined) {
+        warnings.push(
+          `${p.rawSpecies} also holds ${item} (${holder} has it), so it was skipped.`,
+        );
+        continue;
+      }
+      seenItems.set(item, p.rawSpecies);
+    }
     seenSpecies.add(p.speciesSlug);
     idxs.push(r.idx);
     if (r.warning) warnings.push(r.warning);

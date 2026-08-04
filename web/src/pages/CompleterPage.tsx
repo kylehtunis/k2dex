@@ -1,6 +1,6 @@
 // Team completer page.
 //
-// Layout mirrors app.py:_render_completer:
+// Layout:
 //   PageTitle  — eyebrow + h1 + corpus caption
 //   §01        — Starting roster (slot strip)
 //   §02        — Excluded row (when non-empty)
@@ -28,6 +28,10 @@ import {
   GREEDY_MAX_SWAPS,
   PT_BURN_IN,
   PT_HOT_T,
+  PT_LADDER_RANGE,
+  PT_RUNS_RANGE,
+  PT_SWAP_INTERVAL_RANGE,
+  PT_SWEEPS_RANGE,
   TEAM_SIZE,
   TEMPERATURE_OPTIONS,
   TOP_COMPLETIONS,
@@ -59,7 +63,7 @@ import {
   resolveSpeciesSlug,
 } from "../render/vocab-match";
 import { decodeCompleter, encodeCompleter } from "../render/shareLink";
-import { runPT, type PTDistEntry } from "../completer/ptDriver";
+import { runPT, type PTDistEntry, type PTRun } from "../completer/ptDriver";
 
 /** Fingerprint of the inputs that produced a run. Used to decide
  * whether the next button click is a fresh "Sample" (inputs changed)
@@ -256,6 +260,8 @@ export function CompleterPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const elapsedTimer = useRef<number | null>(null);
+  // The in-flight PT run, so a model switch or an unmount can cancel it.
+  const ptRun = useRef<PTRun | null>(null);
 
   // Clear per-model run state when the active model changes. Done during
   // render (not in an effect) so it can't clobber the decode effect that
@@ -268,6 +274,12 @@ export function CompleterPage() {
     const leavingLoadedModel = prevRunPhase.current !== "—";
     prevRunPhase.current = currentModelId;
     if (leavingLoadedModel) {
+      // Cancel first: an in-flight run's results are indices into the old
+      // model's vocab, so letting it land would repopulate the state we're
+      // about to clear with features from the wrong model.
+      ptRun.current?.cancel();
+      ptRun.current = null;
+      setRunning(false);
       setRunState(null);
       setErrorMsg(null);
       setSeedCounter(1);
@@ -290,6 +302,9 @@ export function CompleterPage() {
         window.clearInterval(elapsedTimer.current);
         elapsedTimer.current = null;
       }
+      // Don't leave a worker saturating a core after the page is gone.
+      ptRun.current?.cancel();
+      ptRun.current = null;
     };
   }, [currentModelId]);
 
@@ -407,15 +422,18 @@ export function CompleterPage() {
     ptLadder, ptSweeps, ptSwapInterval, seedForUrl,
   ]);
   useEffect(() => {
-    if (!shareParams) return;
     if (searchParams.get("t") && searchParams.toString() !== appliedRef.current) {
       return; // incoming link not yet decoded
     }
-    const next = shareParams.toString();
+    // A null shareParams means there is nothing left to share, which must
+    // *clear* the URL rather than leave the old token standing: otherwise
+    // "Clear all" empties the roster while the address bar still describes it,
+    // and a reload decodes the pins the user just deleted back into the page.
+    const next = shareParams ? shareParams.toString() : "";
     if (next === searchParams.toString()) return;
     const handle = setTimeout(() => {
       appliedRef.current = next;
-      setSearchParams(shareParams, { replace: true });
+      setSearchParams(shareParams ?? {}, { replace: true });
     }, 300);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -507,7 +525,9 @@ export function CompleterPage() {
       ptSweeps,
       ptSwapInterval,
     };
-    runPT(effectiveModel, {
+    // Supersede any run still in flight so only the newest one can land.
+    ptRun.current?.cancel();
+    const run = runPT(effectiveModel, {
       fixed: fixedIdxs,
       fixedSites,
       excluded,
@@ -524,7 +544,13 @@ export function CompleterPage() {
       // Species-only: don't reroll the item, marginalize it into species sets.
       pReroll: speciesOnly ? 0 : undefined,
       projectToSites: speciesOnly,
-    }).then((r) => {
+    });
+    ptRun.current = run;
+    run.promise.then((r) => {
+      // A cancelled run was superseded by a newer run, a model switch, or an
+      // unmount; each of those already owns the state, so stay out of it.
+      if (r.ok === false && r.cancelled) return;
+      ptRun.current = null;
       stopTimer();
       const elapsedFinal = performance.now() - t0;
       setElapsedMs(elapsedFinal);
@@ -638,7 +664,7 @@ export function CompleterPage() {
           <div style={{ marginTop: 8 }}>
             <label className="lab-form-label">Excluded attributes</label>
             <div className="lab-form-caption">
-              All attributes are active by default. Excluded attributes are not considered by the when completing the team.
+              All attributes are active by default. Excluded attributes are not considered when completing the team.
             </div>
             <div className="lab-attr-toggles">
               {model.tracks.map((t, ti) => (
@@ -722,8 +748,8 @@ export function CompleterPage() {
               <input
                 type="range"
                 className="lab-slider"
-                min={1}
-                max={25}
+                min={PT_RUNS_RANGE[0]}
+                max={PT_RUNS_RANGE[1]}
                 step={1}
                 value={ptRuns}
                 onChange={(e) => setCompleter({ ptRuns: Number(e.target.value) })}
@@ -741,8 +767,8 @@ export function CompleterPage() {
               <input
                 type="range"
                 className="lab-slider"
-                min={3}
-                max={15}
+                min={PT_LADDER_RANGE[0]}
+                max={PT_LADDER_RANGE[1]}
                 step={1}
                 value={ptLadder}
                 onChange={(e) => setCompleter({ ptLadder: Number(e.target.value) })}
@@ -762,8 +788,8 @@ export function CompleterPage() {
               <input
                 type="range"
                 className="lab-slider"
-                min={1000}
-                max={50000}
+                min={PT_SWEEPS_RANGE[0]}
+                max={PT_SWEEPS_RANGE[1]}
                 step={1000}
                 value={ptSweeps}
                 onChange={(e) => setCompleter({ ptSweeps: Number(e.target.value) })}
@@ -784,8 +810,8 @@ export function CompleterPage() {
               <input
                 type="range"
                 className="lab-slider"
-                min={1}
-                max={30}
+                min={PT_SWAP_INTERVAL_RANGE[0]}
+                max={PT_SWAP_INTERVAL_RANGE[1]}
                 step={1}
                 value={ptSwapInterval}
                 onChange={(e) =>
@@ -853,7 +879,7 @@ function FastResults({
 }) {
   const { corpusScoreIndex } = useModel();
   const { result } = runState;
-  const obs = teamObservables(model, result.finalTeam, 1);
+  const obs = teamObservables(model, result.finalTeam);
   const scoreTitle = corpusScoreIndex
     ? percentileTitle(corpusScoreIndex.score, obs.scoreRaw)
     : null;
@@ -1037,7 +1063,7 @@ function PTResults({
       <CompletionList>
         {topK.map((entry, idx) => {
           const freeIdxs = entry.team.filter((i) => !fixedSet.has(i));
-          const obs = teamObservables(model, entry.team, 1);
+          const obs = teamObservables(model, entry.team);
           const corpus = topKCorpus[idx];
           const freqPct = nKept > 0 ? (entry.count / nKept) * 100 : 0;
           return (

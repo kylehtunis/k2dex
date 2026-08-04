@@ -32,9 +32,13 @@ import {
   DEFAULT_ANCHOR,
   TEMPERATURE_OPTIONS,
   PT_RUNS,
+  PT_RUNS_RANGE,
   PT_LADDER_LEVELS,
+  PT_LADDER_RANGE,
   PT_SWEEPS,
+  PT_SWEEPS_RANGE,
   PT_SWAP_INTERVAL,
+  PT_SWAP_INTERVAL_RANGE,
 } from "../constants";
 import { speciesToSlug, itemToSlug } from "./sprite-url";
 import type { IsingModel } from "../sampler/types";
@@ -205,6 +209,16 @@ export interface DecodedCompleter {
   seed: number | null;
 }
 
+/** An integer knob from a URL, or `fallback` when it's absent, non-integral,
+ * or outside its allowed range. */
+function inRange(
+  n: number,
+  [lo, hi]: readonly [number, number],
+  fallback: number,
+): number {
+  return Number.isInteger(n) && n >= lo && n <= hi ? n : fallback;
+}
+
 /** Decode completer URL params; null when there's no valid core token. */
 export function decodeCompleter(params: URLSearchParams): DecodedCompleter | null {
   const core = decodeCore(params.get("t"));
@@ -242,8 +256,18 @@ export function decodeCompleter(params: URLSearchParams): DecodedCompleter | nul
   const a = params.get("a");
   if (a) {
     const nums = a.split("-").map(Number);
-    if (nums.length === 4 && nums.every((n) => Number.isFinite(n))) {
-      [ptRuns, ptLadder, ptSweeps, ptSwapInterval] = nums;
+    // Each knob is range-checked independently and falls back to its default:
+    // these come from a URL and flow straight into the worker's loop bounds
+    // and array allocations, so an out-of-range value is not just a bad run.
+    if (nums.length === 4) {
+      ptRuns = inRange(nums[0], PT_RUNS_RANGE, PT_RUNS);
+      ptLadder = inRange(nums[1], PT_LADDER_RANGE, PT_LADDER_LEVELS);
+      ptSweeps = inRange(nums[2], PT_SWEEPS_RANGE, PT_SWEEPS);
+      ptSwapInterval = inRange(
+        nums[3],
+        PT_SWAP_INTERVAL_RANGE,
+        PT_SWAP_INTERVAL,
+      );
     }
   }
 

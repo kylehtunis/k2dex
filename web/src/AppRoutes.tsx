@@ -14,9 +14,10 @@ import { AnalysisPage } from "./pages/AnalysisPage";
 import { MetaPage } from "./pages/MetaPage";
 import { PokedexPage } from "./pages/PokedexPage";
 import { PokemonPage } from "./pages/PokemonPage";
+import { ROUTE_CHUNK_IMPORTERS } from "./routeChunks";
 
-const ArticlesPage = lazy(() => import("./pages/ArticlesPage"));
-const ArticlePage = lazy(() => import("./pages/ArticlePage"));
+const ArticlesPage = lazy(ROUTE_CHUNK_IMPORTERS.articlesIndex);
+const ArticlePage = lazy(ROUTE_CHUNK_IMPORTERS.article);
 
 export function AppRoutes() {
   return (

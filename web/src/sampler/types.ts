@@ -115,15 +115,16 @@ export interface SingleSwapEntry {
   deltaSumJ: number;
 }
 
-/** Precomputed species-pair interaction graph (APC-corrected synergy).
+/** Precomputed species-pair interaction graph.
  * Loaded from `species_graph.json`, parallel to `team_counts.json`. */
 export interface SpeciesGraph {
   /** Distinct species, alphabetical order (indexes the matrices). */
   readonly species: readonly string[];
-  /** Signed species-pair synergy (grand mean of the J block), S×S flat row-major. */
+  /** Signed species-pair synergy: the usage-weighted mean of the J block, each
+   * item-state weighted by its empirical appearance rate (potts.py's
+   * `item_weights`). NOT the unweighted grand mean, which ranks differently.
+   * S×S flat row-major. */
   readonly synergy: Float64Array;
-  /** APC-corrected Frobenius norm (popularity-stripped coupling magnitude), S×S flat. */
-  readonly corrected: Float64Array;
   /** Map species name → index into the S×S matrices. */
   readonly indexOf: ReadonlyMap<string, number>;
 }

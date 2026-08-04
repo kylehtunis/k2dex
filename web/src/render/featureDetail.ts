@@ -2,7 +2,7 @@
 //
 // Pure helpers over the already-loaded IsingModel + teamCounts — no fetches,
 // no new artifacts. The feature-conditioned cousins of the /meta aggregates:
-//   meta/couplings.ts  (all structural pairs)  -> featureCouplings (one row)
+//   meta/couplings.ts  (all structural pairs)  -> speciesCouplings (one species)
 //   meta/topTeams.ts   (all top rosters)       -> featureCorpusAppearances
 //
 // Webapp-only; no Python counterpart, so no parity row.
@@ -14,7 +14,8 @@ import type { TopTeam } from "../meta/topTeams";
 export interface SpeciesCoupling {
   /** Partner species name. */
   species: string;
-  /** Species-level synergy (grand mean of the J block). */
+  /** Species-level synergy: the usage-weighted mean of the J block, straight
+   * from the precomputed SpeciesGraph (see its `synergy` doc). */
   synergy: number;
 }
 

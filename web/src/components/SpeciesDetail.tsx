@@ -199,7 +199,7 @@ export function SpeciesDetail({
           ) : isPage ? (
             <CompletionList>
               {corpus.teams.map((t, i) => {
-                const obs = teamObservables(model, t.team, 1);
+                const obs = teamObservables(model, t.team);
                 return (
                   <CompletionCard
                     key={i}
@@ -316,21 +316,32 @@ function ExpandableCouplingList({
               <li key={c.species} className="lab-feature-coupling-row-wrap">
                 <div
                   className={`lab-feature-coupling-row${isOpen ? " lab-expanded" : ""}`}
-                  role="button"
-                  tabIndex={0}
                   style={{ cursor: "pointer" }}
                   onClick={activate}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      activate();
-                    }
-                  }}
+                  // Keyboard affordance goes on ONE element per row. With a
+                  // partner link present that's the link itself (already
+                  // focusable) — making the wrapper a button too would nest an
+                  // anchor inside a button and give the row two tab stops.
+                  // Without a link the row carries it.
+                  {...(partnerHref
+                    ? {}
+                    : {
+                        role: "button",
+                        tabIndex: 0,
+                        "aria-expanded": isOpen,
+                        onKeyDown: (e: React.KeyboardEvent) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            activate();
+                          }
+                        },
+                      })}
                 >
                   {partnerHref ? (
                     <Link
                       to={partnerHref(c.species)}
                       className="lab-feature-coupling-name"
+                      aria-expanded={isOpen}
                       onClick={(e) => {
                         // The href exists for crawlers and modifier-clicks
                         // (open in new tab); a plain click behaves like the
@@ -408,7 +419,16 @@ function ModulationDetail({
               key={`${e.featureA}-${e.featureB}`}
               className="lab-modulation-row"
               style={{ cursor: "pointer" }}
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${model.sites[siteB]}`}
               onClick={() => onDrillSite(siteB)}
+              onKeyDown={(ev) => {
+                if (ev.key === "Enter" || ev.key === " ") {
+                  ev.preventDefault();
+                  onDrillSite(siteB);
+                }
+              }}
             >
               <td className="pair">
                 <div className="lab-mod-pair">

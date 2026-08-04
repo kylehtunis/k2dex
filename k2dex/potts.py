@@ -39,6 +39,8 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
+from .constants import ARTIFACT_SCHEMA_VERSION
+
 
 # ---------- Loading a fitted artifact ----------
 
@@ -107,9 +109,20 @@ def load_fitted_model(model_dir: str | Path) -> FittedModel:
     """Load a precompute artifact (``meta.json`` + ``J.bin``/``h.bin``/``m.bin``)
     into a :class:`FittedModel`. ``J.bin`` is the float32 strict lower triangle
     in row-major order (see ``precompute.pack_lower_triangle``); this
-    reconstructs the full symmetric matrix."""
+    reconstructs the full symmetric matrix.
+
+    Raises ``ValueError`` on an artifact from a different schema version, so a
+    stale model directory fails by name rather than as a bare ``KeyError`` on
+    whichever field happens to be read first."""
     model_dir = Path(model_dir)
     meta = json.loads((model_dir / "meta.json").read_text())
+    version = meta.get("schema_version")
+    if version != ARTIFACT_SCHEMA_VERSION:
+        raise ValueError(
+            f"{model_dir}: unsupported artifact schema_version {version!r} "
+            f"(expected {ARTIFACT_SCHEMA_VERSION}); rebuild with "
+            f"`python scripts/precompute.py --recompute`"
+        )
     V = int(meta["V"])
     tri = np.fromfile(model_dir / "J.bin", dtype=np.float32).astype(np.float64)
     J = np.zeros((V, V), dtype=np.float64)

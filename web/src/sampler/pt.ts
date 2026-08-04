@@ -22,6 +22,7 @@ import {
   pottsSpeciesSwap,
   pottsTrackReroll,
   type PottsContext,
+  pottsMoveSets,
 } from "./potts";
 
 export interface PTOpts {
@@ -81,12 +82,15 @@ export function parallelTemperedMcmc(
   const lockedSlots = new Set<number>();
   for (let i = 0; i < seeds.length; i++) lockedSlots.add(i);
   const anchorStrength = opts.anchorStrength ?? 1;
+  const moveSets = pottsMoveSets(tables, avail, nToFill + seeds.length, lockedSlots);
+  if (moveSets.usableSites.length === 0) return null;
   const ctx: PottsContext = {
     fixed: opts.fixed,
     avail,
     tables,
     lockedSlots,
     anchorStrength,
+    ...moveSets,
   };
   const hasTracks = model.tracks.length > 0;
   const pReroll = opts.pReroll ?? 0.5;

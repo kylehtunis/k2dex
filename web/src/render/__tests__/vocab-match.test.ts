@@ -148,6 +148,18 @@ describe("resolveFeature", () => {
     expect(r.warning).toContain("Leftovers");
   });
 
+  it("skips when item is out of vocab and species has exactly one build", () => {
+    // Never substitute the species' only build for the requested item: the
+    // user would silently analyze a team they did not paste.
+    const r = resolveFeature(slugIndex, model, "ninetales-alola", "leftovers", {
+      species: "Alolan Ninetales",
+      item: "Leftovers",
+    });
+    expect(r.idx).toBeNull();
+    expect(r.warning).toContain("Alolan Ninetales");
+    expect(r.warning).toContain("Leftovers");
+  });
+
   it("warns and returns null for an unknown species", () => {
     const r = resolveFeature(slugIndex, model, "pikachu", null, {
       species: "Pikachu",
@@ -192,6 +204,38 @@ describe("matchPaste", () => {
     const { idxs, warnings } = matchPaste(model, paste);
     expect(idxs).toEqual([]);
     expect(warnings).toHaveLength(2);
+  });
+
+  it("skips a second mon holding an already-used item", () => {
+    // Items are unique per team; the samplers treat a duplicate as a
+    // forbidden state, so a paste must not load one as a scoreable team.
+    const species = ["Garchomp", "Farigiraf", "Amoonguss"];
+    const items: (string | null)[] = ["Sitrus Berry", "Sitrus Berry", null];
+    const V = species.length;
+    const vocab = species.map((s, i) => `${s} @ ${items[i]}`.replace(" @ null", ""));
+    const dupModel: IsingModel = {
+      ...model,
+      V,
+      vocab,
+      speciesOf: species,
+      itemOf: items,
+      ...factoredFromSpeciesItem(species, items),
+      m: Float64Array.from([0.4, 0.3, 0.2]),
+      J: new Float64Array(V * V),
+      h: new Float64Array(V),
+      indexOf: new Map(vocab.map((v, i) => [v, i])),
+    };
+    const paste = [
+      "Garchomp @ Sitrus Berry",
+      "",
+      "Farigiraf @ Sitrus Berry", // same item — dropped
+      "",
+      "Amoonguss",
+    ].join("\n");
+    const { idxs, warnings } = matchPaste(dupModel, paste);
+    expect(idxs).toEqual([0, 2]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("Sitrus Berry");
   });
 });
 
@@ -275,6 +319,33 @@ describe("shareLink completer token", () => {
     expect(d.ptRuns).toBe(10);
     expect(d.excludedSlugs).toEqual(["amoonguss"]);
     expect(d.seed).toBeNull();
+  });
+
+  it("falls back to defaults for out-of-range PT knobs in ?a=", () => {
+    // A URL is user input and these flow straight into the worker's loop
+    // bounds and allocations: a huge sample count would OOM the tab and a
+    // zero swap interval silently disables replica exchange.
+    const params = new URLSearchParams({
+      t: "test-species-item.incineroar~assault-vest",
+      a: "10-7-999999999-0",
+    });
+    const d = decodeCompleter(params)!;
+    expect(d.ptSweeps).toBe(20000); // PT_SWEEPS
+    expect(d.ptSwapInterval).toBe(10); // PT_SWAP_INTERVAL
+    // In-range siblings in the same token are still honored.
+    expect(d.ptRuns).toBe(10);
+    expect(d.ptLadder).toBe(7);
+  });
+
+  it("keeps in-range PT knobs from ?a=", () => {
+    const params = new URLSearchParams({
+      t: "test-species-item.incineroar~assault-vest",
+      a: "5-9-3000-20",
+    });
+    const d = decodeCompleter(params)!;
+    expect([d.ptRuns, d.ptLadder, d.ptSweeps, d.ptSwapInterval]).toEqual([
+      5, 9, 3000, 20,
+    ]);
   });
 
   it("round-trips the inclusion allow-list", () => {

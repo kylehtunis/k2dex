@@ -1,8 +1,7 @@
-// Front-end mirror of app.py module-level constants. These are the
-// locked completer/analysis/meta knobs — not user-tunable in the v1
-// webapp (kept here so any future re-introduction has one place to
-// touch). Phase 2/3 fit-time constants live in the per-model
-// meta.json instead (loaded at runtime via loadModel).
+// Front-end mirror of k2dex/constants.py. These are the locked
+// completer/analysis/meta knobs — not exposed as UI sliders (kept here so any
+// future re-introduction has one place to touch). Fit-time constants live in
+// the per-model meta.json instead (loaded at runtime via loadModel).
 
 export const CURRENT_REGULATION = "M-B";
 
@@ -36,6 +35,16 @@ export const PT_RUNS = 10;
 export const PT_SWEEPS = 20000;
 export const PT_BURN_IN = 5000;
 export const PT_SWAP_INTERVAL = 10;
+
+/** Inclusive [min, max] for each advanced PT knob. The completer's sliders and
+ * the share-link decoder both read these: a URL is user-supplied input, and an
+ * unclamped value goes straight to the worker, where a huge sample count
+ * allocates until the tab dies and a zero swap interval makes `step % n` NaN
+ * (silently disabling replica exchange). */
+export const PT_RUNS_RANGE: readonly [number, number] = [1, 25];
+export const PT_LADDER_RANGE: readonly [number, number] = [3, 15];
+export const PT_SWEEPS_RANGE: readonly [number, number] = [1000, 50000];
+export const PT_SWAP_INTERVAL_RANGE: readonly [number, number] = [1, 30];
 
 export const MF_MAX_ITERS = 200;
 export const MF_TOL = 1e-5;

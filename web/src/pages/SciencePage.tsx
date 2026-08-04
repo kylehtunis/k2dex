@@ -21,7 +21,7 @@ export function SciencePage() {
     <div className="lab-science">
       <header className="lab-science-header">
         <p className="lab-science-lede">
-          Fitting a pairwise binary Markov random field via L2-regularized pseudolikelihood
+          Fitting a pairwise binary Markov random field by regularized moment matching
           and sampling the resulting Boltzmann distribution with parallel-tempered Markov
           chain Monte Carlo
           <span className="lab-science-lede-punch">(to get better at Pokémon)</span>

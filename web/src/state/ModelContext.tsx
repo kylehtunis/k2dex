@@ -1,8 +1,11 @@
 // Single source of truth for the currently-loaded model.
 //
 // On mount, fetches models/manifest.json to discover available models,
-// then loads the selected model's artifacts. Results are cached in
-// component state so switching back and forth doesn't re-fetch.
+// then loads the selected model's artifacts. Results are cached in component
+// state, so an in-app model switch (a decoded share link naming another model)
+// doesn't re-fetch. Note that the header ModelPicker deliberately does NOT use
+// that path: it hard-reloads, because every page holds vocab *indices* into
+// the old model and they don't carry over. The cache is per-page-load.
 
 import {
   createContext,
@@ -32,7 +35,7 @@ interface ModelContextValue {
   setModelId: (id: string) => void;
   model: IsingModel | null;
   teamCounts: TeamCounts | null;
-  /** Precomputed species-pair interaction graph (APC-corrected synergy).
+  /** Precomputed species-pair interaction graph.
    * Null for species-only models or before load completes. */
   speciesGraph: SpeciesGraph | null;
   /** Empirical corpus Score distribution (every observed roster scored at

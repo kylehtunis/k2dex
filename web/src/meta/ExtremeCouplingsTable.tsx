@@ -1,7 +1,7 @@
-// §02 of /meta: species-pair coupling table, ranked by APC-corrected
-// Frobenius norm. Each row shows the signed synergy (species-level
-// coupling) and can expand to show the top item-modulation entries for
-// that pair, computed client-side from J.
+// §02 of /meta: species-pair coupling table. Rows arrive pre-sorted by the
+// caller (MetaPage sorts on signed synergy); this renders them and lets each
+// row expand to show the top item-modulation entries for that pair, computed
+// client-side from J.
 
 import { useCallback, useMemo, useState } from "react";
 import { ScoreChip, SignedBar } from "../render/atoms";
@@ -15,7 +15,6 @@ export interface SpeciesCouplingRow {
   a: number;
   b: number;
   synergy: number;
-  corrected: number;
 }
 
 export interface SpeciesCouplingsTableProps {

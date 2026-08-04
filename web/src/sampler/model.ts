@@ -248,12 +248,21 @@ export async function loadTeamCounts(
 interface SpeciesGraphJson {
   species: string[];
   synergy_ut: number[];
-  corrected_ut: number[];
 }
 
 /** Unpack a strict upper-triangle flat array into a symmetric S×S
- * Float64Array (row-major, zero diagonal). */
+ * Float64Array (row-major, zero diagonal).
+ *
+ * Throws on a length mismatch (as `unpackLowerTriangle` does): reading past
+ * the end yields `undefined`, which a Float64Array silently stores as NaN, and
+ * /meta would then render NaN synergies with nothing having errored. */
 function unpackUpperTriangle(ut: number[], S: number): Float64Array {
+  const expected = (S * (S - 1)) / 2;
+  if (ut.length !== expected) {
+    throw new Error(
+      `species_graph: expected ${expected} upper-triangle entries for ${S} species, got ${ut.length}`,
+    );
+  }
   const out = new Float64Array(S * S);
   let k = 0;
   for (let i = 0; i < S; i++) {
@@ -283,7 +292,6 @@ export async function loadSpeciesGraph(
   return {
     species: data.species,
     synergy: unpackUpperTriangle(data.synergy_ut, S),
-    corrected: unpackUpperTriangle(data.corrected_ut, S),
     indexOf,
   };
 }

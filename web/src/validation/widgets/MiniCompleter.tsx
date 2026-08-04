@@ -6,14 +6,14 @@
 // fitted model so the reader can compare them directly — and judge with their
 // own eyes which one looks like the better team.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Select, { type SingleValue } from "react-select";
 import { MENU_PORTAL_TARGET } from "../../components/portalTarget";
 import type { IsingModel, TeamCounts } from "../../sampler/types";
 import { SpriteBox } from "../../render/Sprite";
 import { teamObservables } from "../../render/observables";
 import { nearestObserved } from "../../render/corpus";
-import { runPT } from "../../completer/ptDriver";
+import { runPT, type PTRun } from "../../completer/ptDriver";
 import {
   ANCHOR_ARTICLE_DEFAULT,
   ANCHOR_MAX,
@@ -96,6 +96,9 @@ export function MiniCompleter({
   const [anchorStrength, setAnchorStrength] = useState(ANCHOR_ARTICLE_DEFAULT);
   const [result, setResult] = useState<Result | null>(null);
   const [running, setRunning] = useState(false);
+  // The in-flight PT run, so leaving the article can cancel it.
+  const ptRun = useRef<PTRun | null>(null);
+  useEffect(() => () => ptRun.current?.cancel(), []);
 
   const picks = useMemo(
     () => slots.filter((s): s is number => s !== null),
@@ -111,11 +114,22 @@ export function MiniCompleter({
     setRunning(true);
     setResult(null);
     // Counting: species-level greedy fill, then most-used item per species.
+    //
+    // KNOWN ISSUE, accepted: each species picks its modal item independently,
+    // so the counting team can hold the same item twice, which is illegal under
+    // the VGC item clause. Several top-usage species share a modal item (Sitrus
+    // Berry), so this is common rather than rare, and the illegal team is then
+    // scored and corpus-matched as though it were real. Fixing it means
+    // resolving the species set under an item-uniqueness constraint (the
+    // feature-level `cooccurrenceGreedy` already does that). Left as-is
+    // deliberately: the counting side of this comparison may be removed
+    // outright, so it isn't worth a partial fix first.
     const coocSites = speciesCoocGreedy(sc, picks, EMPTY_SITES, model.teamSize);
     const coocTeam = coocSites.map((s) => topFeatureOfSite(model, s));
     // Model: the real PT sampler, species pinned (item free to reroll in
     // context), take the single most-frequent completion.
-    const r = await runPT(model, {
+    ptRun.current?.cancel();
+    const run = runPT(model, {
       fixed: [],
       fixedSites: picks,
       excluded: [],
@@ -123,6 +137,11 @@ export function MiniCompleter({
       anchorStrength,
       ...PT_ARTICLE,
     });
+    ptRun.current = run;
+    const r = await run.promise;
+    // Superseded by a newer build, or the widget unmounted: leave state alone.
+    if (r.ok === false && r.cancelled) return;
+    ptRun.current = null;
     const modelTeam = r.ok && r.dist.length > 0 ? r.dist[0].team : [];
     setResult({ cooc: coocTeam, model: modelTeam });
     setRunning(false);
@@ -219,7 +238,7 @@ function TeamCard({
   teamCounts: TeamCounts | null;
 }) {
   const obs = useMemo(
-    () => (team.length > 0 ? teamObservables(model, team, 1) : null),
+    () => (team.length > 0 ? teamObservables(model, team) : null),
     [model, team],
   );
   const near = useMemo(

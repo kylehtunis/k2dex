@@ -141,7 +141,6 @@ export function MeanField() {
               onClick={() => setPresetKey(p.key)}
             >
               <span className="lab-t-btn-label">{p.label}</span>
-              <span className="lab-t-btn-hint"></span>
             </button>
           ))}
         </div>
@@ -157,7 +156,7 @@ export function MeanField() {
           <Landscape3D width={500} height={340} walkers={[walker]} />
           <figcaption>
             Deterministic gradient descent from the selected start. The marker
-            stops as soon as the gradient vanishes — i.e., at the bottom of one
+            stops as soon as the gradient vanishes, i.e. at the bottom of one
             well.
           </figcaption>
         </figure>

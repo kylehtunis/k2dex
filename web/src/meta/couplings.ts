@@ -1,8 +1,8 @@
 // Filter + sort logic for the §03 extreme-couplings tables.
 //
-// Mirrors the upper-triangle mask + cross-species / cross-item filter
-// from app.py:_render_meta. Phase 2 has unique species and all-null
-// items, so both filters become no-ops there.
+// Upper-triangle mask plus a cross-species / cross-item filter. A
+// species-only model has unique species and all-null items, so both
+// filters become no-ops there.
 
 import type { IsingModel } from "../sampler/types";
 
@@ -32,9 +32,6 @@ export interface ModulationEntry {
   featureA: number;
   featureB: number;
   jValue: number;
-  /** How far this item-pair's coupling sits from the pair's species-level
-   * synergy — the item-modulation residual for the pair. */
-  deviation: number;
 }
 
 /** The item-pair couplings for a species pair, strongest |J| first: how each
@@ -46,7 +43,6 @@ export function topModulationEntries(
   model: IsingModel,
   siteA: number,
   siteB: number,
-  synergy: number,
   topN = 8,
 ): ModulationEntry[] {
   if (siteA === siteB) return [];
@@ -60,7 +56,6 @@ export function topModulationEntries(
         featureA: fa,
         featureB: fb,
         jValue,
-        deviation: jValue - synergy,
       });
     }
   }

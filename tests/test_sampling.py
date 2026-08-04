@@ -186,11 +186,11 @@ class TestRankSingleSwaps(unittest.TestCase):
         J, h = _toy_model()
         team = list(range(6))
         ranked = rank_single_swaps(J, h, team, field_weight=1.0, top_n=1)
-        if not ranked:
-            return  # no improving swap exists -- nothing to compare
         _, chain = greedy_optimize(J, h, 6, team, [], [], 1.0, max_swaps=1)
-        if not chain:
-            return
+        # Assert rather than skip: on the fixed toy model an improving swap
+        # always exists, so an empty result is a regression, not a no-op case.
+        self.assertTrue(ranked, "no improving swap found on the toy model")
+        self.assertTrue(chain, "greedy took no step on the toy model")
         self.assertEqual(ranked[0]["out_idx"], chain[0]["out_idx"])
         self.assertEqual(ranked[0]["in_idx"], chain[0]["in_idx"])
         self.assertAlmostEqual(ranked[0]["delta_E_adj"], chain[0]["delta_E_adj"])

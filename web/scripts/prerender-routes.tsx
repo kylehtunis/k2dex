@@ -34,6 +34,7 @@ import {
   type RouteMeta,
 } from "../src/siteMeta";
 import { ARTICLE_SOURCES } from "../src/articles/components";
+import { ROUTE_CHUNK_SOURCES } from "../src/routeChunks";
 import { AppRoutes } from "../src/AppRoutes";
 import { PageStateProvider } from "../src/state/PageStateContext";
 import { FeatureModalProvider } from "../src/components/FeatureModal";
@@ -143,12 +144,12 @@ const viteManifest: Record<string, ManifestChunk> = JSON.parse(
 /** Vite-manifest keys for the lazy modules a route needs; [] for routes that
  *  live entirely in the main bundle. */
 function routeChunkKeys(path: string): string[] {
-  if (path === "articles") return ["src/pages/ArticlesPage.tsx"];
+  if (path === "articles") return [ROUTE_CHUNK_SOURCES.articlesIndex];
   if (path.startsWith("articles/")) {
     const slug = path.slice("articles/".length);
     const sources = ARTICLE_SOURCES[slug];
     if (!sources) throw new Error(`no ARTICLE_SOURCES entry for article slug "${slug}"`);
-    return ["src/pages/ArticlePage.tsx", ...sources];
+    return [ROUTE_CHUNK_SOURCES.article, ...sources];
   }
   return [];
 }

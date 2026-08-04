@@ -48,13 +48,18 @@ export function isExampleResolvable(
 
 /** Usage-weighted average coupling between one feature and every build of the
  * partner species — the partner's items weighted by how often they're actually
- * used, so the number reflects the real matchup rather than a flat average. */
+ * used, so the number reflects the real matchup rather than a flat average.
+ *
+ * Weighting matches `potts.py:FittedModel.item_weights`, including its fallback:
+ * a partner with no marginal mass falls back to uniform weights (a flat mean),
+ * not to zero, which would read as "no interaction" for a thin species. */
 function weightedSynergy(
   model: IsingModel,
   feature: number,
   partnerSite: number,
 ): number {
   const partnerFeats = model.siteFeatures[partnerSite];
+  if (partnerFeats.length === 0) return 0;
   let acc = 0;
   let wsum = 0;
   const base = feature * model.V;
@@ -62,7 +67,10 @@ function weightedSynergy(
     acc += model.J[base + g] * model.m[g];
     wsum += model.m[g];
   }
-  return wsum > 0 ? acc / wsum : 0;
+  if (wsum > 0) return acc / wsum;
+  let flat = 0;
+  for (const g of partnerFeats) flat += model.J[base + g];
+  return flat / partnerFeats.length;
 }
 
 export function ItemModulationCard({

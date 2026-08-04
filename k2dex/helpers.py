@@ -1,8 +1,7 @@
-"""Helpers for VGC complexity analysis (Phase 1).
+"""Helpers for the Gaussian model's Smogon chaos inputs.
 
 Smogon chaos JSON -> co-occurrence matrix -> PPMI.
 SVD and downstream analyses live in notebooks until patterns stabilize.
-See vgc_complexity_phase1_plan.md.
 """
 
 from __future__ import annotations

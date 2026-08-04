@@ -94,13 +94,22 @@ export function CompletionCard({
 
   const analyzeUrl = `/analysis?t=${encodeCore(model.id, fullTeam, model)}`;
 
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<boolean | "failed">(false);
   const handleCopyPaste = useCallback(() => {
     const paste = buildPartialPaste(fullTeam, model.vocab, speciesToSlug);
-    navigator.clipboard.writeText(paste).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+    // Clipboard access is denied outside a secure context or without
+    // permission; without the catch the button would sit on its idle label
+    // forever and the rejection would go unhandled.
+    navigator.clipboard.writeText(paste).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      },
+      () => {
+        setCopied("failed");
+        setTimeout(() => setCopied(false), 1500);
+      },
+    );
   }, [fullTeam, model.vocab]);
 
   const hasHead = rank !== undefined || freqPct !== undefined;
@@ -160,7 +169,11 @@ export function CompletionCard({
           className="lab-analyze-btn lab-copy-paste-btn"
           onClick={handleCopyPaste}
         >
-          {copied ? "Copied!" : "Copy pokepaste"}
+          {copied === "failed"
+            ? "Copy failed"
+            : copied
+              ? "Copied!"
+              : "Copy pokepaste"}
         </button>
       </div>
     </div>

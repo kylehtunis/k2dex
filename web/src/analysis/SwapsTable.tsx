@@ -1,7 +1,6 @@
 // §04 of /analysis: top single-swap suggestions, evaluated independently
 // from the starting team (each row is one applied swap; not a chain).
 //
-// Mirrors app.py:_render_swap_table_html.
 //
 // Δ columns use sign-flipped values (positive = improvement) since the
 // model's ΔE is Hamiltonian-space (lower = better).

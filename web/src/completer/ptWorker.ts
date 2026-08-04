@@ -3,7 +3,7 @@
 // Runs in a Web Worker so the main thread stays responsive during the
 // 10–30s PT sample. Aggregates samples into a frequency distribution
 // before posting back — saves bandwidth and matches Python's behavior
-// (sampling.py emits raw samples; app.py:parallel_tempered_distribution
+// (sampling.py emits raw samples; the distribution aggregation
 // folds them into a Counter, which is what /completer renders).
 
 import { deriveFactored } from "../sampler/model";
@@ -67,6 +67,16 @@ export interface PTResponse {
 export interface PTError {
   ok: false;
   message: string;
+}
+
+/** Seed for run `run` of a batch, mixed so that adjacent base seeds don't
+ * produce overlapping sets of run streams. Splitmix64-style avalanche on the
+ * 32-bit pair, which is enough to decorrelate the Rng's initial state. */
+function runSeed(base: number, run: number): number {
+  let x = (base ^ ((run + 1) * 0x9e3779b9)) >>> 0;
+  x = Math.imul(x ^ (x >>> 16), 0x21f0aaad) >>> 0;
+  x = Math.imul(x ^ (x >>> 15), 0x735a2d97) >>> 0;
+  return (x ^ (x >>> 15)) >>> 0;
 }
 
 function buildLadder(coldT: number, hotT: number, levels: number): number[] {
@@ -185,7 +195,11 @@ self.onmessage = (e: MessageEvent<PTRequest>) => {
         nSteps: req.nSteps,
         burnIn: req.burnIn,
         swapInterval: req.swapInterval,
-        seed: req.seed + run, // independent stream per run
+        // Mix the run index into the seed rather than adding it: with a
+        // caller that increments the base seed by 1 per click, `seed + run`
+        // makes batch N's runs 1..k identical to batch N-1's runs 0..k-1, so
+        // consecutive "independent" batches mostly repeat each other.
+        seed: runSeed(req.seed, run),
         pReroll: req.pReroll,
         anchorStrength: req.anchorStrength,
       });

@@ -25,13 +25,7 @@
   color: var(--lab-ink);
   letter-spacing: -0.01em;
 }
-.lab-wordmark-mono {
-  font-family: var(--lab-font-mono);
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--lab-ink-muted);
-  margin-left: 6px;
-}
+
 
 /* Page tabs (nav across the three pages). */
 .lab-tabs {
@@ -366,9 +360,7 @@
   grid-template-columns: 1fr 1fr;
   gap: 24px;
 }
-.lab-form-grid-1 {
-  grid-template-columns: 1fr;
-}
+
 /* Airier variant for the advanced-PT parameter grid. */
 .lab-form-grid-airy {
   gap: 28px 32px;
@@ -382,11 +374,6 @@
 
 /* ===== Responsive overrides ===== */
 
-/* Short nav label for the Science tab; full label is the default. */
-.lab-tab-label-short {
-  display: none;
-}
-
 @media (max-width: 900px) {
   .lab-container {
     padding: 1.25rem 1.5rem 3rem;
@@ -394,12 +381,7 @@
   .lab-tabs-group {
     gap: 20px;
   }
-  .lab-tab-label-full {
-    display: none;
-  }
-  .lab-tab-label-short {
-    display: inline;
-  }
+
   .lab-split-pair {
     grid-template-columns: 1fr;
   }

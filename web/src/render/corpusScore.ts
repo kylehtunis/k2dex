@@ -49,7 +49,7 @@ export function buildCorpusScoreIndex(
   const scores: Array<{ value: number; w: number }> = [];
   const coherences: Array<{ value: number; w: number }> = [];
   for (const [key, count] of teamCounts) {
-    const obs = teamObservables(model, parseTeamKey(key), 1);
+    const obs = teamObservables(model, parseTeamKey(key));
     scores.push({ value: obs.scoreRaw, w: count });
     coherences.push({ value: obs.coherence, w: count });
   }

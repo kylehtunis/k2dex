@@ -1,13 +1,6 @@
 // Atomic render components for the lab-notebook visual language.
 //
-// 1:1 with the rendering_html.py atom functions:
-//   stat / stat_strip   -> <Stat /> <StatStrip />
-//   section_label       -> <SectionLabel />
-//   page_title          -> <PageTitle />
-//   score_chip          -> <ScoreChip />
-//   signed_bar          -> <SignedBar />
-//   mini_bar            -> <MiniBar />
-//   corpus_cell         -> <CorpusCell />
+// Webapp-only; there is no Python counterpart, so no parity obligation.
 //
 // CSS class pairing: every `lab-*` className here corresponds to a
 // selector in web/src/styles/components.css. Don't rename one without

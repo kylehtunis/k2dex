@@ -1,9 +1,9 @@
 """Pure model builders. Stateless functions that fit (J, h) and the
-auxiliary vocab / corpus structures used by both the Streamlit app and
-the static-site precompute pipeline.
+auxiliary vocab / corpus structures the static-site precompute pipeline
+serializes into the webapp's model artifacts.
 
-`app.py` wraps these in `@st.cache_resource` for per-process caching;
-`precompute.py` calls them directly. Keep this module Streamlit-free.
+Each build refits from the cached corpus and takes minutes, so callers that
+need a model more than once are expected to cache it themselves.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from . import tournament_ingest
 from .constants import (
     CURRENT_REGULATION,
     IN_PERSON_WEIGHT,
-    PHASE2_MIN_TEAM_COUNT,
+    VOCAB_MIN_TEAM_COUNT,
     RECENCY_TAU_DAYS,
     SPECIES_ITEM_LR_LAMBDA,
     SPECIES_LR_LAMBDA,
@@ -164,8 +164,8 @@ def _align_prior(
 
 
 def format_pair(species: str, item: str | None) -> str:
-    """Display form for Phase 3 vocab strings: bare species when itemless,
-    'Species @ Item' otherwise."""
+    """Display form for a (species, item) vocab string: bare species when
+    itemless, 'Species @ Item' otherwise."""
     if item is None:
         return species
     return f"{species} @ {item}"
@@ -174,7 +174,7 @@ def format_pair(species: str, item: str | None) -> str:
 def build_species_model(
     *,
     regulation: str = CURRENT_REGULATION,
-    min_team_count: int = PHASE2_MIN_TEAM_COUNT,
+    min_team_count: int = VOCAB_MIN_TEAM_COUNT,
     lam: float = SPECIES_LR_LAMBDA,
     recency_tau: float | None = RECENCY_TAU_DAYS,
     in_person_multiplier: float = IN_PERSON_WEIGHT,
@@ -247,7 +247,7 @@ def build_species_model(
         prior_J, prior_h = _align_prior(vocab, prior[0], prior[2], prior[3])
 
     # Species are distinct per vocab entry, so the species model's ensemble
-    # needs no uniqueness lookups (the Phase 2 case) -- pass None/None.
+    # needs no uniqueness lookups -- pass None/None.
     J, h = _fit_jh(
         X, method=method, lam=lam, w=w,
         species_of=None, item_of=None,
@@ -263,7 +263,7 @@ def build_species_model(
 def build_species_item_model(
     *,
     regulation: str = CURRENT_REGULATION,
-    min_team_count: int = PHASE2_MIN_TEAM_COUNT,
+    min_team_count: int = VOCAB_MIN_TEAM_COUNT,
     lam: float = SPECIES_ITEM_LR_LAMBDA,
     recency_tau: float | None = RECENCY_TAU_DAYS,
     in_person_multiplier: float = IN_PERSON_WEIGHT,

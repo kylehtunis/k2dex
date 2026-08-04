@@ -81,14 +81,3 @@ export async function loadManifest(): Promise<Manifest> {
   return cached;
 }
 
-/** The model for a (regulation, type) cell. Defaults to the "standard" type,
- * the only tier today. Returns undefined when no such cell exists. */
-export function modelForRegulation(
-  manifest: Manifest,
-  regulation: string,
-  type = "standard",
-): ModelSummary | undefined {
-  return manifest.models.find(
-    (m) => m.regulation === regulation && m.type === type,
-  );
-}

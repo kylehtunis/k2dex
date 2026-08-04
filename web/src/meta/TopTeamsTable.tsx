@@ -56,7 +56,7 @@ export function TopTeamsTable({
             const share = nCorpusTeams > 0 ? r.count / nCorpusTeams : 0;
             // scoreRaw / coherence don't depend on the fieldWeight
             // argument, so its value here is arbitrary.
-            const obs = teamObservables(model, r.team, 1);
+            const obs = teamObservables(model, r.team);
             return (
               <tr key={r.team.join("-")} className={rank === 0 ? "top-row" : undefined}>
                 <td className="rank">{(rank + 1).toString().padStart(2, "0")}</td>

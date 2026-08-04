@@ -254,7 +254,7 @@ export function SCOTUS() {
       <h4 className="lab-science-subhead">Completing a vote</h4>
       <p>
         Once we have <em>J</em> and <em>h</em>, predicting unobserved spins
-        conditional on observed ones is just another marginal computation —{" "}
+        conditional on observed ones is just another marginal computation:{" "}
         <em>exactly</em> what the Team Completer does with Pokémon teams.
         Click any justice to pin them: once for <span className="lab-scotus-swatch lab-scotus-swatch-1" />{" "}
         <em>conservative</em>, again for <span className="lab-scotus-swatch lab-scotus-swatch-0" />{" "}
@@ -340,7 +340,7 @@ export function SCOTUS() {
         <div className="lab-scotus-ranks">
           {ranked.length === 0 ? (
             <p className="lab-science-note">
-              All nine pinned — every justice's vote is fixed.
+              All nine pinned, so every justice's vote is fixed.
             </p>
           ) : (
             ranked.map(({ i, label, p }) => (
@@ -365,7 +365,7 @@ export function SCOTUS() {
           Red fill = P(votes conservative); blue remainder = P(votes liberal).
           Pin Scalia conservative and the other conservatives (Rehnquist, Thomas)
           jump near 100%. Pin Ginsburg liberal and Stevens / Breyer drop sharply.
-          Pin one of each — Scalia conservative, Ginsburg liberal — and the
+          Pin one of each (Scalia conservative, Ginsburg liberal) and the
           swing justices (O'Connor, Kennedy) settle in the middle.
         </p>
       </div>

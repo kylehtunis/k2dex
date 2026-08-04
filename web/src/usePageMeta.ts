@@ -61,7 +61,18 @@ export function usePageMeta(): void {
     if (species) {
       if (!model) return;
       const name = model.sites.find((s) => speciesPageSlug(s) === species[1]);
-      if (name) meta = speciesRouteMeta(name, model.regulation);
+      // A slug the active model doesn't have (e.g. after a regulation switch)
+      // must not fall through to metaForPath's home-page default, which would
+      // put the site's front-page title on a "not in this model" page.
+      meta = name
+        ? speciesRouteMeta(name, model.regulation)
+        : {
+            path,
+            title: `Pokémon not found | ${SITE_NAME}`,
+            description:
+              `This Pokémon isn't in the ${model.regulation} model. ` +
+              `Browse the full Pokédex for the Pokémon in this format.`,
+          };
     }
     // /meta carries the active regulation in its title once the model is
     // loaded (mirrors the prerendered head).

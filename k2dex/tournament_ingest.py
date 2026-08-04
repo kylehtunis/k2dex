@@ -60,7 +60,6 @@ import re
 import time
 import urllib.error
 import urllib.request
-import warnings
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
@@ -982,8 +981,8 @@ def species_only_teams(
 ) -> list[frozenset[str]]:
     """Project (species, item) teams down to species-only frozensets.
 
-    Used by `app.py:load_model_phase2` and the validation harness to consume
-    the Phase 2 species-only namespace from the new v2 cache format.
+    Used by the species-only model builder and the validation harness to read
+    the species namespace out of the (species, item) cache format.
     """
     return [frozenset(species for species, _ in team) for team in teams]
 
@@ -1133,29 +1132,6 @@ def import_in_person_tournaments(
 
     logger.info("imported %d in-person tournaments", len(imported))
     return imported
-
-
-def ingest(
-    *,
-    max_teams: int = DEFAULT_MAX_TEAMS,
-    regulation: str = DEFAULT_REGULATION,
-    game: str = DEFAULT_GAME,
-    cache_dir: Path = DEFAULT_CACHE_DIR,
-) -> list[TournamentTeams]:
-    """Deprecated: use ``fetch_limitless_tournaments()`` + ``load_cached_tournaments()``.
-
-    Fetches from the Limitless API, then returns all cached tournaments.
-    """
-    warnings.warn(
-        "ingest() is deprecated. Use fetch_limitless_tournaments() to populate "
-        "the cache, then load_cached_tournaments() to read it.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    fetch_limitless_tournaments(
-        max_teams=max_teams, regulation=regulation, game=game, cache_dir=cache_dir,
-    )
-    return load_cached_tournaments(cache_dir=cache_dir, regulation=regulation)
 
 
 def main() -> None:

@@ -56,6 +56,17 @@ SAMPLE_TEAMS = [
 ]
 
 
+def _load_cached(**kwargs):
+    """`load_cached_tournaments` with the size filter pinned open.
+
+    Every test below except `test_size_filter` exercises some other filter
+    (regulation, type, name, cache version), so the fixtures must survive
+    regardless of what `MIN_TEAMS_PER_TOURNAMENT` is tuned to in production.
+    """
+    kwargs.setdefault("min_teams_per_tournament", 1)
+    return load_cached_tournaments(**kwargs)
+
+
 class TestSaveTournamentType(unittest.TestCase):
     def test_type_field_written(self):
         with tempfile.TemporaryDirectory() as td:
@@ -98,31 +109,32 @@ class TestLoadCachedTournaments(unittest.TestCase):
         self.tmpdir.cleanup()
 
     def test_filters_by_regulation(self):
-        result = load_cached_tournaments(cache_dir=self.cache_dir, regulation="M-A")
+        result = _load_cached(cache_dir=self.cache_dir, regulation="M-A")
         ids = {t.meta.id for t in result}
         self.assertIn("a", ids)
         self.assertIn("b", ids)
         self.assertNotIn("c", ids)
 
     def test_filters_singles_by_name(self):
-        result = load_cached_tournaments(cache_dir=self.cache_dir, regulation="M-A")
+        result = _load_cached(cache_dir=self.cache_dir, regulation="M-A")
         ids = {t.meta.id for t in result}
+        self.assertTrue(ids, "fixtures were all filtered out before the name check")
         self.assertNotIn("d", ids)
 
     def test_filters_by_type(self):
-        result = load_cached_tournaments(
+        result = _load_cached(
             cache_dir=self.cache_dir, regulation="M-A", tournament_type="in-person",
         )
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].meta.id, "b")
 
     def test_tournament_type_round_trips(self):
-        result = load_cached_tournaments(cache_dir=self.cache_dir, regulation="M-A")
+        result = _load_cached(cache_dir=self.cache_dir, regulation="M-A")
         types = {t.meta.id: t.tournament_type for t in result}
         self.assertEqual(types, {"a": "limitless", "b": "in-person"})
 
     def test_all_team_observations_keeps_provenance(self):
-        result = load_cached_tournaments(cache_dir=self.cache_dir, regulation="M-A")
+        result = _load_cached(cache_dir=self.cache_dir, regulation="M-A")
         obs = all_team_observations(result)
         self.assertEqual(len(obs), sum(len(t.teams) for t in result))
         # Same ordering as the tournament list: result is date-sorted, so the
@@ -134,8 +146,9 @@ class TestLoadCachedTournaments(unittest.TestCase):
         self.assertEqual(obs[0].members, SAMPLE_TEAMS[0].members)
 
     def test_sorted_by_date(self):
-        result = load_cached_tournaments(cache_dir=self.cache_dir, regulation="M-A")
+        result = _load_cached(cache_dir=self.cache_dir, regulation="M-A")
         dates = [t.meta.date for t in result]
+        self.assertGreater(len(dates), 1, "need >1 tournament to test ordering")
         self.assertEqual(dates, sorted(dates))
 
     def test_old_cache_defaults_to_limitless(self):
@@ -152,7 +165,7 @@ class TestLoadCachedTournaments(unittest.TestCase):
         with (self.cache_dir / "old.json").open("w") as f:
             json.dump(payload, f)
 
-        result = load_cached_tournaments(
+        result = _load_cached(
             cache_dir=self.cache_dir, regulation="M-A", tournament_type="limitless",
         )
         ids = {t.meta.id for t in result}
@@ -368,7 +381,7 @@ class TestMatchRoundTrip(unittest.TestCase):
                 matches=matches,
             )
             _save_tournament(cache_dir, tt)
-            loaded = load_cached_tournaments(cache_dir=cache_dir, regulation="M-A")
+            loaded = _load_cached(cache_dir=cache_dir, regulation="M-A")
             self.assertEqual(len(loaded), 1)
             self.assertEqual(loaded[0].matches, matches)
 
@@ -418,7 +431,7 @@ class TestPerTypeCacheVersion(unittest.TestCase):
             cache_dir = Path(td)
             with (cache_dir / "old.json").open("w") as f:
                 json.dump(self._v2_payload("limitless"), f)
-            loaded = load_cached_tournaments(cache_dir=cache_dir, regulation="M-A")
+            loaded = _load_cached(cache_dir=cache_dir, regulation="M-A")
             self.assertEqual([t.meta.id for t in loaded], ["v2-limitless"])
             self.assertEqual(loaded[0].matches, ())
 
@@ -427,7 +440,7 @@ class TestPerTypeCacheVersion(unittest.TestCase):
             cache_dir = Path(td)
             with (cache_dir / "old.json").open("w") as f:
                 json.dump(self._v2_payload("in-person"), f)
-            loaded = load_cached_tournaments(cache_dir=cache_dir, regulation="M-A")
+            loaded = _load_cached(cache_dir=cache_dir, regulation="M-A")
             self.assertEqual(loaded, [])
 
     def test_outdated_in_person_reimported(self):

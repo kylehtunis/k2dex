@@ -54,29 +54,26 @@ function buildModel(): IsingModel {
 }
 
 // Build a mock SpeciesGraph matching the model above. Species in
-// alphabetical order: [A, B, C, D, E]. Synergy = grand mean of each
+// alphabetical order: [A, B, C, D, E]. Synergy = mean of each
 // cross-species J block.
 function buildGraph(): SpeciesGraph {
   const species = ["A", "B", "C", "D", "E"];
   const S = species.length;
   const synergy = new Float64Array(S * S);
-  const corrected = new Float64Array(S * S);
 
   // A(feats 0,1) <-> B(feat 2): block is [[0.6],[0.4]], mean = 0.5
-  const setSym = (a: number, b: number, syn: number, corr: number) => {
+  const setSym = (a: number, b: number, syn: number) => {
     synergy[a * S + b] = syn;
     synergy[b * S + a] = syn;
-    corrected[a * S + b] = corr;
-    corrected[b * S + a] = corr;
   };
-  setSym(0, 1, 0.5, 0.4);   // A-B
-  setSym(0, 2, 0.4, 0.35);  // A-C: mean of [0.5, 0.3] = 0.4
-  setSym(0, 3, 0.5, 0.45);  // A-D: mean of [0.8, 0.2] = 0.5
-  setSym(0, 4, -0.2, 0.15); // A-E: mean of [-0.3, -0.1] = -0.2
+  setSym(0, 1, 0.5);   // A-B
+  setSym(0, 2, 0.4);   // A-C: mean of [0.5, 0.3] = 0.4
+  setSym(0, 3, 0.5);   // A-D: mean of [0.8, 0.2] = 0.5
+  setSym(0, 4, -0.2);  // A-E: mean of [-0.3, -0.1] = -0.2
 
   const indexOf = new Map<string, number>();
   species.forEach((s, i) => indexOf.set(s, i));
-  return { species, synergy, corrected, indexOf };
+  return { species, synergy, indexOf };
 }
 
 describe("speciesCouplings", () => {

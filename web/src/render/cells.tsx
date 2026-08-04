@@ -1,11 +1,7 @@
-// Composed cells. 1:1 with the composed helpers in rendering_html.py:
-//   slot_card / slot_card_empty / slot_strip -> <SlotCard /> etc.
-//   excluded_row    -> <ExcludedRow />
-//   comp_mon_cell   -> <CompMonCell />
-//   pair_cell       -> <PairCell />
-//   swap_cell       -> <SwapCell />
-//   inline_mon      -> <InlineMon />
-//   team_mini_strip -> <TeamMiniStrip />
+// Composed cells built from the atoms in atoms.tsx (slot cards and strips,
+// excluded/included rows, mon and pair cells, swap cells).
+//
+// Webapp-only; there is no Python counterpart, so no parity obligation.
 
 import { type KeyboardEvent } from "react";
 import { extractItem, extractSpecies } from "./format";

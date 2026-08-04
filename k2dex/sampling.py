@@ -11,8 +11,8 @@ Plus deterministic alternatives:
 
 Uniqueness machinery (no-duplicate-species, no-duplicate-item) is shared
 across all of them; pass `species_of=None, item_of=None` to disable (the
-Phase 1 / Phase 2 case where each vocab entry is already unique by species
-and items aren't tracked).
+species-only case, where each vocab entry is already unique by species and
+items aren't tracked).
 """
 from __future__ import annotations
 
@@ -36,8 +36,8 @@ def build_constraint_sets(
     """Precompute species + item sets occupied by the fixed mons.
 
     All swap proposals check against these to reject duplicate-species or
-    duplicate-item moves. Phase 1 / Phase 2 pass `species_of=None, item_of=None`
-    and both returned sets are empty.
+    duplicate-item moves. A species-only model passes `species_of=None,
+    item_of=None` and both returned sets are empty.
     """
     fixed_species: set[str] = (
         {species_of[i] for i in fixed_set} if species_of is not None else set()
@@ -99,7 +99,7 @@ def initialize_state(
     the user has fixed too many same-item mons.
 
     Falls back to uniform sampling when both lookup arrays are None (the
-    Phase 1/2 case where no uniqueness check is meaningful).
+    species-only case, where no uniqueness check is meaningful).
     """
     if species_of is None and item_of is None:
         if len(available) < n_to_fill:
@@ -401,13 +401,23 @@ def _potts_species_swap_step(
     avail: np.ndarray,
     fixed: list[int],
     rng: np.random.Generator,
+    usable_sites: np.ndarray,
     max_tries: int = 16,
     anchor_strength: float = 1.0,
 ) -> tuple[bool, bool]:
     """One Metropolized-Gibbs species-swap on a random free slot. Mutates
     ``chain`` in place on accept (state / state_f / on_nf / energy; off_nf is
     not maintained -- the PT path does not read it). Returns (proposed,
-    accepted)."""
+    accepted).
+
+    ``usable_sites`` lists the sites holding at least one available feature.
+    Proposing outside it would always fail (an all-unavailable site has
+    ``logz_b = -inf``), which silently burns the sweep budget whenever the
+    caller excludes many species -- an include allow-list of 10 out of 200
+    would waste ~95% of sweeps. Restricting the draw keeps detailed balance:
+    the occupied site is itself usable, so both directions of a move draw
+    from the same fixed set.
+    """
     if not chain.on_nf:
         return False, False
     inv_temp = 1.0 / T
@@ -420,12 +430,13 @@ def _potts_species_swap_step(
 
     present: set[int] = {tables.site_of[f] for f in r_feat}
     present.add(site_a)
-    if len(present) >= tables.n_sites:
+    n_usable = len(usable_sites)
+    if sum(1 for s in usable_sites if s in present) >= n_usable:
         return False, False
-    site_b = int(rng.integers(tables.n_sites))
+    site_b = int(usable_sites[rng.integers(n_usable)])
     tries = 0
     while site_b in present and tries < max_tries:
-        site_b = int(rng.integers(tables.n_sites))
+        site_b = int(usable_sites[rng.integers(n_usable)])
         tries += 1
     if site_b in present:
         return False, False
@@ -514,7 +525,7 @@ def swap_mcmc(
     """Constant-T swap-move MCMC. Returns (samples, acceptance_rate) or None
     if a valid initial state can't be constructed (over-constrained).
 
-    `species_of` and `item_of` (Phase 3) enforce no-duplicate-species and
+    `species_of` and `item_of` enforce no-duplicate-species and
     no-duplicate-item via proposal rejection.
     """
     rng = np.random.default_rng(seed)
@@ -579,8 +590,8 @@ def anneal_mcmc(
     """Single simulated-annealing run with exponential cooling from t_start
     to t_end. Returns (final_state, acceptance_rate) or None if over-constrained.
 
-    `species_of` and `item_of` (Phase 3) reject swaps that would create
-    duplicate species or duplicate non-None items; see `swap_mcmc`.
+    `species_of` and `item_of` reject swaps that would create duplicate
+    species or duplicate non-None items; see `swap_mcmc`.
     """
     rng = np.random.default_rng(seed)
     n = len(h)
@@ -679,7 +690,7 @@ def parallel_tempered_mcmc(
     # Potts move setup: site tables, availability mask, fixed pins. The species
     # roster still comes from species_of; a species-only model (item_of falsy)
     # has no tracks, so no reroll and the species-swap degenerates to the atomic
-    # swap. When species_of is None (Phase 1/2, distinct-by-vocab), synthesize a
+    # swap. When species_of is None (species-only, distinct-by-vocab), synthesize a
     # trivial per-feature species labelling so every feature is its own site.
     sp_labels: list[str] = (
         species_of if species_of is not None else [str(i) for i in range(n)]
@@ -693,6 +704,15 @@ def parallel_tempered_mcmc(
     avail[list(fixed_set)] = False
     fixed_list = list(fixed_set)
     has_tracks = item_of is not None and any(it is not None for it in item_of)
+    # Sites the species-swap can actually move to. A site whose every feature is
+    # excluded or pinned can never be proposed successfully, so leaving it in
+    # the draw just wastes sweeps (see `_potts_species_swap_step`).
+    usable_sites = np.array(
+        [s for s, feats in enumerate(tables.site_features) if avail[feats].any()],
+        dtype=np.intp,
+    )
+    if len(usable_sites) == 0:
+        return None
 
     chains: list[_SwapChainState] = []
     for _ in range(K):
@@ -729,7 +749,7 @@ def parallel_tempered_mcmc(
             prop, acc = _potts_species_swap_step(
                 chains[k], J=J, h_eff=h_eff, T=t_ladder[k],
                 tables=tables, avail=avail, fixed=fixed_list, rng=rng,
-                anchor_strength=anchor_strength,
+                usable_sites=usable_sites, anchor_strength=anchor_strength,
             )
             local_propose += int(prop)
             local_accept += int(acc)
@@ -808,7 +828,7 @@ def meanfield_marginals(
     or None when fewer than (team_size - len(fixed)) valid candidates exist.
 
     `valid_mask` is True for candidates eligible to fill the remaining team
-    slots, respecting Phase 3 uniqueness against the fixed mons (no candidate
+    slots, respecting species/item uniqueness against the fixed mons (no candidate
     sharing a species or item with anything already pinned).
 
     Validated (see CLAUDE.md MF-vs-MCMC bullet) as a ranking-faithful, ~100x
@@ -825,7 +845,7 @@ def meanfield_marginals(
     excluded_mask = np.zeros(V, dtype=bool)
     excluded_mask[excluded] = True
 
-    # Uniqueness against fixed mons (Phase 3). Adds same-species and same-item
+    # Uniqueness against fixed mons. Adds same-species and same-item
     # vocab entries to the "not a candidate" set, on top of fixed/excluded.
     fixed_species, fixed_items = build_constraint_sets(set(fixed), species_of, item_of)
     uniq_invalid = np.zeros(V, dtype=bool)
@@ -939,7 +959,7 @@ def greedy_optimize(
             delta_E_all = h_part + J_part
 
             # Validity mask for in_idx: not in current team, not excluded, and
-            # (Phase 3) doesn't duplicate a species or item already on the team.
+            # doesn't duplicate a species or item already on the team.
             valid = ~current_mask.copy()
             for ex in excluded_set:
                 valid[ex] = False

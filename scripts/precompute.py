@@ -56,6 +56,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from k2dex.constants import (
+    ARTIFACT_SCHEMA_VERSION,
     BOLTZMANN_AVG_LAST,
     BOLTZMANN_LR,
     BOLTZMANN_LR_FINAL,
@@ -72,11 +73,11 @@ from k2dex.constants import (
     BOLTZMANN_T_MAX,
     CURRENT_REGULATION,
     IN_PERSON_WEIGHT,
-    PHASE2_MIN_TEAM_COUNT,
     RECENCY_TAU_DAYS,
     SPECIES_ITEM_LR_LAMBDA,
     SPECIES_LR_LAMBDA,
     TEAM_SIZE,
+    VOCAB_MIN_TEAM_COUNT,
 )
 from k2dex.loaders import build_species_item_model, build_species_model
 from k2dex.potts import FittedModel as PottsFittedModel, species_apc_graph
@@ -128,27 +129,6 @@ def model_slug(regulation: str, product_type: str) -> str:
     return base if product_type == "standard" else f"{base}-{slugify(product_type)}"
 
 
-def default_boltzmann_opts() -> dict:
-    """The standard Boltzmann recipe, read from the BOLTZMANN_* constants (the
-    single source of truth). CLI --bz-* flags override individual knobs."""
-    return {
-        "n_iters": BOLTZMANN_N_ITERS,
-        "lr": BOLTZMANN_LR,
-        "lr_final": BOLTZMANN_LR_FINAL,
-        "avg_last": BOLTZMANN_AVG_LAST,
-        "n_chains": BOLTZMANN_N_CHAINS,
-        "n_sweeps": BOLTZMANN_N_SWEEPS,
-        "n_burn": BOLTZMANN_N_BURN,
-        "n_temps": BOLTZMANN_N_TEMPS,
-        "t_max": BOLTZMANN_T_MAX,
-        "swap_interval": BOLTZMANN_SWAP_INTERVAL,
-        "reg": BOLTZMANN_REG,
-        "reg_lambda": BOLTZMANN_REG_LAMBDA,
-        "seed": BOLTZMANN_SEED,
-        "support_min_count": BOLTZMANN_SUPPORT_MIN_COUNT,
-    }
-
-
 def slugify(display_name: str) -> str:
     """Convert a human-readable display name to a URL-safe slug.
 
@@ -185,8 +165,8 @@ def serialize_team_counts(
     e.g. team {vocab[5], vocab[12], vocab[33], vocab[87], vocab[102], vocab[134]}
     -> "5-12-33-87-102-134".
 
-    Skips rosters with any out-of-vocab member (defensive; the Phase 3
-    builder already filters these, the Phase 2 builder doesn't filter
+    Skips rosters with any out-of-vocab member (defensive; the species+item
+    builder already filters these, the species-only builder doesn't filter
     explicitly but every roster member is by construction in vocab when
     the corpus indices are right).
     """
@@ -214,8 +194,7 @@ def write_model(
     out_dir: Path,
     *,
     product_type: str = "standard",
-    description: str | None = None,
-    min_team_count: int = PHASE2_MIN_TEAM_COUNT,
+    min_team_count: int = VOCAB_MIN_TEAM_COUNT,
     recency_tau: float | None = RECENCY_TAU_DAYS,
     in_person_weight: float = IN_PERSON_WEIGHT,
     skip_team_counts: bool = False,
@@ -233,8 +212,6 @@ def write_model(
 
     print(f"\n=== Building model: {slug} ===")
     print(f"  display_name: {display_name}")
-    if description:
-        print(f"  description: {description}")
     print(f"  regulation: {regulation}")
     print(f"  type: {product_type} (builder: {builder_type})")
     print(f"  method: {method}")
@@ -261,7 +238,7 @@ def write_model(
     )
     V = len(vocab)
     n_teams = int(sum(team_counts.values()))
-    feature_dimensions = 1 if all(i is None for i in item_of) else 2
+    has_item_track = not all(i is None for i in item_of)
     print(f"  V = {V}, corpus teams = {n_teams:,}, latest tournament = {latest_date}")
 
     # Factored (sites + tracks) schema derivation. Sites are the distinct
@@ -277,12 +254,16 @@ def write_model(
             site_index[sp] = len(sites)
             sites.append(sp)
     site_of = [site_index[sp] for sp in species_of]
-    if feature_dimensions == 2:
+    if has_item_track:
         tracks = [{"name": "item", "unique": True}]
         track_values: list[list[str | None]] = [[it] for it in item_of]
     else:
         tracks = []
         track_values = [[] for _ in vocab]
+    # Derived mirror of `tracks`, kept because the manifest and its consumers
+    # still key off it. `tracks` is the authoritative field; never set this
+    # independently, or the two can disagree about the same model.
+    feature_dimensions = len(tracks) + 1
 
     model_dir.mkdir(parents=True, exist_ok=True)
 
@@ -329,10 +310,8 @@ def write_model(
                 else {}
             ),
         },
-        "schema_version": 3,
+        "schema_version": ARTIFACT_SCHEMA_VERSION,
     }
-    if description:
-        meta["description"] = description
     if is_new:
         meta["new"] = True
     with open(model_dir / "meta.json", "w") as f:
@@ -352,23 +331,24 @@ def write_model(
 
     # Species-pair interaction graph (APC-corrected synergy). Only meaningful
     # for species+item models where each species has multiple item-states.
-    if feature_dimensions == 2:
+    if has_item_track:
         fitted = PottsFittedModel(
             vocab=vocab, species_of=species_of, item_of=item_of,
             J=J, h=h, m=m, team_size=TEAM_SIZE, n_corpus_teams=n_teams,
         )
         sg = species_apc_graph(fitted)
         S = len(sg.species)
+        # Only the signed, usage-weighted synergy is shipped. The APC-corrected
+        # Frobenius norm (`sg.corrected`) stays a Python-side analysis output:
+        # it's an unsigned magnitude, so it can't answer "do these two go well
+        # together", which is the only question the webapp asks of this graph.
         synergy_ut: list[float] = []
-        corrected_ut: list[float] = []
         for i in range(S):
             for j in range(i + 1, S):
                 synergy_ut.append(round(float(sg.synergy[i, j]), 6))
-                corrected_ut.append(round(float(sg.corrected[i, j]), 6))
         sg_data = {
             "species": sg.species,
             "synergy_ut": synergy_ut,
-            "corrected_ut": corrected_ut,
         }
         with open(model_dir / "species_graph.json", "w") as f:
             json.dump(sg_data, f, indent=None, separators=(",", ":"))
@@ -433,7 +413,7 @@ def generate_manifest(out_dir: Path, *, default_model: str | None = None) -> Non
     }
 
     manifest = {
-        "schema_version": 3,
+        "schema_version": ARTIFACT_SCHEMA_VERSION,
         "default_model": resolved_default,
         "types": types,
         "models": models,
@@ -460,7 +440,7 @@ def recompute_all(
     Used after a change to the fit (e.g. a fitter swap or a constant bump) to
     regenerate committed artifacts without re-specifying each model's CLI flags
     by hand. Each model is rebuilt with exactly the parameters it was last built
-    with: lambda, weighting knobs, min-team-count, warm-start prior, description
+    with: lambda, weighting knobs, min-team-count, warm-start prior
     and 'new' badge all come from its `fit` block. `team_counts` are recomputed
     only for models that already had them.
 
@@ -485,9 +465,12 @@ def recompute_all(
         if regulation_filter is not None and reg != regulation_filter:
             print(f"  skip {meta_path.parent.name}: regulation {reg!r} != {regulation_filter!r}")
             continue
-        builder_type = type_by_dim.get(meta.get("feature_dimensions", 1))
+        # `tracks` is the schema's own description of the feature dimensions;
+        # `feature_dimensions` is a derived mirror of it kept for the manifest,
+        # so read the authoritative one here.
+        builder_type = type_by_dim.get(len(meta.get("tracks", [])) + 1)
         if builder_type is None:
-            print(f"  skip {meta_path.parent.name}: unknown feature_dimensions")
+            print(f"  skip {meta_path.parent.name}: unsupported track count")
             continue
         fit = meta.get("fit", {})
         slug = meta.get("id", meta_path.parent.name)
@@ -500,8 +483,7 @@ def recompute_all(
             lam=fit.get("lambda", DEFAULT_LAMBDA[builder_type]),
             out_dir=out_dir,
             product_type=meta.get("type", "standard"),
-            description=meta.get("description"),
-            min_team_count=fit.get("min_team_count", PHASE2_MIN_TEAM_COUNT),
+            min_team_count=fit.get("min_team_count", VOCAB_MIN_TEAM_COUNT),
             recency_tau=fit.get("recency_tau_days", RECENCY_TAU_DAYS),
             in_person_weight=fit.get("in_person_weight", IN_PERSON_WEIGHT),
             skip_team_counts=not has_team_counts,
@@ -571,7 +553,8 @@ def main() -> int:
         type=float,
         dest="lam",
         default=None,
-        help="L2 regularization strength (default: 10.0 for species, 1.0 for species_item). "
+        help=f"L2 regularization strength (default: {SPECIES_LR_LAMBDA} species-only, "
+             f"{SPECIES_ITEM_LR_LAMBDA} species+item). "
              "Converted to the logistic inverse-strength C = 1/lambda internally. "
              "For --method boltzmann this is the PL warm-start's lambda.",
     )
@@ -588,8 +571,8 @@ def main() -> int:
         type=float,
         dest="recency_tau",
         default=RECENCY_TAU_DAYS,
-        help="Recency decay timescale in days for per-team fit weights "
-             "(default: no decay). Recorded in meta.json:fit.",
+        help=f"Recency decay timescale in days for per-team fit weights "
+             f"(default: {RECENCY_TAU_DAYS}). Recorded in meta.json:fit.",
     )
     group.add_argument(
         "--in-person-weight",
@@ -602,8 +585,8 @@ def main() -> int:
     group.add_argument(
         "--min-team-count",
         type=int,
-        default=PHASE2_MIN_TEAM_COUNT,
-        help=f"Vocab cutoff: feature must appear in >= N teams (default: {PHASE2_MIN_TEAM_COUNT}).",
+        default=VOCAB_MIN_TEAM_COUNT,
+        help=f"Vocab cutoff: feature must appear in >= N teams (default: {VOCAB_MIN_TEAM_COUNT}).",
     )
     group.add_argument(
         "--prior-regulation",
@@ -660,8 +643,8 @@ def main() -> int:
                           help=f"Initial bank-mixing swaps per chain (default: {BOLTZMANN_N_BURN}).")
     bz_group.add_argument("--bz-temps", type=int, default=BOLTZMANN_N_TEMPS,
                           help=f"Parallel-tempering replicas per chain (default: "
-                               f"{BOLTZMANN_N_TEMPS} = off; single-T PCD sufficed on the "
-                               "M-A corpus). >1 only for genuinely multimodal models.")
+                               f"{BOLTZMANN_N_TEMPS}). Pass 1 to disable tempering; "
+                               "single-T PCD sufficed on the earlier M-A corpus.")
     bz_group.add_argument("--bz-t-max", type=float, default=BOLTZMANN_T_MAX,
                           help=f"Hot temperature for tempering (default: {BOLTZMANN_T_MAX}; "
                                "unused if --bz-temps 1).")

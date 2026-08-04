@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ARTICLE_PRELOADS } from "./articles/components";
+import { ROUTE_CHUNK_IMPORTERS } from "./routeChunks";
 import "./styles/index.css";
 
 // GitHub Pages SPA fallback: 404.html redirects here with ?route=/original-path.
@@ -22,8 +23,8 @@ function routeChunkPreloads(pathname: string): Array<Promise<unknown>> {
   const path = pathname.startsWith(base) ? pathname.slice(base.length) : pathname;
   const m = path.match(/^\/articles(?:\/([^/]+))?\/?$/);
   if (!m) return [];
-  if (!m[1]) return [import("./pages/ArticlesPage")];
-  const preloads: Array<Promise<unknown>> = [import("./pages/ArticlePage")];
+  if (!m[1]) return [ROUTE_CHUNK_IMPORTERS.articlesIndex()];
+  const preloads: Array<Promise<unknown>> = [ROUTE_CHUNK_IMPORTERS.article()];
   const body = ARTICLE_PRELOADS[m[1]];
   if (body) preloads.push(body());
   return preloads;

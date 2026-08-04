@@ -184,7 +184,7 @@ export function RosterEditor({
             value={null}
             onChange={(o: SingleValue<Opt>) => o && addSpecies(Number(o.value))}
             placeholder="add a Pokémon"
-            aria-label={`Slot ${i + 1} — add a Pokémon`}
+            aria-label={`Slot ${i + 1}, add a Pokémon`}
             menuPortalTarget={MENU_PORTAL_TARGET}
             styles={portalStyles}
           />

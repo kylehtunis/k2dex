@@ -2,7 +2,7 @@
 // can't cover because they're stochastic. We just check that the
 // samplers run end-to-end on the synthetic model, return well-formed
 // output, and respect basic invariants (team size, fixed honored,
-// uniqueness on Phase 3 features).
+// uniqueness on (species, item) features).
 
 import { describe, expect, it } from "vitest";
 import type { IsingModel } from "../types";
@@ -17,6 +17,7 @@ import {
 } from "../energy";
 import {
   buildSiteTables,
+  pottsMoveSets,
   pottsSpeciesSwap,
   pottsTrackReroll,
   type PottsContext,
@@ -212,7 +213,14 @@ describe("anchor-field tilt", () => {
     for (const f of fixed) avail[f] = 0;
     const lockedSlots = new Set<number>();
     for (let i = 0; i < seeds!.length; i++) lockedSlots.add(i);
-    const ctx: PottsContext = { fixed, avail, tables, lockedSlots, anchorStrength: alpha };
+    const ctx: PottsContext = {
+      fixed,
+      avail,
+      tables,
+      lockedSlots,
+      anchorStrength: alpha,
+      ...pottsMoveSets(tables, avail, nToFill + seeds!.length, lockedSlots),
+    };
 
     // H_alpha recomputed from scratch: untilted team energy on hEff minus the
     // (alpha-1)-weighted pin<->free cross-coupling sum.

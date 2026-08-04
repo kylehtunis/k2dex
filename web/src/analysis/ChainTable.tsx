@@ -2,7 +2,6 @@
 // team's state AFTER that swap step. Row 0 is the starting team
 // (italic "starting team" label, no swap cell).
 //
-// Mirrors app.py:_render_chain_table_html.
 
 import { ScoreChip, CorpusCell } from "../render/atoms";
 import { SwapCell, TeamMiniStrip } from "../render/cells";

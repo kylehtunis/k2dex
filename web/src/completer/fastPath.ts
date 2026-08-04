@@ -1,6 +1,6 @@
 // Fast-path completer: MF marginals → uniqueness-respecting fill →
 // greedy descent. Mirrors the post-v1 `/completer` fast path in
-// app.py:_render_completer (the "popularity-fill bug" fix).
+// the greedy completer path (the "popularity-fill bug" fix).
 
 import { GREEDY_MAX_SWAPS, MF_MAX_ITERS, MF_TOL, TEAM_SIZE } from "../constants";
 import { greedyOptimize } from "../sampler/greedy";
@@ -40,9 +40,9 @@ export type FastPathError =
   | { kind: "fill_failed"; message: string }
   | { kind: "too_many_pins"; message: string };
 
-/** Expand species-level excludes to vocab-index-level (Phase 3 vocab
- * has multiple item variants per species; excluding a species kills
- * all of them). */
+/** Expand species-level excludes to vocab-index-level (the vocab has
+ * multiple item variants per species; excluding a species kills all of
+ * them). */
 function expandExcludedSpecies(
   excludedSpecies: readonly string[],
   model: IsingModel,
@@ -123,7 +123,7 @@ export function runFastPath(
       error: {
         kind: "fill_failed",
         message:
-          "Could not fill the team — insufficient non-conflicting candidates.",
+          "Could not fill the team: not enough non-conflicting candidates.",
       },
     };
   }

@@ -34,7 +34,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..", "..");
 const OUT_PATH = resolve(REPO_ROOT, "tests", "parity_baseline.json");
 
-// --- Synthetic model (Phase 3-shaped: speciesOf + itemOf set) ----------
+// --- Synthetic model (species+item shaped: speciesOf + itemOf set) ----
 
 const V = 12;
 const TEAM_SIZE = 4;

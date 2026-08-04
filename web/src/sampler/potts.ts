@@ -160,6 +160,40 @@ export interface PottsContext {
    * and slot energy, targeting H_alpha = H - (alpha-1)·Σ_{p,j free} J[p,j]s_j.
    * Pin↔pin and free↔free couplings are untouched. Default 1 (no tilt). */
   anchorStrength?: number;
+  /** Sites holding at least one available feature, and the free-slot indices a
+   * species-swap may move. Both are fixed for a run; see `pottsMoveSets`. */
+  usableSites: Int32Array;
+  swappableSlots: Int32Array;
+}
+
+/** The species-swap's proposal sets, computed once per run.
+ *
+ * Both exist to stop the swap wasting sweeps on proposals that can never
+ * succeed: a site whose every feature is excluded or pinned has `logZ = -inf`,
+ * and a site-pinned slot never swaps its species. Drawing uniformly over all
+ * sites and all slots and rejecting afterwards is correct but slow, and the
+ * waste scales with how much the user constrained the run: a 10-species
+ * include list out of 200 leaves ~5% of species-swap proposals viable, and
+ * 5 site pins out of 6 slots leave ~17%.
+ *
+ * Restricting the draws preserves detailed balance. The occupied site is
+ * always usable and slot indices are stable, so a move and its reverse draw
+ * from the same fixed sets. */
+export function pottsMoveSets(
+  tables: SiteTables,
+  avail: Uint8Array,
+  nFreeSlots: number,
+  lockedSlots?: ReadonlySet<number>,
+): { usableSites: Int32Array; swappableSlots: Int32Array } {
+  const usable: number[] = [];
+  for (let s = 0; s < tables.nSites; s++) {
+    if (tables.siteFeatures[s].some((f) => avail[f] === 1)) usable.push(s);
+  }
+  const swappable: number[] = [];
+  for (let k = 0; k < nFreeSlots; k++) {
+    if (!lockedSlots?.has(k)) swappable.push(k);
+  }
+  return { usableSites: Int32Array.from(usable), swappableSlots: Int32Array.from(swappable) };
 }
 
 /** The retained team (all on-team features except the slot at `onNfPos` of the
@@ -256,12 +290,16 @@ export function pottsSpeciesSwap(
   maxTries = 16,
 ): { proposed: boolean; accepted: boolean } {
   if (chain.onNf.length === 0) return { proposed: false, accepted: false };
+  const { swappableSlots, usableSites } = ctx;
+  if (swappableSlots.length === 0 || usableSites.length === 0) {
+    return { proposed: false, accepted: false };
+  }
   const invTemp = 1 / T;
   const { siteOf } = model;
 
-  const outK = rng.integers(chain.onNf.length);
-  // Site-pinned slots keep their species; only their item track rerolls.
-  if (ctx.lockedSlots?.has(outK)) return { proposed: false, accepted: false };
+  // Site-pinned slots keep their species (only their item track rerolls), so
+  // they are absent from swappableSlots rather than drawn and rejected.
+  const outK = swappableSlots[rng.integers(swappableSlots.length)];
   const outFeat = chain.onNf[outK];
   const siteA = siteOf[outFeat];
   const { rFeat, rItemId, rPin } = retained(chain, outK, ctx, tables);
@@ -274,12 +312,16 @@ export function pottsSpeciesSwap(
   const present = new Set<number>();
   for (const f of rFeat) present.add(siteOf[f]);
   present.add(siteA);
-  if (present.size >= tables.nSites) return { proposed: false, accepted: false };
+  let nPresentUsable = 0;
+  for (let i = 0; i < usableSites.length; i++) {
+    if (present.has(usableSites[i])) nPresentUsable++;
+  }
+  if (nPresentUsable >= usableSites.length) return { proposed: false, accepted: false };
 
-  let siteB = rng.integers(tables.nSites);
+  let siteB = usableSites[rng.integers(usableSites.length)];
   let tries = 0;
   while (present.has(siteB) && tries < maxTries) {
-    siteB = rng.integers(tables.nSites);
+    siteB = usableSites[rng.integers(usableSites.length)];
     tries++;
   }
   if (present.has(siteB)) return { proposed: false, accepted: false };

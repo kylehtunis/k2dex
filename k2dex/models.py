@@ -856,11 +856,12 @@ def fit_boltzmann_ising(
            persistent bank -- `n_temps` replicas per chain on a geometric ladder
            from T=1 (cold, the level sampled for moments; it MUST be 1 to sample
            `P ∝ exp(-H)`) to `t_max` (hot, mixing only), replica exchange every
-           `swap_interval` sweeps. **Defaults off (`n_temps=1`):** on this corpus
-           single-temperature PCD already converges and tempering didn't improve
-           it (the distribution isn't mode-trapped at this fit quality), at
-           several times the cost. Reach for `n_temps>1` only if you hit a
-           genuinely multimodal model where the cold chain gets stuck.
+           `swap_interval` sweeps. Defaults to `BOLTZMANN_N_TEMPS`. Set
+           `n_temps=1` to disable tempering: on the earlier M-A corpus
+           single-temperature PCD already converged and tempering didn't improve
+           it (the distribution isn't mode-trapped at that fit quality), at
+           several times the cost. Tempering earns its cost on a genuinely
+           multimodal model where the cold chain would get stuck.
         potts_moves: when True and `species_of` is given, sample the bank with
            the Potts move kernel that treats species selection and item
            assignment as separate moves (Metropolized-Gibbs species swap on
@@ -880,9 +881,12 @@ def fit_boltzmann_ising(
         J: (V, V) symmetric float64, zero diagonal.
         h: (V,) float64.
         history: dict with per-iteration `max_resid_m`, `max_resid_C`,
-           `mean_resid_m`, `mean_resid_C` (residuals over fit entries) plus
-           sampler `local_accept` / `swap_accept`. Use it to confirm residuals
-           fall to the MCMC noise floor.
+           `mean_resid_m`, `mean_resid_C` plus sampler `local_accept` /
+           `swap_accept`. The `_C` residuals cover the fit mask only; the `_m`
+           residuals cover all V (every marginal is always fit). Read the
+           `mean_*` series, not `max_*`: the per-iteration max is a single
+           `n_chains`-sample snapshot and is mostly Monte-Carlo noise. Use it to
+           confirm residuals fall to the MCMC noise floor.
     """
     if reg not in ("l1", "l2"):
         raise ValueError(f"reg must be 'l1' or 'l2', got {reg!r}")

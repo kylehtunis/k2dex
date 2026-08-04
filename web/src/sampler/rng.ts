@@ -38,18 +38,4 @@ export class Rng {
     return out;
   }
 
-  /** Sample `k` elements from `arr` without replacement (partial Fisher-Yates). */
-  choice<T>(arr: readonly T[], k: number): T[] {
-    if (k > arr.length) {
-      throw new Error(`choice: k=${k} exceeds array length ${arr.length}`);
-    }
-    const pool = arr.slice();
-    const out: T[] = [];
-    for (let i = 0; i < k; i++) {
-      const j = i + this.integers(pool.length - i);
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-      out.push(pool[i]);
-    }
-    return out;
-  }
 }

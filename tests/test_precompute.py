@@ -18,6 +18,7 @@ from unittest import mock
 
 import numpy as np
 
+from k2dex import potts
 from scripts import precompute
 
 
@@ -205,6 +206,71 @@ class TestWriteModelRoundTrip(unittest.TestCase):
             meta["track_values"],
             [["Life Orb"], ["None"], ["Focus Sash"], ["Leftovers"], ["None"]],
         )
+
+    def test_artifact_reloads_through_potts_loader(self) -> None:
+        """The factored schema round-trips back to the (species, item) view,
+        and species_graph.json's flattened upper triangle matches a direct
+        species_apc_graph call. Covers the write -> load_fitted_model path the
+        Potts analysis and the webapp's species graph both depend on."""
+        rng = np.random.default_rng(11)
+        species_of = ["A", "A", "B", "C", "C"]
+        item_of = ["Life Orb", "None", "Focus Sash", "Leftovers", "None"]
+        vocab = [precompute_format(s, i) for s, i in zip(species_of, item_of)]
+        V = len(vocab)
+        m = rng.uniform(0.01, 0.4, size=V).astype(np.float64)
+        h = rng.standard_normal(V).astype(np.float64)
+        J_asym = rng.standard_normal((V, V))
+        J = 0.5 * (J_asym + J_asym.T)
+        np.fill_diagonal(J, 0.0)
+        team_counts = Counter({frozenset(vocab[:5]): 3})
+
+        fake_builder = mock.Mock(return_value=(
+            vocab, m, J, h, team_counts, species_of, item_of,
+            "2026-01-15T00:00:00.000Z",
+        ))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(precompute.MODEL_BUILDERS, {"species_item": fake_builder}):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    precompute.write_model(
+                        slug="synthetic-si", display_name="Synthetic SI",
+                        regulation="test", builder_type="species_item",
+                        lam=4.5, out_dir=Path(tmp), force=True,
+                    )
+            model_dir = Path(tmp) / "synthetic-si"
+            loaded = potts.load_fitted_model(model_dir)
+            with open(model_dir / "species_graph.json") as f:
+                sg_data = json.load(f)
+
+        # The (species, item) view is rebuilt from sites + site_of + track_values.
+        self.assertEqual(loaded.vocab, vocab)
+        self.assertEqual(loaded.species_of, species_of)
+        self.assertEqual(loaded.item_of, item_of)
+        # J.bin is float32, so compare at float32 resolution.
+        np.testing.assert_allclose(loaded.J, J, atol=1e-6)
+        np.testing.assert_allclose(loaded.h, h, atol=1e-6)
+        np.testing.assert_allclose(loaded.m, m, atol=1e-6)
+
+        # species_graph.json is the upper triangle in row-major order; catches a
+        # transpose or an off-by-one in the flattening loop.
+        sg = potts.species_apc_graph(loaded)
+        self.assertEqual(sg_data["species"], list(sg.species))
+        S = len(sg.species)
+        expect_syn = [sg.synergy[i, j] for i in range(S) for j in range(i + 1, S)]
+        self.assertEqual(len(sg_data["synergy_ut"]), S * (S - 1) // 2)
+        np.testing.assert_allclose(sg_data["synergy_ut"], expect_syn, atol=1e-5)
+        # Only the signed synergy ships; `corrected` stays a Python analysis
+        # output (see species_apc_graph) and must not reappear in the artifact.
+        self.assertNotIn("corrected_ut", sg_data)
+
+    def test_load_fitted_model_rejects_other_schema_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            model_dir = Path(tmp) / "stale"
+            model_dir.mkdir()
+            with open(model_dir / "meta.json", "w") as f:
+                json.dump({"schema_version": 2, "V": 1}, f)
+            with self.assertRaisesRegex(ValueError, "schema_version"):
+                potts.load_fitted_model(model_dir)
 
 
 def precompute_format(species: str, item: str | None) -> str:
