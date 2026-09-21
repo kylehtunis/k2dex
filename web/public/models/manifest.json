@@ -1,6 +1,6 @@
 {
   "schema_version": 3,
-  "default_model": "reg-m-b",
+  "default_model": "reg-m-c",
   "types": {
     "standard": {
       "description": "Fit on all recorded tournament rosters, weighting recent teams and those brought to in-person events. The recommended model."
@@ -8,14 +8,14 @@
   },
   "models": [
     {
-      "id": "reg-m-b",
-      "display_name": "Reg. M-B",
-      "regulation": "M-B",
+      "id": "reg-m-c",
+      "display_name": "Reg. M-C",
+      "regulation": "M-C",
       "type": "standard",
       "feature_dimensions": 2,
-      "V": 947,
-      "n_corpus_teams": 21866,
-      "latest_tournament_date": "2026-08-27T15:00:00.000Z",
+      "V": 318,
+      "n_corpus_teams": 4093,
+      "latest_tournament_date": "2026-09-20T17:00:00.000Z",
       "team_size": 6,
       "tracks": [
         {
@@ -33,6 +33,23 @@
       "V": 736,
       "n_corpus_teams": 17209,
       "latest_tournament_date": "2026-06-14T14:00:00.000Z",
+      "team_size": 6,
+      "tracks": [
+        {
+          "name": "item",
+          "unique": true
+        }
+      ]
+    },
+    {
+      "id": "reg-m-b",
+      "display_name": "Reg. M-B",
+      "regulation": "M-B",
+      "type": "standard",
+      "feature_dimensions": 2,
+      "V": 947,
+      "n_corpus_teams": 21866,
+      "latest_tournament_date": "2026-08-27T15:00:00.000Z",
       "team_size": 6,
       "tracks": [
         {

@@ -250,17 +250,20 @@ class RegulationRelabel:
     marker_items: frozenset[str]
 
 
-# Limitless had not tagged Regulation M-B as of its 2026-06-17 start: events
-# that are truly M-B still carry the M-A or CUSTOM label. Recover them by date
-# window plus a roster content check. Each marker species/item is legal in M-B
-# but illegal in M-A, so any single appearance identifies the event as M-B.
+# Limitless had not tagged Regulation M-C as of its 2026-09-09 start: events
+# that are truly M-C still carry the M-B or CUSTOM label. Recover them by date
+# window plus a roster content check. Each marker species is legal in M-C but
+# illegal in M-B, so any single appearance identifies the event as M-C.
 _REGULATION_RELABELS: tuple[RegulationRelabel, ...] = (
     RegulationRelabel(
-        target="M-B",
-        start_date="2026-06-17",
-        from_labels=frozenset({"M-A", "CUSTOM"}),
-        marker_species=frozenset({"Gholdengo", "Metagross", "Grimmsnarl"}),
-        marker_items=frozenset({"Life Orb", "Light Clay"}),
+        target="M-C",
+        start_date="2026-09-09",
+        from_labels=frozenset({"M-B", "CUSTOM"}),
+        marker_species=frozenset({
+            "Rillaboom", "Indeedee", "Indeedee ♀",
+            "Salamence", "Golisopod", "Baxcalibur",
+        }),
+        marker_items=frozenset(),
     ),
 )
 

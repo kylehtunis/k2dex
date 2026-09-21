@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 # --- Regulation ---
-CURRENT_REGULATION = "M-B"
+CURRENT_REGULATION = "M-C"
 
 # --- Team / sampling ---
 TEAM_SIZE = 6

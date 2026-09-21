@@ -3,7 +3,7 @@
 // future re-introduction has one place to touch). Fit-time constants live in
 // the per-model meta.json instead (loaded at runtime via loadModel).
 
-export const CURRENT_REGULATION = "M-B";
+export const CURRENT_REGULATION = "M-C";
 
 export const TEAM_SIZE = 6;
 
