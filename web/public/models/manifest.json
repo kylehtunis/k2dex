@@ -13,9 +13,9 @@
       "regulation": "M-C",
       "type": "standard",
       "feature_dimensions": 2,
-      "V": 318,
-      "n_corpus_teams": 4093,
-      "latest_tournament_date": "2026-09-20T17:00:00.000Z",
+      "V": 556,
+      "n_corpus_teams": 16347,
+      "latest_tournament_date": "2026-11-04T23:00:00.000Z",
       "team_size": 6,
       "tracks": [
         {
