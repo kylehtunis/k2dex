@@ -470,7 +470,135 @@ class TestPerTypeCacheVersion(unittest.TestCase):
                              (Match(round=1, winner=0, loser=1),))
 
 
+def _team_sheet_entry(name: str, division: str = "M", n_mons: int = 6) -> dict:
+    """One team-sheet export entry, with positional roster rows."""
+    return {
+        "Team List": f"XX002-abc/{name}",
+        "n": name,
+        "c": "US",
+        "d": division,
+        "t": name,
+        "tl": [
+            ["001", "000", "Timid", None, "Ability", f"Mon{j}", f"Item{j}",
+             ["Protect", "Move B", "Move C", "Move D"]]
+            for j in range(n_mons)
+        ],
+    }
+
+
+class TestTeamSheetImport(unittest.TestCase):
+    def _import(self, base: Path, entries: list[dict]) -> list[TournamentTeams]:
+        reg_dir = base / "local" / "M-C"
+        reg_dir.mkdir(parents=True, exist_ok=True)
+        with (reg_dir / "ev1-Masters_2026-10-31.json").open("w") as f:
+            json.dump(entries, f)
+        (base / "cache").mkdir(exist_ok=True)
+        return import_in_person_tournaments(
+            local_dir=base / "local", cache_dir=base / "cache",
+        )
+
+    def test_placing_read_from_hash_field(self):
+        entry = _team_sheet_entry("Alice")
+        entry["#"] = "12"
+        with tempfile.TemporaryDirectory() as td:
+            team = self._import(Path(td), [entry])[0].teams[0]
+            self.assertEqual(team.placing, 12)
+
+    def test_rosters_parsed_without_outcomes(self):
+        with tempfile.TemporaryDirectory() as td:
+            result = self._import(Path(td), [_team_sheet_entry("Alice")])
+            self.assertEqual(len(result), 1)
+            team = result[0].teams[0]
+            self.assertEqual(
+                team.members,
+                frozenset((f"Mon{j}", f"Item{j}") for j in range(6)),
+            )
+            self.assertIsNone(team.placing)
+            self.assertEqual((team.wins, team.losses, team.ties), (0, 0, 0))
+            self.assertEqual(result[0].matches, ())
+
+    def test_bracket_formes_and_blank_items_normalized(self):
+        entry = _team_sheet_entry("Alice")
+        entry["tl"][0][5] = "Arcanine [Hisuian Form]"
+        entry["tl"][1][6] = ""
+        with tempfile.TemporaryDirectory() as td:
+            members = self._import(Path(td), [entry])[0].teams[0].members
+            self.assertIn(("Hisuian Arcanine", "Item0"), members)
+            self.assertIn(("Mon1", None), members)
+
+    def test_only_masters_division_kept(self):
+        entries = [
+            _team_sheet_entry("Masters Player", "M"),
+            _team_sheet_entry("Senior Player", "S"),
+            _team_sheet_entry("Junior Player", "J"),
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            result = self._import(Path(td), entries)
+            self.assertEqual(len(result[0].teams), 1)
+            self.assertEqual(result[0].meta.players, 1)
+
+    def test_incomplete_roster_dropped(self):
+        entries = [_team_sheet_entry("Alice"), _team_sheet_entry("Bob", n_mons=5)]
+        with tempfile.TemporaryDirectory() as td:
+            self.assertEqual(len(self._import(Path(td), entries)[0].teams), 1)
+
+    def test_curly_apostrophe_item_merges_with_straight(self):
+        entry = _team_sheet_entry("Alice")
+        entry["tl"][0][6] = "King’s Rock"
+        with tempfile.TemporaryDirectory() as td:
+            members = self._import(Path(td), [entry])[0].teams[0].members
+            self.assertIn(("Mon0", "King's Rock"), members)
+
+
+class TestTeamlessImport(unittest.TestCase):
+    def test_unparsed_file_not_cached(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            reg_dir = base / "local" / "M-C"
+            reg_dir.mkdir(parents=True)
+            (base / "cache").mkdir()
+            with (reg_dir / "ev1_2026-10-31.json").open("w") as f:
+                json.dump([{"unrecognized": "format"}], f)
+
+            result = import_in_person_tournaments(
+                local_dir=base / "local", cache_dir=base / "cache",
+            )
+            self.assertEqual(result, [])
+            self.assertEqual(list((base / "cache").iterdir()), [])
+
+    def test_teamless_cache_entry_reimported(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            reg_dir = base / "local" / "M-C"
+            reg_dir.mkdir(parents=True)
+            cache_dir = base / "cache"
+            tournament_id = "local_ev1_2026-10-31"
+            _save_tournament(cache_dir, TournamentTeams(
+                meta=TournamentMeta(
+                    id=tournament_id, name="ev1_2026-10-31",
+                    date="2026-10-31", regulation="M-C", players=1,
+                ),
+                teams=[],
+                tournament_type="in-person",
+            ))
+            with (reg_dir / "ev1_2026-10-31.json").open("w") as f:
+                json.dump([_team_sheet_entry("Alice")], f)
+
+            first = import_in_person_tournaments(
+                local_dir=base / "local", cache_dir=cache_dir,
+            )
+            self.assertEqual(len(first[0].teams), 1)
+            second = import_in_person_tournaments(
+                local_dir=base / "local", cache_dir=cache_dir,
+            )
+            self.assertEqual(second, [])
+
+
 class TestNormalizeBracketForme(unittest.TestCase):
+    def test_plumage_and_size_stripped(self):
+        self.assertEqual(normalize_bracket_forme("Squawkabilly [Green Plumage]"), "Squawkabilly")
+        self.assertEqual(normalize_bracket_forme("Gourgeist [Super Size]"), "Gourgeist")
+
     def test_regional_hisuian(self):
         self.assertEqual(normalize_bracket_forme("Arcanine [Hisuian Form]"), "Hisuian Arcanine")
         self.assertEqual(normalize_bracket_forme("Typhlosion [Hisuian Form]"), "Hisuian Typhlosion")

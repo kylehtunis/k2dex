@@ -8,9 +8,11 @@ Two data sources feed a unified cache (``tournaments_cache/``):
    filters. Only triggered manually via the CLI.
 
 2. **In-person tournament exports** -- offline import via
-   ``import_in_person_tournaments()``. Reads raw Limitless-format standings
-   JSON files from ``tournament_json/[format]/[id]_[date].json`` and
-   normalizes them into cache entries.
+   ``import_in_person_tournaments()``. Reads JSON files from
+   ``tournament_json/[format]/[id]_[date].json`` and normalizes them into
+   cache entries. Files are either Limitless-format standings (rosters plus
+   placing, record, and rounds) or team-sheet exports (rosters and sometimes
+   placing; see ``_standings_from_team_sheets``).
 
 Downstream consumers (loaders, notebooks, precompute) call only
 ``load_cached_tournaments()``, which is a pure offline cache reader.
@@ -34,12 +36,13 @@ cache is write-once / read-many. Each cache entry carries a ``type`` field
 (``"limitless"`` or ``"in-person"``) for provenance tracking; old cache
 files without this field default to ``"limitless"`` on read.
 
-In-person entries additionally carry per-round **match results**: each
-standings entry's ``rounds`` dict (opponent name + W/L result per round)
+In-person standings files additionally carry per-round **match results**:
+each standings entry's ``rounds`` dict (opponent name + W/L result per round)
 is resolved to ``Match(round, winner, loser)`` records whose winner/loser
 are indices into the cached team list. Player names are used only during
 parsing for opponent resolution and are still discarded. The Limitless API
-exposes no match-level data, so limitless entries have an empty match list.
+and team-sheet exports expose no match-level data, so those entries have an
+empty match list.
 
 Cache format versioning: each payload includes a ``version`` field. Loading
 a cached file below the minimum version for its type returns None, forcing
@@ -115,7 +118,9 @@ class Team:
     else None -- some events report it for top cut only, or not at all.
     `wins`/`losses`/`ties` are the swiss/bracket record, present for every
     standings entry observed, so they are the robust outcome signal to fall
-    back on when `placing` is missing."""
+    back on when `placing` is missing. The exception is in-person team-sheet
+    exports, which report no record (always 0-0-0) and only sometimes a
+    placing."""
 
     members: frozenset[tuple[str, str | None]]
     placing: int | None
@@ -199,6 +204,7 @@ _SPECIES_ALIASES: dict[str, str] = {
 _ITEM_ALIASES: dict[str, str] = {
     "Dread Plate": "Black Glasses",
     "Glimmorite": "Glimmoranite",
+    "King’s Rock": "King's Rock",  # team-sheet exports use a curly apostrophe
 }
 
 # Item strings that mean "no held item". The raw API uses several spellings
@@ -332,6 +338,8 @@ _COSMETIC_FORMES = frozenset({
     "family of four", "family of three",
     "unremarkable form", "masterpiece form",
     "phony form", "antique form",
+    "green plumage", "blue plumage", "yellow plumage", "white plumage",
+    "small size", "average size", "large size", "super size",
 })
 
 _REGIONAL_PREFIXES = frozenset({"hisuian", "alolan", "galarian", "paldean"})
@@ -1059,6 +1067,45 @@ def load_cached_tournaments(
 
 _DATE_SUFFIX_RE = re.compile(r"[_-](\d{4})[_-](\d{2})[_-](\d{2})$")
 
+# A team-sheet export's roster rows are positional:
+# [dex, forme, nature, null, ability, species, item, moves].
+_TEAM_SHEET_SPECIES_POS = 5
+_TEAM_SHEET_ITEM_POS = 6
+
+# Team-sheet exports mix all age divisions (M/S/J) in one file. The corpus is
+# Masters only, which is also what these files are named for.
+_TEAM_SHEET_DIVISION = "M"
+
+
+def _is_team_sheet_export(entries: list) -> bool:
+    return bool(entries) and "tl" in entries[0]
+
+
+def _standings_from_team_sheets(entries: list[dict]) -> list[dict]:
+    """Convert a team-sheet export into the standings shape `extract_teams` reads.
+
+    Entries look like ``{"n": player, "d": division, "#": placing,
+    "tl": [roster rows]}``. ``#`` is the final placing within the division, as
+    a string, and is absent from some exports (placing is then None). There is
+    no record or rounds, so teams keep a 0-0-0 record and the tournament has
+    no matches.
+    """
+    return [
+        {
+            "name": entry.get("n"),
+            "placing": int(entry["#"]) if "#" in entry else None,
+            "decklist": [
+                {
+                    "name": row[_TEAM_SHEET_SPECIES_POS],
+                    "item": row[_TEAM_SHEET_ITEM_POS],
+                }
+                for row in entry.get("tl") or []
+            ],
+        }
+        for entry in entries
+        if entry.get("d") == _TEAM_SHEET_DIVISION
+    ]
+
 
 def import_in_person_tournaments(
     *,
@@ -1067,11 +1114,14 @@ def import_in_person_tournaments(
 ) -> list[TournamentTeams]:
     """Import in-person tournament JSON files into the cache.
 
-    Scans ``local_dir/[format]/[id]_[date].json`` for raw Limitless-format
-    standings exports. Each file is normalized via ``extract_teams()`` +
-    ``extract_matches()`` and written to ``cache_dir`` with
-    ``type="in-person"``. Cache entries already at the current schema are
-    skipped (idempotent); outdated ones are re-imported in place.
+    Scans ``local_dir/[format]/[id]_[date].json`` for Limitless-format
+    standings or team-sheet exports. Each file is normalized via
+    ``extract_teams()`` + ``extract_matches()`` and written to ``cache_dir``
+    with ``type="in-person"``. Cache entries already at the current schema are
+    skipped (idempotent); outdated ones are re-imported in place. A file that
+    yields no teams is an unparsed format rather than an empty tournament: it
+    is reported and not cached, and an existing teamless cache entry is
+    retried, so a parser fix takes effect on the next run.
 
     The parent directory name is used as the regulation (e.g. ``M-A``).
     The date is parsed from the filename suffix (``[id]_YYYY-MM-DD.json``).
@@ -1093,7 +1143,8 @@ def import_in_person_tournaments(
             stem = json_file.stem
             tournament_id = f"local_{stem}"
 
-            if _load_tournament(cache_dir, tournament_id) is not None:
+            cached = _load_tournament(cache_dir, tournament_id)
+            if cached is not None and cached.teams:
                 logger.info("[skip cached]  %s (already imported)", stem)
                 continue
 
@@ -1111,8 +1162,15 @@ def import_in_person_tournaments(
                 logger.warning("skipping %s: expected list, got %s", json_file, type(standings).__name__)
                 continue
 
+            if _is_team_sheet_export(standings):
+                standings = _standings_from_team_sheets(standings)
+
             teams = extract_teams(standings, regulation=regulation)
             matches = extract_matches(standings, regulation=regulation)
+
+            if not teams:
+                logger.warning("skipping %s: no valid teams parsed", json_file)
+                continue
 
             meta = TournamentMeta(
                 id=tournament_id,
